@@ -52,14 +52,14 @@ class ReadingMaterialCreator():
     def paragraph_finder(self) -> Agent:
         return Agent(
             config=self.agents_config['paragraph_finder'], 
-            tools=[SerperDevTool()]
+            tools=[SerperDevTool()],
+            memory=True
         )
 
     @agent
     def article_picker(self) -> Agent:
         return Agent(
-            config=self.agents_config['article_picker'],
-            memory=True
+            config=self.agents_config['article_picker']
         )
 
     @agent
