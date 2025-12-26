@@ -87,6 +87,12 @@ class ReadingMaterialCreator():
         return Task(
             config=self.tasks_config['adapt_news_article']
         )
+
+    @task
+    def add_vocabulary(self) -> Task:
+        return Task(
+            config=self.tasks_config['add_vocabulary']
+        )
     
     @crew
     def crew(self) -> Crew:

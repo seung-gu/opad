@@ -3,16 +3,22 @@ find_news_articles:
     Search for 2-3 recent news articles about {topic} in {language}.
     The articles should be approximately {length} words in length and cover current, relevant news on the specified topic.
     Return the full text of 2-3 most suitable news articles you find, ensuring each article includes complete source information.
+    Return the result as valid JSON format with proper string quotes for all keys and values.
   expected_output: >
-    A list of 2-3 recent news articles about {topic} in {language}, with full article text.
-    For each article, include:
-    - Article title
-    - Source name (publication/news outlet name)
-    - Source URL (if available)
-    - Publication date
-    - Author name (if available)
-    - Full article content/text
-    Make sure to preserve the original source attribution for each article.
+    Return a valid JSON object with this exact structure:
+    {
+      "articles": [
+        {
+          "title": "Article title",
+          "source_name": "Publication name",
+          "source_url": "URL or null",
+          "publication_date": "Date or null",
+          "author": "Author name or null",
+          "content": "Full article text"
+        }
+      ]
+    }
+    All keys must be in double quotes. All string values must be in double quotes. Use null for optional fields that are not available.
   agent: paragraph_finder
   output_file: output/found_articles.json
 
@@ -24,12 +30,27 @@ pick_best_article:
     - Has a length closest to {length} words
     - Provides the best educational value for language learning
     - Is the most recent article
-    Only select articles that have complete source information (source_url).
-    Provide a clear explanation of why this article was selected over the others.
+    
+    Before selecting, check the source URL to confirm the article exists there.
+    If an author name is provided, verify it matches the actual author on the source page. If the author doesn't match or cannot be found on the page, do not include an author name or select a different article.
+    Only select articles that can be verified through the source URL.
+    If an article cannot be verified, select a different one.
+    Return the result as valid JSON format with proper string quotes for all keys and values.
   expected_output: >
-    The single best news article selected from the list, with a clear explanation of why it was chosen.
-    Include all article information: title, source name, source URL, publication date, author, and full content.
-    Also include a brief rationale explaining why this article was selected over the alternatives.
+    Return a valid JSON object with this exact structure:
+    {
+      "article": {
+        "title": "Article title",
+        "source_name": "Publication name",
+        "source_url": "URL or null",
+        "publication_date": "Date or null",
+        "author": "Author name or null",
+        "content": "Full article text"
+      },
+      "selection_rationale": "Explanation of why this article was selected"
+    }
+    All keys must be in double quotes. All string values must be in double quotes. Use null for optional fields that are not available.
+    Only include author if you can verify it exists on the source page.
   agent: article_picker
   context:
     - find_news_articles
@@ -43,13 +64,42 @@ adapt_news_article:
     Ensure the final text is approximately {length} words.
     Make the content engaging and educational, suitable for language learning reading materials.
     Preserve the main facts, context, and important details from the original article.
-    Always include the original source information (source name, URL, publication date) with the adapted content.
+    
+    At the beginning of the output, before the article content, include a source section with:
+    - Source name (publication/news outlet name)
+    - Source URL as a clickable markdown link
+    - Publication date
+    - Author name (only if it was verified in the previous step)
+    
+    Structure the output with clear markdown sections and headings for better readability.
   expected_output: >
     A rewritten version of the selected news article adapted for {level} level learners in {language}.
     The text should be approximately {length} words, use appropriate vocabulary for the level, and maintain all key information from the original article.
     The content should be clear, engaging, and suitable as educational reading material.
-    Include the original source attribution: source name, source URL, and publication date.
+    The output must start with a source section containing: source name, source URL (as markdown link), publication date, and author (if available).
   agent: paragraph_writer
   context:
     - pick_best_article
   output_file: output/adapted_reading_material.md
+
+add_vocabulary:
+  description: >
+    Extract vocabulary words from the adapted reading material that are appropriate for {level} level learners in {language}.
+    
+    Only include words at or above the {level} level. Exclude all words below {level}.
+    Exclude proper nouns and words that {level} learners already know.
+    Only include words that genuinely challenge {level} level learners.
+    
+    For each word, provide definition in {language} and example sentence.
+    
+    Replace each vocabulary word in the article text with [word:definition] format for clickable linking.
+    Organize the vocabulary section with clear markdown headings and structure for easy navigation.
+  expected_output: >
+    Adapted reading material with vocabulary words replaced with [word:definition] format.
+    Vocabulary section appended with {level}-appropriate words that match the difficulty level, each with definition and example.
+    No words below the target level should be included.
+  agent: paragraph_writer
+  context:
+    - adapt_news_article
+  output_file: output/adapted_reading_material.md
+

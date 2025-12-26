@@ -60,6 +60,16 @@ This example, unmodified, will run the create a `report.md` file with the output
 
 The opad Crew is composed of multiple AI agents, each with unique roles, goals, and tools. These agents collaborate on a series of tasks, defined in `config/tasks.yaml`, leveraging their collective skills to achieve complex objectives. The `config/agents.yaml` file outlines the capabilities and configurations of each agent in your crew.
 
+## Changelog
+
+### Version 0.1.0
+- Improved JSON output format validation
+- Added source URL and author verification
+- Enhanced level-based vocabulary filtering
+- Improved markdown section structure
+- Added Next.js web viewer for reading materials
+- Implemented interactive vocabulary click feature
+
 ## Support
 
 For support, questions, or feedback regarding the Opad Crew or crewAI.

@@ -14,8 +14,8 @@ def run():
     Run the reading material creator crew.
     """
     inputs = {
-        'language': 'English',
-        'level': 'C1',
+        'language': 'German',
+        'level': 'B2',
         'length': '500',
         'topic': 'Estimation of group A in football World-Cup 2026'
     }
