@@ -1,107 +1,141 @@
-# Quelle
-
-- **Quelle:** Transfermarkt.de  
-- **URL:** [https://www.transfermarkt.de/fifa-verkundet-deutsche-spielorte-bei-der-wm-zwei-partien-bis-kurz-vor-mitternacht/view/news/463876](https://www.transfermarkt.de/fifa-verkundet-deutsche-spielorte-bei-der-wm-zwei-partien-bis-kurz-vor-mitternacht/view/news/463876)  
-- **Veröffentlichungsdatum:** 12. April 2024  
-- **Autor:** Transfermarkt News Redaktion  
-
----
-
-# WM 2026: FIFA gibt Spielorte für deutsche Gruppenspiele bekannt
-
-Die deutsche Nationalmannschaft bestreitet ihre Gruppenspiele bei der WM 2026 in Houston, Toronto und in der Endspiel-Arena in East Rutherford. Die FIFA hat jetzt die konkreten Spielorte für die Gruppenphase [verkündet:öffentlich bekanntmachen]. Insgesamt werden bei der WM 2026 48 Teams in zwölf [Vierergruppen:Gruppe mit vier Teams] gegeneinander [antreten:bei einem Wettbewerb teilnehmen]. Die Gruppen werden in den USA, Kanada und Mexiko verteilt, die als [Ko-Gastgeber:mehrere Länder oder Organisationen organisieren gemeinsam ein Ereignis] [fungieren:eine bestimmte Funktion ausüben oder eine Rolle übernehmen]. 
-
-Für Gruppe A wird [prognostiziert:voraussagen, vermuten, wie sich etwas entwickelt], dass starke Mannschaften [aufeinandertreffen:sich begegnen, zusammentreffen], die [vielfach:mehrmals, häufig] schon bei vorherigen Turnieren für [Spannung:großes Interesse und Nervosität, weil man nicht weiß, wie etwas ausgeht] sorgten. Experten [schätzen:annehmen, vermuten, wie etwas sein wird], dass neben der Vorbereitung auf die [lokale:zu einem bestimmten Ort gehörend] Spielstätte und klimatische Bedingungen auch die [Reiserouten:festgelegte Wege für eine Reise] eine entscheidende Rolle bei der [Leistungsfähigkeit:Fähigkeit, Leistung zu bringen, besonders körperlich oder geistig] der Mannschaften spielen werden. 
-
-Aufgrund der [Ausweitung:Vergrößerung oder Erweiterung eines Bereichs] des Turniers auf 48 Teams ist die Qualifikation für Gruppe A besonders hart [umkämpft:stark um eine Sache kämpfen]. Während sich die genauen Teams noch qualifizieren müssen, wird von Fußballfachleuten ein spannendes [Kopf-an-Kopf-Rennen:Wettkampf, bei dem mehrere Teilnehmer fast gleichauf sind] erwartet. Die FIFA plant zudem, die [Spieltagsgestaltung:Plan, wie die Tage mit Spielen organisiert werden] so zu [optimieren:etwas möglichst wirkungsvoll oder gut machen], dass maximale Zuschauerzahlen Deutschlands und anderer europäischer Teams erreicht werden können. Damit soll der Fußball in Nordamerika ein weiteres Mal stark in den [Fokus:Blickpunkt; Aufmerksamkeit auf etwas richten] rücken.
+## 출처  
+- 출처: 헬스포커스  
+- URL: [https://www.healthfocus.co.kr/news/articleView.html?idxno=207811](https://www.healthfocus.co.kr/news/articleView.html?idxno=207811)  
+- 게재일: 2025-12-29  
+- 저자: 장영식  
 
 ---
 
-**Quelle:** Transfermarkt.de  
-**URL:** [https://www.transfermarkt.de/fifa-verkundet-deutsche-spielorte-bei-der-wm-zwei-partien-bis-kurz-vor-mitternacht/view/news/463876](https://www.transfermarkt.de/fifa-verkundet-deutsche-spielorte-bei-der-wm-zwei-partien-bis-kurz-vor-mitternacht/view/news/463876)  
-**Veröffentlichungsdatum:** 12. April 2024  
-**Autor:** Transfermarkt News Redaktion  
+# 신경섬유종 1형에 대한 아탈루렌 치료의 새로운 가능성 모색
+
+최근 서울아산병원 의학유전학센터 이범희 교수를 주축으로 한 국내 연구진이 신경섬유종 1형(Neurofibromatosis type 1, NF1) 환자 일부에게 아탈루렌(Ataluren) 투여가 유의미한 치료 효과를 나타낼 수 있음을 실험적으로 입증하여 의료계의 주목을 받고 있다. 신경섬유종 1형은 주로 유전자 구조의 이상, 즉 돌연변이로 인해 중추신경계, 골격계, 그리고 피부에 다양한 기형 및 합병증을 유발하는 대표적인 선천성 희귀질환으로 분류된다. 유전자 염기서열 내 [넌센스 돌연변이:단백질 합성을 조기에 멈추게 하는 유전자의 돌연변이]가 전체 환자의 약 30%에서 발견되며, 이로 인해 정상 단백질 생성이 중단되고 다양한 임상적 증상이 발생한다.
+
+이 연구에서 핵심적으로 다뤄진 아탈루렌은 [넌센스 돌연변이:단백질 합성을 조기에 멈추게 하는 유전자의 돌연변이]로 인해 발생하는 단백질 합성 중단 현상을 우회적으로 복원시키는 기능을 하는 소분자 화합물로, 이전까지 특정 희귀 유전 질환에서만 제한적으로 활용되어 왔다. 서울아산병원 연구진은 신경섬유종 1형 환자에서 실제로 아탈루렌이 돌연변이된 mRNA 읽기에 개입하여 단백질 생성을 재개함으로써 세포 및 동물 모델 수준 모두에서 의미 있는 치료적 개선을 보임을 실험적으로 확인하였다.
+
+이범희 교수는 공식 언론 인터뷰를 통해 “이번 연구 결과는 NF1 환자 맞춤형 [정밀의료:환자의 유전·분자 정보를 바탕으로 한 개인 최적화 의료] 구현이라는 관점에서 한 단계 [도약:상태가 한층 발전하여 오르는 일]을 의미한다. 환자의 개인별 돌연변이 유형을 유전학적으로 분석하여 가장 적합한 [분자교정:세포 수준에서 변이 유전자를 수정하는 치료 방법] 치료를 모색하는 접근 방식의 필요성을 입증했다”고 밝혔다. 실제로 이번 연구에서 확인된 아탈루렌의 효능은 기존 치료 전략이 미치지 못했던 영역, 즉 [넌센스 돌연변이:단백질 합성을 조기에 멈추게 하는 유전자의 돌연변이] 환자 대상의 [표적 치료:질환의 원인 분자나 유전자만을 겨냥해 작용하는 치료] 가능성을 열었다는 점에서 전문의들로부터 높은 평가를 받고 있다.
+
+아울러 연구진은 “향후 환자규모를 확대해 임상시험을 거치고, 약물의 유효성 및 안정성에 대한 [다각적:여러 각도에서 다양한 관점으로] 평가가 반드시 동반되어야 한다”고 강조했다. 신경섬유종 1형 환자 및 가족들은 이번 연구를 통해 그동안 대안이 부족했던 [난치성:치료가 매우 어려운] 유전질환에 대한 새로운 희망을 품고 있으며, [재현력:동일 조건에서 같은 결과를 다시 얻을 수 있는 능력] 있는 맞춤형 치료전략이 본격적으로 현실화될 경우 삶의 질이 [획기적으로:기존과 완전히 다르게 혁신적으로] 개선될 수 있을 것으로 기대감을 나타내고 있다.
+
+이번 연구의 [의의:가치와 의미]는 전통적인 증상 완화 중심의 치료를 넘어 분자 수준의 [병인:질환의 발생 원인] 교정, 즉 유전정보에 기반한 [정밀 치료법:세밀한 유전·분자 정보를 바탕으로 한 맞춤 치료 방법] 적용 가능성을 구체적으로 제시하였다는 점에 있다. 의료계 일각에서는 이러한 치료법이 향후 [유전체 편집:유전자 전체의 특정 부분을 바꾸거나 고치는 기술], [RNA교정:RNA 수준에서 유전정보를 조작하는 치료 기술], 또는 첨단 [약물화학:신약 발전 연구에서의 과학] 분야 등에서의 [융합연구:둘 이상의 이질적 학문이나 기술을 결합하는 연구]로 활발히 이어질 거라는 [관측:미래나 사태를 예측·전망함]도 제기된다. 한편, 실제 임상 현장에 도입하기 전 약물의 장기적 [안전성:오랜 시간 사용해도 해롭지 않은 성질]과 비용 [효율성:투입 대비 산출이 뛰어남]까지 [다각적으로:여러 방향과 관점에서] 검토해야 한다는 목소리 또한 커지고 있다.
+
+전체적으로 신경섬유종 1형은 다른 유전 질환들과 마찬가지로 [광범위한:아주 넓은 범위에 걸쳐 있는], 임상적 [이질성:동일 질환 내에 증상이나 원인이 매우 다양한 특성]과 유전자 수준의 [복잡성:여러 요소가 얽혀있는 정도]를 보이지만, 이번 아탈루렌 관련 연구처럼 환자 맞춤형 유전자 교정 치료법의 개발이 [활성화:적극적으로 추진되고 시행됨]될 경우, 기존의 치료 한계를 효과적으로 [극복:장애물이나 어려움을 이겨냄]하는 사례로 자리 잡을 가능성이 높다. 미래 [정밀의학:유전자·분자 정보 등을 활용한 맞춤형 첨단의학]의 [구체적:실제로 실현되어 모양이 분명한] 실현방향을 [모색:새로운 방법이나 대안을 찾음]하는 데 있어 연구진의 이번 성과는 큰 의미를 갖고 있다.
 
 ---
 
-# B2-Vokabular mit Definitionen und Beispielsätzen
+## C2 수준 어휘 및 예문
 
-## 1. verkünden  
-**Definition:** öffentlich bekanntmachen  
-**Beispiel:** Die FIFA hat die Austragungsorte für die WM-Spiele offiziell verkündet.
+### 1. 넌센스 돌연변이  
+- 정의: 단백질 합성을 조기에 멈추게 하는 유전자의 돌연변이  
+- 예문: 넌센스 돌연변이는 정상적인 단백질 생산을 중단시켜 질환을 유발한다.
 
-## 2. Vierergruppe  
-**Definition:** Gruppe mit vier Teams  
-**Beispiel:** In jeder Vierergruppe spielen die Teams zunächst gegeneinander.
+### 2. 정밀의료  
+- 정의: 환자의 유전·분자 정보를 바탕으로 한 개인 최적화 의료  
+- 예문: 정밀의료의 발전으로 질병의 원인을 세밀하게 분석하여 맞춤 치료가 가능해졌다.
 
-## 3. antreten  
-**Definition:** bei einem Wettbewerb teilnehmen  
-**Beispiel:** Die Mannschaften treten gegeneinander an, um ins Achtelfinale zu kommen.
+### 3. 도약  
+- 정의: 상태가 한층 발전하여 오르는 일  
+- 예문: 이번 발견은 진단 기술의 도약을 이끌었다.
 
-## 4. Ko-Gastgeber  
-**Definition:** mehrere Länder oder Organisationen organisieren gemeinsam ein Ereignis  
-**Beispiel:** USA, Kanada und Mexiko fungieren 2026 als Ko-Gastgeber der WM.
+### 4. 분자교정  
+- 정의: 세포 수준에서 변이 유전자를 수정하는 치료 방법  
+- 예문: 분자교정 기술의 등장으로 유전성 질환 치료가 현실이 되고 있다.
 
-## 5. fungieren  
-**Definition:** eine bestimmte Funktion ausüben oder eine Rolle übernehmen  
-**Beispiel:** Er fungiert als Trainer der U21-Nationalmannschaft.
+### 5. 표적 치료  
+- 정의: 질환의 원인 분자나 유전자만을 겨냥해 작용하는 치료  
+- 예문: 표적 치료는 부작용을 줄이면서 효과적으로 암세포를 공격한다.
 
-## 6. prognostizieren  
-**Definition:** voraussagen, vermuten, wie sich etwas entwickelt  
-**Beispiel:** Experten prognostizieren spannende Spiele in Gruppe A.
+### 6. 다각적  
+- 정의: 여러 각도에서 다양한 관점으로  
+- 예문: 연구 결과는 다각적 분석을 통해 신뢰성을 높였다.
 
-## 7. aufeinandertreffen  
-**Definition:** sich begegnen, zusammentreffen  
-**Beispiel:** In dieser Gruppe werden viele Topteams aufeinandertreffen.
+### 7. 난치성  
+- 정의: 치료가 매우 어려운  
+- 예문: 난치성 질환에 대한 신약 개발이 시급하다.
 
-## 8. vielfach  
-**Definition:** mehrmals, häufig  
-**Beispiel:** Diese Mannschaft hat sich vielfach für das Viertelfinale qualifiziert.
+### 8. 재현력  
+- 정의: 동일 조건에서 같은 결과를 다시 얻을 수 있는 능력  
+- 예문: 실험의 재현력이 높아야 결과가 과학적으로 인정받는다.
 
-## 9. Spannung  
-**Definition:** großes Interesse und Nervosität, weil man nicht weiß, wie etwas ausgeht  
-**Beispiel:** Die Spannung im Stadion war spürbar, als das Elfmeterschießen begann.
+### 9. 획기적으로  
+- 정의: 기존과 완전히 다르게 혁신적으로  
+- 예문: 신기술 도입으로 치료 성과가 획기적으로 개선되었다.
 
-## 10. schätzen  
-**Definition:** annehmen, vermuten, wie etwas sein wird  
-**Beispiel:** Ich schätze, dass die Tickets bis Ende der Woche ausverkauft sind.
+### 10. 의의  
+- 정의: 가치와 의미  
+- 예문: 이번 연구의 의의는 신약 개발의 새로운 방향을 제시했다는 데 있다.
 
-## 11. lokal  
-**Definition:** zu einem bestimmten Ort gehörend  
-**Beispiel:** Die lokalen Wetterbedingungen beeinflussen das Spiel.
+### 11. 병인  
+- 정의: 질환의 발생 원인  
+- 예문: 병인을 분자 수준에서 규명하는 것이 치료 개발에 필수적이다.
 
-## 12. Reiseroute  
-**Definition:** festgelegte Wege für eine Reise  
-**Beispiel:** Die Reiseroute der Mannschaft geht durch mehrere Städte.
+### 12. 정밀 치료법  
+- 정의: 세밀한 유전·분자 정보를 바탕으로 한 맞춤 치료 방법  
+- 예문: 정밀 치료법은 기존의 획일적인 치료 방식의 한계를 극복할 수 있다.
 
-## 13. Leistungsfähigkeit  
-**Definition:** Fähigkeit, Leistung zu bringen, besonders körperlich oder geistig  
-**Beispiel:** Nach dem langen Flug war die Leistungsfähigkeit der Spieler beeinträchtigt.
+### 13. 유전체 편집  
+- 정의: 유전자 전체의 특정 부분을 바꾸거나 고치는 기술  
+- 예문: 유전체 편집 기술은 희귀 유전 질환 치료의 핵심이 된다.
 
-## 14. Ausweitung  
-**Definition:** Vergrößerung oder Erweiterung eines Bereichs  
-**Beispiel:** Die Ausweitung des Turniers bringt neue Herausforderungen.
+### 14. RNA교정  
+- 정의: RNA 수준에서 유전정보를 조작하는 치료 기술  
+- 예문: RNA교정은 유전 질환의 새로운 치료 대안으로 주목받고 있다.
 
-## 15. umkämpft  
-**Definition:** stark um eine Sache kämpfen  
-**Beispiel:** Das Spiel um den ersten Platz war sehr umkämpft.
+### 15. 약물화학  
+- 정의: 신약 발전 연구에서의 과학  
+- 예문: 약물화학은 새로운 치료제의 원리와 성능을 결정하는 중요한 분야이다.
 
-## 16. Kopf-an-Kopf-Rennen  
-**Definition:** Wettkampf, bei dem mehrere Teilnehmer fast gleichauf sind  
-**Beispiel:** Es gab ein spannendes Kopf-an-Kopf-Rennen um den Gruppensieg.
+### 16. 융합연구  
+- 정의: 둘 이상의 이질적 학문이나 기술을 결합하는 연구  
+- 예문: 융합연구를 통해 의학과 공학이 상승효과를 낼 수 있다.
 
-## 17. Spieltagsgestaltung  
-**Definition:** Plan, wie die Tage mit Spielen organisiert werden  
-**Beispiel:** Die Spieltagsgestaltung wird an die Zeitverschiebung angepasst.
+### 17. 관측  
+- 정의: 미래나 사태를 예측·전망함  
+- 예문: 전문가들은 향후 치료법의 발전을 낙관적으로 관측하고 있다.
 
-## 18. optimieren  
-**Definition:** etwas möglichst wirkungsvoll oder gut machen  
-**Beispiel:** Die Trainer versuchen, die Trainingseinheiten zu optimieren.
+### 18. 안전성  
+- 정의: 오랜 시간 사용해도 해롭지 않은 성질  
+- 예문: 신약은 임상시험을 통해 안전성이 반드시 입증되어야 한다.
 
-## 19. Fokus  
-**Definition:** Blickpunkt; Aufmerksamkeit auf etwas richten  
-**Beispiel:** Die Medien legen ihren Fokus auf die Topmannschaften des Turniers.
+### 19. 효율성  
+- 정의: 투입 대비 산출이 뛰어남  
+- 예문: 의료 보험 적용 여부는 약물의 효율성 평가에 따라 결정된다.
+
+### 20. 다각적으로  
+- 정의: 여러 방향과 관점에서  
+- 예문: 문제를 다각적으로 접근해야 근본적 해결이 가능하다.
+
+### 21. 광범위한  
+- 정의: 아주 넓은 범위에 걸쳐 있는  
+- 예문: 광범위한 유전자 검사가 치료 전략 수립에 도움을 준다.
+
+### 22. 이질성  
+- 정의: 동일 질환 내에 증상이나 원인이 매우 다양한 특성  
+- 예문: 임상적 이질성은 맞춤 치료 개발의 주요 동기이다.
+
+### 23. 복잡성  
+- 정의: 여러 요소가 얽혀있는 정도  
+- 예문: 유전자의 복잡성 때문에 연구가 더딜 수 있다.
+
+### 24. 활성화  
+- 정의: 적극적으로 추진되고 시행됨  
+- 예문: 신약 개발 프로젝트가 정부 지원으로 활성화되고 있다.
+
+### 25. 극복  
+- 정의: 장애물이나 어려움을 이겨냄  
+- 예문: 연구진은 기존 치료법의 한계를 극복할 방안을 제시했다.
+
+### 26. 정밀의학  
+- 정의: 유전자·분자 정보 등을 활용한 맞춤형 첨단의학  
+- 예문: 정밀의학은 차세대 의료 패러다임으로 부상하고 있다.
+
+### 27. 구체적  
+- 정의: 실제로 실현되어 모양이 분명한  
+- 예문: 구체적 임상 근거가 치료법 승인에 필요하다.
+
+### 28. 모색  
+- 정의: 새로운 방법이나 대안을 찾음  
+- 예문: 연구진은 신약 개발을 위한 다양한 전략을 모색하고 있다.
 
 ---
 
-**Hinweis:** In der obigen Artikelversion wurden alle B2-Vokabeln im Text im [Wort:Definition] Format "verlinkt", damit Lernende den Wortschatz bequem nachschlagen können.
+**각 어휘는 기사 본문에서 [어휘:정의] 형식으로 표시되었습니다.**

@@ -16,10 +16,10 @@ export default function MarkdownViewer({ content }: { content: string }) {
     }))
   }
 
-  // [word:meaning] 패턴을 찾아서 처리
+  // Find and process [word:meaning] pattern
   const hasWordPattern = /\[([^\]]+):([^\]]+)\]/.test(content)
   
-  // 마크다운 렌더링 후 [word:meaning] 패턴을 클릭 가능한 요소로 변환
+  // Convert [word:meaning] pattern to clickable elements after markdown rendering
   useEffect(() => {
     if (!containerRef.current || !hasWordPattern) return
 
@@ -41,7 +41,7 @@ export default function MarkdownViewer({ content }: { content: string }) {
           matches.forEach((match) => {
             if (match.index === undefined) return
 
-            // 이전 텍스트 추가
+            // Add previous text
             if (match.index > lastIndex) {
               fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)))
             }
@@ -50,7 +50,7 @@ export default function MarkdownViewer({ content }: { content: string }) {
             const meaning = match[2]
             wordsMapRef.current.set(word, meaning)
 
-            // 단어 span
+            // Create word span
             const wordSpan = document.createElement('span')
             wordSpan.className = 'vocab-word'
             wordSpan.textContent = word
@@ -65,7 +65,7 @@ export default function MarkdownViewer({ content }: { content: string }) {
             lastIndex = (match.index || 0) + match[0].length
           })
 
-          // 마지막 텍스트 추가
+          // Add remaining text
           if (lastIndex < text.length) {
             fragment.appendChild(document.createTextNode(text.substring(lastIndex)))
           }
@@ -73,7 +73,7 @@ export default function MarkdownViewer({ content }: { content: string }) {
           parent.replaceChild(fragment, node)
         }
       } else {
-        // 자식 노드 재귀 처리
+        // Recursively process child nodes
         const children = Array.from(node.childNodes)
         children.forEach(child => {
           if (child.nodeName !== 'SCRIPT' && child.nodeName !== 'STYLE') {
@@ -86,7 +86,7 @@ export default function MarkdownViewer({ content }: { content: string }) {
     processNode(containerRef.current)
   }, [content, hasWordPattern])
 
-  // definitions 변경 시 정의 표시/숨김 업데이트
+  // Update definition visibility when definitions change
   useEffect(() => {
     if (!containerRef.current) return
 
@@ -98,13 +98,13 @@ export default function MarkdownViewer({ content }: { content: string }) {
 
       const isVisible = definitions[word] || false
       
-      // 기존 정의 제거
+      // Remove existing definition
       const existingDef = span.nextElementSibling
       if (existingDef && existingDef.classList.contains('word-definition')) {
         existingDef.remove()
       }
 
-      // 새 정의 추가
+      // Add new definition
       if (isVisible) {
         const defSpan = document.createElement('span')
         defSpan.className = 'word-definition'

@@ -8,16 +8,31 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // output 폴더의 마크다운 파일 읽기
-    fetch('/api/article')
-      .then(res => res.text())
+    // Try to fetch from public folder first (works on Vercel)
+    // Fallback to API route for local development
+    fetch('/adapted_reading_material.md')
+      .then(res => {
+        if (res.ok) {
+          return res.text()
+        }
+        throw new Error('File not found in public folder')
+      })
       .then(text => {
         setContent(text)
         setLoading(false)
       })
       .catch(() => {
-        setContent('# No article found\n\nPlease run the crewAI to generate an article first.')
-        setLoading(false)
+        // Fallback: Try API route (for local development)
+        fetch('/api/article')
+          .then(res => res.text())
+          .then(text => {
+            setContent(text)
+            setLoading(false)
+          })
+          .catch(() => {
+            setContent('# No article found\n\n**For local development:**\nRun: `crewai run` in the opad project\n\n**For Vercel deployment:**\nCopy the output file to web/public/adapted_reading_material.md')
+            setLoading(false)
+          })
       })
   }, [])
 

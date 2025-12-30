@@ -1,16 +1,17 @@
 import { readFile } from 'fs/promises'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { join } from 'path'
 import { NextResponse } from 'next/server'
 
 export async function GET() {
   try {
-    // output 폴더의 마크다운 파일 읽기
-    // 여러 경로 시도
+    // Try to read from output folder (for local development)
+    // Fallback to public folder (for Vercel deployment)
     const possiblePaths = [
-      join(process.cwd(), '..', 'output', 'adapted_reading_material.md'), // web/에서 실행 시
-      join(process.cwd(), 'output', 'adapted_reading_material.md'), // opad/에서 실행 시
-      '/Users/seung-gu/projects/opad/output/adapted_reading_material.md', // 절대 경로
+      // Local development: output folder (priority)
+      join(process.cwd(), '..', 'output', 'adapted_reading_material.md'),
+      join(process.cwd(), 'output', 'adapted_reading_material.md'),
+      // Vercel/production: public folder (fallback)
+      join(process.cwd(), 'public', 'adapted_reading_material.md'),
     ]
 
     let content = ''
@@ -19,7 +20,7 @@ export async function GET() {
     for (const filePath of possiblePaths) {
       try {
         content = await readFile(filePath, 'utf-8')
-        break // 성공하면 루프 종료
+        break // Exit loop on success
       } catch (error: any) {
         lastError = error
         continue
@@ -37,7 +38,7 @@ export async function GET() {
     })
   } catch (error: any) {
     return new NextResponse(
-      `# Article not found\n\nError: ${error.message}\n\nTried paths:\n- ${join(process.cwd(), '..', 'output', 'adapted_reading_material.md')}\n- ${join(process.cwd(), 'output', 'adapted_reading_material.md')}\n\nPlease generate an article first.\n\nRun: \`crewai run\` in the opad project.`,
+      `# Article not found\n\nPlease generate an article first.\n\n**For local development:**\nRun: \`crewai run\` in the opad project\n\n**For Vercel deployment:**\nCopy the output file to web/public/adapted_reading_material.md`,
       {
         status: 404,
         headers: {
