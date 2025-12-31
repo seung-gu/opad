@@ -2,65 +2,85 @@
 
 ## Source Information
 
-- **Source Name:** Investopedia  
-- **Source URL:** [https://www.investopedia.com/gold-prices-record-highs-2026-outlook-11871125](https://www.investopedia.com/gold-prices-record-highs-2026-outlook-11871125)  
-- **Publication Date:** 2025-12-28  
-- **Author:** Adam Shilling  
+- **Source name:** Goldman Sachs  
+- **Source URL:** [https://www.goldmansachs.com/insights/articles/copper-prices-forecast-to-decline-from-record-highs-in-2026](https://www.goldmansachs.com/insights/articles/copper-prices-forecast-to-decline-from-record-highs-in-2026)  
+- **Publication date:** 2025-12-18  
+- **Author:** Not specified  
 
 ---
 
-# Gold Prices Soared This Year. Will 2026 Bring More Record Highs?
+# Copper Prices Expected to Decline in 2026 but Remain Strong Long-Term
 
-The price of gold, driven by a [confluence:a situation in which two or more things come together to produce a particular result] of factors, rallied to repeated new highs in 2025. Its appeal as a safe haven amid inflation fears, geopolitical uncertainty, and monetary policy shifts pushed investment demand sharply higher. Most analysts see the price of gold settling between $4,000 and $5,000 per troy ounce in 2026, although estimates vary widely depending on outlooks for interest rate moves, dollar strength, and global growth prospects.
+Goldman Sachs Research forecasts that copper prices will fall slightly in 2026, settling between $10,000 and $11,000 per metric ton. However, the institution also maintains a positive outlook for copper over the longer term due to persistent supply [constraints:Something that limits or restricts actions or progress]. These are combined with an ongoing surge in global demand related to the [electrification:The process of replacing systems that use fossil fuels with ones that use electricity] of industries and the expansion of [infrastructure:The basic systems and services, such as transport and power supplies, that a country or organization uses to work effectively].
 
-Federal Reserve policy easing has been a key factor in the gold rally, with expectations for rate cuts in 2026 supporting precious metals. At the same time, the U.S. dollar, which typically [inversely:in an opposite way; so that if one amount increases, the other decreases] correlates with gold, has weakened, making gold cheaper for holders of other currencies. Geopolitical tensions, including trade conflicts and regional instability, have further enhanced gold's status as a store of value.
+The analysis points out that copper prices reached their highest levels ever in 2025. Multiple factors contributed to this situation. Firstly, market [fundamentals:The most important underlying facts or principles about something] remained extremely tight, mainly driven by geopolitical instability and frequent disruptions in the supply chain. Additionally, the [transition:The process of changing from one condition or situation to another] to renewable energy led to a steady rise in copper consumption, as copper is a key raw material for building green energy systems.
 
-Gold investment vehicles such as ETFs have seen inflows that [underpin:to give support, strength, or a basic structure to something] the bullish outlook. Central banks have also continued to buy gold to [diversify:to add different types of things, in order to achieve variety and reduce risk] reserves away from the dollar.
+Looking ahead to 2026, Goldman Sachs researchers believe several market conditions will change. [Tariff:A tax imposed on imported or exported goods] tensions are expected to decrease, and supply chains should begin to stabilize. These developments are likely to prevent the extreme fluctuations in copper prices that were observed previously. Nevertheless, experts indicate that copper’s underlying importance shows no sign of weakening. As more countries pursue green energy strategies, the demand for copper wiring and other components is forecast to remain [robust:Strong and not likely to fail or weaken].
 
-However, risks include a faster-than-expected economic recovery that could prompt the Fed to tighten monetary policy again or a stronger dollar that could exert downward pressure on gold prices. Despite these risks, the longer-term [structural:relating to the way something is built or organized] drivers for gold—such as concerns over currency [debasement:the action of reducing the value or quality of something, especially a currency] and inflation—remain firmly in place.
+Despite this anticipated short-term [moderation:The process of becoming less extreme or intense] in prices, the long-term [prospects:The possibility or likelihood of some future event happening] for copper are considered strong. [Structural:Related to the way in which something is built or organized] demand is projected to stay high due to the global shift towards sustainable energy sources. Green technology, electric vehicle production, and widespread [electrification:The process of replacing systems that use fossil fuels with ones that use electricity] all require significant copper input, supporting price growth over the next decade.
 
-Given these factors, 2026 is expected to be a year of high [volatility:the quality of being likely to change suddenly and unexpectedly] for gold prices but with a general upward [trajectory:the way in which a process or event develops over a period of time] supported by economic uncertainties and geopolitical risks. Investors are advised to monitor critical support levels and [macroeconomic:relating to the whole economy, rather than particular companies, industries, etc.] policy shifts closely.
+Goldman Sachs analysts have warned, though, that without increased mining activity and broader recycling efforts, copper supplies could fall seriously short of demand by the late 2020s. The analysts expect substantial [deficits:The amount by which something, especially money or supply, is too small] unless the mining sector expands production aggressively and recycles copper more efficiently. Thus, policymakers and investors need to closely monitor developments in government [tariffs:A tax imposed on imported or exported goods] as well as the level of spending on [infrastructure:The basic systems and services, such as transport and power supplies, that a country or organization uses to work effectively], since these factors will have a major impact on copper prices.
 
----
+Furthermore, the analysts identify copper as a vital [indicator:Something that shows what a situation is like or how it is changing] of global economic health. As a widely used industrial [commodity:A raw material or product that can be bought and sold], copper’s price is often seen as a signal of changing economic trends, especially during periods of sustainability [transition:The process of changing from one condition or situation to another]. The year 2026 is predicted to be particularly significant for the copper market, as players across the industry will focus on managing the balance between reliable supply and strong demand.
 
-## Vocabulary (C1 Level and Above)
-
-### 1. confluence  
-**Definition:** A situation in which two or more things come together to produce a particular result.  
-**Example:** The [confluence:a situation in which two or more things come together to produce a particular result] of high consumer demand and supply shortages pushed prices up.
-
-### 2. inversely  
-**Definition:** In an opposite way; so that if one amount increases, the other decreases.  
-**Example:** Interest rates and bond prices usually move [inversely:in an opposite way; so that if one amount increases, the other decreases].
-
-### 3. underpin  
-**Definition:** To give support, strength, or a basic structure to something.  
-**Example:** These scientific discoveries [underpin:to give support, strength, or a basic structure to something] many modern technologies.
-
-### 4. diversify  
-**Definition:** To add different types of things, in order to achieve variety and reduce risk.  
-**Example:** Investors use mutual funds to [diversify:to add different types of things, in order to achieve variety and reduce risk] their portfolios.
-
-### 5. structural  
-**Definition:** Relating to the way something is built or organized.  
-**Example:** The company’s problems were not just temporary; they were [structural:relating to the way something is built or organized].
-
-### 6. debasement  
-**Definition:** The action of reducing the value or quality of something, especially a currency.  
-**Example:** Continuous money printing could lead to the [debasement:the action of reducing the value or quality of something, especially a currency] of the currency.
-
-### 7. volatility  
-**Definition:** The quality of being likely to change suddenly and unexpectedly.  
-**Example:** Financial [volatility:the quality of being likely to change suddenly and unexpectedly] makes investment planning challenging.
-
-### 8. trajectory  
-**Definition:** The way in which a process or event develops over a period of time.  
-**Example:** The company’s sales have followed an upward [trajectory:the way in which a process or event develops over a period of time] for three consecutive years.
-
-### 9. macroeconomic  
-**Definition:** Relating to the whole economy, rather than particular companies, industries, etc.  
-**Example:** Government officials considered the [macroeconomic:relating to the whole economy, rather than particular companies, industries, etc.] consequences of the new regulations.
+In summary, although copper prices are set to ease from their record highs in 2026, the overall outlook for the metal is favorable. The ongoing global commitment to [electrification:The process of replacing systems that use fossil fuels with ones that use electricity] and [infrastructure:The basic systems and services, such as transport and power supplies, that a country or organization uses to work effectively] development suggests that copper will play a critical role in the modern economy. As a result, all stakeholders, from governments to investors, should pay attention to shifts in both supply and demand to navigate the evolving market efficiently.
 
 ---
 
-Gold remains a central focus for investors seeking both growth and protection against uncertainty in the global economy. By understanding the complex factors influencing the market, learners and investors can better anticipate and respond to future developments.
+## C1-Level Vocabulary Section
+
+### 1. constraint
+**Definition:** Something that limits or restricts actions or progress.  
+**Example:** The company faced serious financial constraints while launching the new product.
+
+### 2. electrification
+**Definition:** The process of replacing systems that use fossil fuels with ones that use electricity.  
+**Example:** Electrification of public transportation is necessary to reduce pollution in cities.
+
+### 3. infrastructure
+**Definition:** The basic systems and services, such as transport and power supplies, that a country or organization uses to work effectively.  
+**Example:** Upgrading the country’s infrastructure is essential for economic development.
+
+### 4. fundamentals
+**Definition:** The most important underlying facts or principles about something.  
+**Example:** Investors should understand the fundamentals of the stock market before trading.
+
+### 5. transition
+**Definition:** The process of changing from one condition or situation to another.  
+**Example:** The transition from coal to renewable energy has been challenging for many countries.
+
+### 6. tariff / tariffs
+**Definition:** A tax imposed on imported or exported goods.  
+**Example:** The new tariffs on steel imports increased production costs for manufacturers.
+
+### 7. robust
+**Definition:** Strong and not likely to fail or weaken.  
+**Example:** Despite the economic downturn, the company’s profits remained robust.
+
+### 8. moderation
+**Definition:** The process of becoming less extreme or intense.  
+**Example:** Price moderation is expected after several years of rapid inflation.
+
+### 9. prospects
+**Definition:** The possibility or likelihood of some future event happening.  
+**Example:** The prospects for employment in renewable energy industries are excellent.
+
+### 10. structural
+**Definition:** Related to the way in which something is built or organized.  
+**Example:** Structural changes in the economy can affect job opportunities.
+
+### 11. deficits
+**Definition:** The amount by which something, especially money or supply, is too small.  
+**Example:** The country is facing large trade deficits due to increased imports.
+
+### 12. indicator
+**Definition:** Something that shows what a situation is like or how it is changing.  
+**Example:** Rising unemployment is often an indicator of economic problems.
+
+### 13. commodity
+**Definition:** A raw material or product that can be bought and sold.  
+**Example:** Gold is considered a safe-haven commodity during times of economic uncertainty.
+
+---
+
+This adapted article provides detailed information in accessible language and introduces C1 learners to crucial economic and sector-specific terminology within a relevant, real-world context. Vocabulary is embedded in the text in [word:definition] format to allow learners to review meanings seamlessly as they read.
