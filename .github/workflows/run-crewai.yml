@@ -30,6 +30,10 @@ jobs:
         run: |
           uv pip install --system crewai[tools]==1.7.2
 
+      - name: Install project
+        run: |
+          uv pip install --system -e .
+
       - name: Check input file
         run: |
           if [ ! -f input.json ]; then
