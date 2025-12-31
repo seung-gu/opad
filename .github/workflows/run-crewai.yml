@@ -30,10 +30,6 @@ jobs:
         run: |
           uv pip install --system crewai[tools]==1.7.2
 
-      - name: Install project
-        run: |
-          uv pip install --system -e .
-
       - name: Check input file
         run: |
           if [ ! -f input.json ]; then
@@ -45,6 +41,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          PYTHONPATH: ${{ github.workspace }}/src
         run: |
           python src/opad/main.py
 

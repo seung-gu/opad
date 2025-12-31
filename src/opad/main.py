@@ -2,12 +2,11 @@
 import sys
 import warnings
 import json
-import os
 from pathlib import Path
 
 from datetime import datetime
 
-from .crew import ReadingMaterialCreator
+from opad.crew import ReadingMaterialCreator
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
