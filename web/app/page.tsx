@@ -12,9 +12,11 @@ export default function Home() {
 
   const loadContent = () => {
     setLoading(true)
+    // Add timestamp to bypass cache
+    const timestamp = new Date().getTime()
     // Try to fetch from public folder first (works on Vercel)
     // Fallback to API route for local development
-    fetch('/adapted_reading_material.md')
+    fetch(`/adapted_reading_material.md?v=${timestamp}`)
       .then(res => {
         if (res.ok) {
           return res.text()
@@ -27,7 +29,7 @@ export default function Home() {
       })
       .catch(() => {
         // Fallback: Try API route (for local development)
-        fetch('/api/article')
+        fetch(`/api/article?t=${timestamp}`)
           .then(res => res.text())
           .then(text => {
             setContent(text)
