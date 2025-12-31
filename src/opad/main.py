@@ -7,7 +7,7 @@ from pathlib import Path
 
 from datetime import datetime
 
-from opad.crew import ReadingMaterialCreator
+from .crew import ReadingMaterialCreator
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
