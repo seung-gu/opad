@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import MarkdownViewer from '@/components/MarkdownViewer'
 import InputForm from '@/components/InputForm'
 
@@ -9,6 +9,8 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [showForm, setShowForm] = useState(false)
+  const [lastContent, setLastContent] = useState<string>('')
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const loadContent = () => {
     setLoading(true)
@@ -24,7 +26,17 @@ export default function Home() {
         throw new Error('Failed to fetch article')
       })
       .then(text => {
+        // Check if content has changed (new article generated)
+        if (text !== lastContent && lastContent !== '' && text !== '# No article found\n\nClick "Generate New Article" to create one.') {
+          setGenerating(false) // Stop generating state if new content detected
+          // Clear polling interval if content changed
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current)
+            pollIntervalRef.current = null
+          }
+        }
         setContent(text)
+        setLastContent(text)
         setLoading(false)
       })
       .catch(() => {
@@ -35,6 +47,13 @@ export default function Home() {
 
   useEffect(() => {
     loadContent()
+    
+    // Cleanup polling interval on unmount
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+      }
+    }
   }, [])
 
   const handleGenerate = async (inputs: {
@@ -60,18 +79,26 @@ export default function Home() {
       }
 
       // Show success message
-      alert('Article generation started! It will take a few minutes. The page will refresh automatically when ready.')
+      alert('Article generation started! It will take a few minutes. The page will update automatically when ready.')
 
-      // Poll for updated content (every 30 seconds)
-      const pollInterval = setInterval(() => {
+      // Poll for updated content (every 10 seconds for faster updates)
+      let pollCount = 0
+      const maxPolls = 120 // 10 seconds * 120 = 20 minutes max
+      
+      const interval = setInterval(() => {
+        pollCount++
         loadContent()
-      }, 30000)
-
-      // Stop polling after 10 minutes
-      setTimeout(() => {
-        clearInterval(pollInterval)
-        setGenerating(false)
-      }, 600000)
+        
+        // Stop polling after max attempts
+        if (pollCount >= maxPolls) {
+          clearInterval(interval)
+          pollIntervalRef.current = null
+          setGenerating(false)
+          alert('Article generation may still be in progress. Please refresh the page manually.')
+        }
+      }, 10000) // Poll every 10 seconds
+      
+      pollIntervalRef.current = interval
 
     } catch (error: any) {
       alert(`Error: ${error.message}`)
@@ -91,12 +118,20 @@ export default function Home() {
     <main className="min-h-screen p-8 max-w-4xl mx-auto">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">OPAD Reading Materials</h1>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
-        >
-          {showForm ? 'Hide Form' : 'Generate New Article'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={loadContent}
+            className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors"
+          >
+            Refresh
+          </button>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+          >
+            {showForm ? 'Hide Form' : 'Generate New Article'}
+          </button>
+        </div>
       </div>
 
       {showForm && (

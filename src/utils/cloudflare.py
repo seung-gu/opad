@@ -96,19 +96,25 @@ def download_from_cloud(cloud_path: str | None = None, local_path: Path | None =
     """
     s3_client = _get_s3_client()
     if not s3_client:
+        logger.warning("S3 client not available for download")
         return None
     
     cloud_path = cloud_path or DEFAULT_ARTICLE_PATH
+    logger.info(f"Downloading from R2: bucket={R2_BUCKET_NAME}, key={cloud_path}")
     
     try:
         if local_path is None:
             response = s3_client.get_object(Bucket=R2_BUCKET_NAME, Key=cloud_path)
-            return response['Body'].read().decode('utf-8')
+            content = response['Body'].read().decode('utf-8')
+            logger.info(f"Successfully downloaded {len(content)} bytes from R2")
+            return content
         else:
             local_path.parent.mkdir(parents=True, exist_ok=True)
             s3_client.download_file(R2_BUCKET_NAME, cloud_path, str(local_path))
+            logger.info(f"Successfully downloaded to {local_path}")
             return True
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error downloading from R2 (bucket={R2_BUCKET_NAME}, key={cloud_path}): {e}")
         return None
 
 

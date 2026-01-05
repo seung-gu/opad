@@ -13,22 +13,29 @@ export async function GET() {
     try {
       const projectRoot = join(process.cwd(), '..')
       const srcPath = join(projectRoot, 'src')
-      // Use JSON.stringify to safely escape the path
-      // Use logging instead of print for consistency
-      const pythonCode = `import sys; import logging; logging.basicConfig(level=logging.INFO, format='%(message)s', handlers=[logging.StreamHandler(sys.stdout)]); sys.path.insert(0, ${JSON.stringify(srcPath)}); from utils.cloudflare import download_from_cloud; content = download_from_cloud(); logging.info(content) if content else sys.exit(1)`
-      const { stdout } = await execAsync(`python3 -c ${JSON.stringify(pythonCode)}`, {
+      // Download from R2 using logging (outputs to stdout)
+      const pythonCode = `import sys; import logging; logging.basicConfig(level=logging.INFO, format='%(message)s', handlers=[logging.StreamHandler(sys.stdout)], force=True); sys.path.insert(0, ${JSON.stringify(srcPath)}); from utils.cloudflare import download_from_cloud; content = download_from_cloud(); logging.info(content) if content else (logging.error("ERROR: No content from R2"), sys.exit(1))`
+      const { stdout, stderr } = await execAsync(`python3 -c ${JSON.stringify(pythonCode)}`, {
         cwd: projectRoot,
         env: process.env,
       })
       
       if (stdout && stdout.trim()) {
-        return new NextResponse(stdout, {
+        console.log('Successfully downloaded from R2')
+        return new NextResponse(stdout.trim(), {
           headers: {
             'Content-Type': 'text/markdown',
           },
         })
+      } else {
+        console.warn('R2 download returned empty content')
       }
-    } catch (r2Error) {
+    } catch (r2Error: any) {
+      // Log the error for debugging
+      console.error('R2 download error:', r2Error.message)
+      if (r2Error.stderr) {
+        console.error('R2 download stderr:', r2Error.stderr)
+      }
       // R2 not available, fall through to local file
     }
 

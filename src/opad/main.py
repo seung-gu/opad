@@ -48,8 +48,10 @@ def run(inputs=None):
     try:
         logger.info("Starting crew execution...")
         result = ReadingMaterialCreator().crew().kickoff(inputs=inputs)
-        logger.info("\n\n=== READING MATERIAL CREATED ===\n\n")
-        logger.info(result.raw)
+        logger.info("=== READING MATERIAL CREATED ===")
+        # Log result.raw line by line to avoid formatting issues in Railway logs
+        for line in result.raw.split('\n'):
+            logger.info(line)
         
         # Upload to R2
         try:

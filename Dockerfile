@@ -40,7 +40,8 @@ COPY --from=builder /app /app
 # Expose port (Railway will set PORT env var)
 EXPOSE 3000
 
-# Start Next.js server on Railway's PORT (defaults to 3000 if not set)
+# Start Next.js server on Railway's PORT
+# Railway sets PORT environment variable, Next.js needs -p flag
 WORKDIR /app/web
 CMD sh -c "npx next start -p ${PORT:-3000}"
 
