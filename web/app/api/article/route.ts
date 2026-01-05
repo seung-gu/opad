@@ -32,12 +32,12 @@ export async function GET() {
   try {
     // Try R2 first (production)
     try {
-      console.log('=== R2 Download Attempt ===')
-      console.log('R2_BUCKET_NAME:', R2_BUCKET_NAME ? `set (${R2_BUCKET_NAME.substring(0, 5)}...)` : 'MISSING')
-      console.log('R2_ACCOUNT_ID:', R2_ACCOUNT_ID ? `set (${R2_ACCOUNT_ID.substring(0, 5)}...)` : 'MISSING')
-      console.log('R2_ACCESS_KEY_ID:', R2_ACCESS_KEY_ID ? 'set' : 'MISSING')
-      console.log('R2_SECRET_ACCESS_KEY:', R2_SECRET_ACCESS_KEY ? 'set' : 'MISSING')
-      console.log('DEFAULT_ARTICLE_PATH:', DEFAULT_ARTICLE_PATH)
+      console.error('=== R2 Download Attempt ===')
+      console.error('R2_BUCKET_NAME:', R2_BUCKET_NAME ? `set (${R2_BUCKET_NAME.substring(0, 5)}...)` : 'MISSING')
+      console.error('R2_ACCOUNT_ID:', R2_ACCOUNT_ID ? `set (${R2_ACCOUNT_ID.substring(0, 5)}...)` : 'MISSING')
+      console.error('R2_ACCESS_KEY_ID:', R2_ACCESS_KEY_ID ? 'set' : 'MISSING')
+      console.error('R2_SECRET_ACCESS_KEY:', R2_SECRET_ACCESS_KEY ? 'set' : 'MISSING')
+      console.error('DEFAULT_ARTICLE_PATH:', DEFAULT_ARTICLE_PATH)
       
       const s3Client = getR2Client()
       if (!s3Client) {
@@ -45,8 +45,8 @@ export async function GET() {
         throw new Error('R2 client not available - check environment variables')
       }
       
-      console.log('R2 client created successfully')
-      console.log('Attempting to download:', DEFAULT_ARTICLE_PATH)
+      console.error('R2 client created successfully')
+      console.error('Attempting to download:', DEFAULT_ARTICLE_PATH)
       
       const command = new GetObjectCommand({
         Bucket: R2_BUCKET_NAME,
@@ -54,19 +54,19 @@ export async function GET() {
       })
       
       const response = await s3Client.send(command)
-      console.log('R2 response received, status:', response.$metadata.httpStatusCode)
+      console.error('R2 response received, status:', response.$metadata.httpStatusCode)
       
       const content = await response.Body?.transformToString()
       
       if (content && content.length > 0) {
-        console.log('✅ Successfully downloaded from R2, content length:', content.length)
+        console.error('✅ Successfully downloaded from R2, content length:', content.length)
         return new NextResponse(content, {
           headers: {
             'Content-Type': 'text/markdown',
           },
         })
       } else {
-        console.warn('R2 download returned empty content')
+        console.error('R2 download returned empty content')
         throw new Error('R2 returned empty content')
       }
     } catch (r2Error: any) {
@@ -88,7 +88,7 @@ export async function GET() {
     for (const filePath of possiblePaths) {
       try {
         const content = await readFile(filePath, 'utf-8')
-        console.log('✅ Loaded from local file:', filePath)
+        console.error('✅ Loaded from local file:', filePath)
         return new NextResponse(content, {
           headers: {
             'Content-Type': 'text/markdown',
@@ -100,7 +100,7 @@ export async function GET() {
     }
 
     // No file found
-    console.warn('No article found in R2 or local files')
+    console.error('No article found in R2 or local files')
     return new NextResponse(
       `# No article found\n\nClick "Generate New Article" to create one.`,
       {
