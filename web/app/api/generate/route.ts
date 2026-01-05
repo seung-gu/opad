@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { exec } from 'child_process'
+import { spawn } from 'child_process'
 import { writeFile } from 'fs/promises'
 import { join } from 'path'
 
@@ -37,17 +37,35 @@ export async function POST(request: NextRequest) {
       PYTHONPATH: join(projectRoot, 'src'),
     }
 
-    exec(
-      `cd ${projectRoot} && python3 ${pythonScript} < /dev/null > /tmp/crewai.log 2>&1 &`,
-      { env },
-      (error, stdout, stderr) => {
-        if (error) {
-          console.error(`Python script error: ${error}`)
-          return
-        }
-        console.log('Python script started in background')
-      }
-    )
+    // Execute Python script in background with stdout/stderr visible in Railway logs
+    const childProcess = spawn('python3', [pythonScript], {
+      cwd: projectRoot,
+      env: env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true
+    })
+    
+    // Unref to allow parent process to exit
+    childProcess.unref()
+    
+    // Forward stdout/stderr to console so Railway can see the logs
+    childProcess.stdout.on('data', (data) => {
+      console.log(`[Python] ${data.toString()}`)
+    })
+    
+    childProcess.stderr.on('data', (data) => {
+      console.error(`[Python] ${data.toString()}`)
+    })
+    
+    childProcess.on('error', (error) => {
+      console.error(`Python script spawn error: ${error}`)
+    })
+    
+    childProcess.on('exit', (code) => {
+      console.log(`Python script exited with code ${code}`)
+    })
+    
+    console.log('Python script started in background')
 
     // Return immediately (async processing)
     return NextResponse.json({
