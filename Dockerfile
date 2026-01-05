@@ -33,7 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy built Next.js app
+# Copy everything from builder
 WORKDIR /app
 COPY --from=builder /app /app
 
