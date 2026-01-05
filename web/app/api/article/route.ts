@@ -14,7 +14,8 @@ export async function GET() {
       const projectRoot = join(process.cwd(), '..')
       const srcPath = join(projectRoot, 'src')
       // Use JSON.stringify to safely escape the path
-      const pythonCode = `import sys; sys.path.insert(0, ${JSON.stringify(srcPath)}); from utils.cloudflare import download_from_cloud; content = download_from_cloud(); print(content) if content else sys.exit(1)`
+      // Use logging instead of print for consistency
+      const pythonCode = `import sys; import logging; logging.basicConfig(level=logging.INFO, format='%(message)s', handlers=[logging.StreamHandler(sys.stdout)]); sys.path.insert(0, ${JSON.stringify(srcPath)}); from utils.cloudflare import download_from_cloud; content = download_from_cloud(); logging.info(content) if content else sys.exit(1)`
       const { stdout } = await execAsync(`python3 -c ${JSON.stringify(pythonCode)}`, {
         cwd: projectRoot,
         env: process.env,

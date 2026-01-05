@@ -1,8 +1,11 @@
 """Cloudflare R2 storage utilities."""
 
 import os
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 
 try:
@@ -32,7 +35,7 @@ DEFAULT_ARTICLE_PATH = f'{R2_DIRECTORY}/{ARTICLE_FILENAME}'
 def _get_s3_client():
     """Get S3 client for R2."""
     if not boto3 or not Config:
-        print(f"boto3 or Config not available: boto3={boto3}, Config={Config}")
+        logger.warning(f"boto3 or Config not available: boto3={boto3}, Config={Config}")
         return None
     
     try:
@@ -44,7 +47,7 @@ def _get_s3_client():
             config=Config(signature_version='s3v4')
         )
     except Exception as e:
-        print(f"Error creating S3 client: {e}")
+        logger.error(f"Error creating S3 client: {e}")
         return None
 
 
@@ -173,7 +176,7 @@ def upload_file_to_public_cloud(file_path: Path, cloud_path: str) -> bool:
         )
         return True
     except Exception as e:
-        print(f"Error uploading file to public cloud: {e}")
+        logger.error(f"Error uploading file to public cloud: {e}")
         return False
 
 
@@ -199,6 +202,6 @@ def list_cloud_files(prefix: str = '') -> list[str]:
                     files.append(obj['Key'])
         return files
     except Exception as e:
-        print(f"Error listing cloud files (bucket={R2_BUCKET_NAME}, prefix={prefix}): {e}")
+        logger.error(f"Error listing cloud files (bucket={R2_BUCKET_NAME}, prefix={prefix}): {e}")
         return []
 
