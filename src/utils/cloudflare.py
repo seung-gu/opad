@@ -66,6 +66,7 @@ def upload_to_cloud(file_path: Path | str, cloud_path: str | None = None) -> boo
         return False
     
     cloud_path = cloud_path or (file_path.name if isinstance(file_path, Path) else DEFAULT_ARTICLE_PATH)
+    logger.info(f"Uploading to R2: bucket={R2_BUCKET_NAME}, key={cloud_path}")
     
     try:
         if isinstance(file_path, str):
@@ -75,12 +76,16 @@ def upload_to_cloud(file_path: Path | str, cloud_path: str | None = None) -> boo
                 Body=file_path.encode('utf-8'),
                 ContentType='text/markdown'
             )
+            logger.info(f"Successfully uploaded {len(file_path)} bytes to R2 key: {cloud_path}")
         else:
             if not file_path.exists():
+                logger.error(f"File does not exist: {file_path}")
                 return False
             s3_client.upload_file(str(file_path), R2_BUCKET_NAME, cloud_path)
+            logger.info(f"Successfully uploaded file to R2 key: {cloud_path}")
         return True
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error uploading to R2 (bucket={R2_BUCKET_NAME}, key={cloud_path}): {e}")
         return False
 
 

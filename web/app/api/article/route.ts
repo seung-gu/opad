@@ -13,22 +13,36 @@ export async function GET() {
     try {
       const projectRoot = join(process.cwd(), '..')
       const srcPath = join(projectRoot, 'src')
-      // Download from R2 using logging (outputs to stdout)
-      const pythonCode = `import sys; import logging; logging.basicConfig(level=logging.INFO, format='%(message)s', handlers=[logging.StreamHandler(sys.stdout)], force=True); sys.path.insert(0, ${JSON.stringify(srcPath)}); from utils.cloudflare import download_from_cloud; content = download_from_cloud(); logging.info(content) if content else (logging.error("ERROR: No content from R2"), sys.exit(1))`
-      const { stdout, stderr } = await execAsync(`python3 -c ${JSON.stringify(pythonCode)}`, {
-        cwd: projectRoot,
-        env: process.env,
-      })
+      // Download from R2 - use print for content, logging for errors
+      const pythonCode = `import sys; import logging; logging.basicConfig(level=logging.ERROR, handlers=[logging.StreamHandler(sys.stderr)], force=True); sys.path.insert(0, ${JSON.stringify(srcPath)}); from utils.cloudflare import download_from_cloud; content = download_from_cloud(); sys.stdout.write(content) if content else (sys.stderr.write("ERROR: No content from R2\\n"), sys.exit(1))`
       
-      if (stdout && stdout.trim()) {
-        console.log('Successfully downloaded from R2')
-        return new NextResponse(stdout.trim(), {
-          headers: {
-            'Content-Type': 'text/markdown',
-          },
+      try {
+        const { stdout, stderr } = await execAsync(`python3 -c ${JSON.stringify(pythonCode)}`, {
+          cwd: projectRoot,
+          env: process.env,
+          maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large content
         })
-      } else {
-        console.warn('R2 download returned empty content')
+        
+        console.log('R2 download stdout length:', stdout?.length || 0)
+        if (stderr) {
+          console.error('R2 download stderr:', stderr)
+        }
+        
+        if (stdout && stdout.trim()) {
+          console.log('Successfully downloaded from R2, content length:', stdout.trim().length)
+          return new NextResponse(stdout.trim(), {
+            headers: {
+              'Content-Type': 'text/markdown',
+            },
+          })
+        } else {
+          console.warn('R2 download returned empty content')
+        }
+      } catch (execError: any) {
+        console.error('R2 download exec error:', execError.message)
+        console.error('R2 download stderr:', execError.stderr || 'none')
+        console.error('R2 download stdout:', execError.stdout || 'none')
+        throw execError
       }
     } catch (r2Error: any) {
       // Log the error for debugging
