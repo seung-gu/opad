@@ -38,14 +38,14 @@ export async function POST(request: NextRequest) {
     }
 
     exec(
-      `cd ${projectRoot} && python3 ${pythonScript}`,
+      `cd ${projectRoot} && python3 ${pythonScript} < /dev/null > /tmp/crewai.log 2>&1 &`,
       { env },
       (error, stdout, stderr) => {
         if (error) {
           console.error(`Python script error: ${error}`)
           return
         }
-        console.log('Python script completed')
+        console.log('Python script started in background')
       }
     )
 
