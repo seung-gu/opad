@@ -14,31 +14,22 @@ export default function Home() {
     setLoading(true)
     // Add timestamp to bypass cache
     const timestamp = new Date().getTime()
-    // Try to fetch from public folder first (works on Vercel)
-    // Fallback to API route for local development
-    fetch(`/adapted_reading_material.md?v=${timestamp}`)
+    // Use API route (works on Railway, Docker, and local development)
+    // API route fetches from R2 or falls back to local file
+    fetch(`/api/article?t=${timestamp}`)
       .then(res => {
         if (res.ok) {
           return res.text()
         }
-        throw new Error('File not found in public folder')
+        throw new Error('Failed to fetch article')
       })
       .then(text => {
         setContent(text)
         setLoading(false)
       })
       .catch(() => {
-        // Fallback: Try API route (for local development)
-        fetch(`/api/article?t=${timestamp}`)
-          .then(res => res.text())
-          .then(text => {
-            setContent(text)
-            setLoading(false)
-          })
-          .catch(() => {
-            setContent('# No article found\n\nClick "Generate New Article" to create one.')
-            setLoading(false)
-          })
+        setContent('# No article found\n\nClick "Generate New Article" to create one.')
+        setLoading(false)
       })
   }
 

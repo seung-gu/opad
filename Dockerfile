@@ -37,10 +37,10 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 WORKDIR /app
 COPY --from=builder /app /app
 
-# Expose port
+# Expose port (Railway will set PORT env var)
 EXPOSE 3000
 
-# Start Next.js server
+# Start Next.js server on Railway's PORT (defaults to 3000 if not set)
 WORKDIR /app/web
-CMD ["npm", "start"]
+CMD sh -c "next start -p ${PORT:-3000}"
 

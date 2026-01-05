@@ -9,10 +9,13 @@ const execAsync = promisify(exec)
 export async function GET() {
   try {
     // Try R2 first (production)
+    // In Docker/Railway: process.cwd() is /app/web, so ../src is /app/src
     try {
       const projectRoot = join(process.cwd(), '..')
-      const pythonCode = `import sys; sys.path.insert(0, '${projectRoot}/src'); from utils.cloudflare import download_from_cloud; content = download_from_cloud(); print(content) if content else sys.exit(1)`
-      const { stdout } = await execAsync(`python3 -c "${pythonCode}"`, {
+      const srcPath = join(projectRoot, 'src')
+      // Use JSON.stringify to safely escape the path
+      const pythonCode = `import sys; sys.path.insert(0, ${JSON.stringify(srcPath)}); from utils.cloudflare import download_from_cloud; content = download_from_cloud(); print(content) if content else sys.exit(1)`
+      const { stdout } = await execAsync(`python3 -c ${JSON.stringify(pythonCode)}`, {
         cwd: projectRoot,
         env: process.env,
       })
