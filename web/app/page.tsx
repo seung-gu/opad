@@ -26,21 +26,27 @@ export default function Home() {
         throw new Error('Failed to fetch article')
       })
       .then(text => {
-        // Check if content has changed (new article generated)
-        if (text !== lastContent && lastContent !== '' && text !== '# No article found\n\nClick "Generate New Article" to create one.') {
-          setGenerating(false) // Stop generating state if new content detected
-          // Clear polling interval if content changed
+        // Check if we got actual article content (not generating message)
+        const isGenerating = text.includes('Generating article...') || text.includes('Please wait')
+        const isNoArticle = text.includes('No article found') || text.includes('Please generate an article first')
+        
+        // If we got actual content (not generating/no article message), stop generating state
+        if (!isGenerating && !isNoArticle && text.trim().length > 50) {
+          setGenerating(false)
+          // Clear polling interval if we got actual content
           if (pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current)
             pollIntervalRef.current = null
           }
         }
+        
         setContent(text)
         setLastContent(text)
         setLoading(false)
       })
       .catch(() => {
-        setContent('# No article found\n\nClick "Generate New Article" to create one.')
+        // On error, show generating message instead of "No article found"
+        setContent('# Generating article...\n\nPlease wait. The article will appear here when ready.')
         setLoading(false)
       })
   }
@@ -55,6 +61,23 @@ export default function Home() {
       }
     }
   }, [])
+  
+  // Auto-poll when generating is true
+  useEffect(() => {
+    if (generating && !pollIntervalRef.current) {
+      const interval = setInterval(() => {
+        loadContent()
+      }, 10000) // Poll every 10 seconds
+      pollIntervalRef.current = interval
+    }
+    
+    return () => {
+      if (pollIntervalRef.current && !generating) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
+    }
+  }, [generating])
 
   const handleGenerate = async (inputs: {
     language: string

@@ -1,56 +1,82 @@
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { NextResponse } from 'next/server'
-import { exec } from 'child_process'
-import { promisify } from 'util'
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 
-const execAsync = promisify(exec)
+// R2 configuration
+const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || ''
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || ''
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || ''
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || ''
+const R2_DIRECTORY = 'public'
+const ARTICLE_FILENAME = 'adapted_reading_material.md'
+const DEFAULT_ARTICLE_PATH = `${R2_DIRECTORY}/${ARTICLE_FILENAME}`
+
+// Create S3 client for R2
+function getR2Client() {
+  if (!R2_BUCKET_NAME || !R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
+    return null
+  }
+  
+  return new S3Client({
+    region: 'auto',
+    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: R2_ACCESS_KEY_ID,
+      secretAccessKey: R2_SECRET_ACCESS_KEY,
+    },
+  })
+}
 
 export async function GET() {
   try {
     // Try R2 first (production)
-    // In Docker/Railway: process.cwd() is /app/web, so ../src is /app/src
     try {
-      const projectRoot = join(process.cwd(), '..')
-      const srcPath = join(projectRoot, 'src')
-      // Download from R2 - use print for content, logging for errors
-      const pythonCode = `import sys; import logging; logging.basicConfig(level=logging.ERROR, handlers=[logging.StreamHandler(sys.stderr)], force=True); sys.path.insert(0, ${JSON.stringify(srcPath)}); from utils.cloudflare import download_from_cloud; content = download_from_cloud(); sys.stdout.write(content) if content else (sys.stderr.write("ERROR: No content from R2\\n"), sys.exit(1))`
+      console.log('=== R2 Download Attempt ===')
+      console.log('R2_BUCKET_NAME:', R2_BUCKET_NAME ? `set (${R2_BUCKET_NAME.substring(0, 5)}...)` : 'MISSING')
+      console.log('R2_ACCOUNT_ID:', R2_ACCOUNT_ID ? `set (${R2_ACCOUNT_ID.substring(0, 5)}...)` : 'MISSING')
+      console.log('R2_ACCESS_KEY_ID:', R2_ACCESS_KEY_ID ? 'set' : 'MISSING')
+      console.log('R2_SECRET_ACCESS_KEY:', R2_SECRET_ACCESS_KEY ? 'set' : 'MISSING')
+      console.log('DEFAULT_ARTICLE_PATH:', DEFAULT_ARTICLE_PATH)
       
-      try {
-        const { stdout, stderr } = await execAsync(`python3 -c ${JSON.stringify(pythonCode)}`, {
-          cwd: projectRoot,
-          env: process.env,
-          maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large content
+      const s3Client = getR2Client()
+      if (!s3Client) {
+        console.error('R2 client is null - missing credentials')
+        throw new Error('R2 client not available - check environment variables')
+      }
+      
+      console.log('R2 client created successfully')
+      console.log('Attempting to download:', DEFAULT_ARTICLE_PATH)
+      
+      const command = new GetObjectCommand({
+        Bucket: R2_BUCKET_NAME,
+        Key: DEFAULT_ARTICLE_PATH,
+      })
+      
+      const response = await s3Client.send(command)
+      console.log('R2 response received, status:', response.$metadata.httpStatusCode)
+      
+      const content = await response.Body?.transformToString()
+      
+      if (content && content.length > 0) {
+        console.log('✅ Successfully downloaded from R2, content length:', content.length)
+        return new NextResponse(content, {
+          headers: {
+            'Content-Type': 'text/markdown',
+          },
         })
-        
-        console.log('R2 download stdout length:', stdout?.length || 0)
-        if (stderr) {
-          console.error('R2 download stderr:', stderr)
-        }
-        
-        if (stdout && stdout.trim()) {
-          console.log('Successfully downloaded from R2, content length:', stdout.trim().length)
-          return new NextResponse(stdout.trim(), {
-            headers: {
-              'Content-Type': 'text/markdown',
-            },
-          })
-        } else {
-          console.warn('R2 download returned empty content')
-        }
-      } catch (execError: any) {
-        console.error('R2 download exec error:', execError.message)
-        console.error('R2 download stderr:', execError.stderr || 'none')
-        console.error('R2 download stdout:', execError.stdout || 'none')
-        throw execError
+      } else {
+        console.warn('R2 download returned empty content')
+        throw new Error('R2 returned empty content')
       }
     } catch (r2Error: any) {
-      // Log the error for debugging
-      console.error('R2 download error:', r2Error.message)
-      if (r2Error.stderr) {
-        console.error('R2 download stderr:', r2Error.stderr)
+      console.error('❌ R2 download failed:', r2Error.message)
+      console.error('R2 error name:', r2Error.name)
+      console.error('R2 error code:', r2Error.Code || r2Error.code)
+      if (r2Error.$metadata) {
+        console.error('R2 metadata:', JSON.stringify(r2Error.$metadata, null, 2))
       }
-      // R2 not available, fall through to local file
+      // Fall through to local file
     }
 
     // Fallback to local file (for local development)
@@ -62,6 +88,7 @@ export async function GET() {
     for (const filePath of possiblePaths) {
       try {
         const content = await readFile(filePath, 'utf-8')
+        console.log('✅ Loaded from local file:', filePath)
         return new NextResponse(content, {
           headers: {
             'Content-Type': 'text/markdown',
@@ -73,8 +100,9 @@ export async function GET() {
     }
 
     // No file found
+    console.warn('No article found in R2 or local files')
     return new NextResponse(
-      `# Article not found\n\nPlease generate an article first.`,
+      `# No article found\n\nClick "Generate New Article" to create one.`,
       {
         status: 404,
         headers: {
@@ -83,6 +111,7 @@ export async function GET() {
       }
     )
   } catch (error: any) {
+    console.error('Fatal error in GET /api/article:', error)
     return new NextResponse(
       `# Error\n\nFailed to load article: ${error.message}`,
       {
