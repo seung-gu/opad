@@ -30,7 +30,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install --system crewai[tools]==1.7.2
+          uv pip install --system crewai[tools]==1.7.2 boto3
 
       - name: Check input file
         run: |
@@ -43,23 +43,11 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
           PYTHONPATH: ${{ github.workspace }}/src
         run: |
           python src/opad/main.py
-
-      - name: Copy output to web/public
-        run: |
-          mkdir -p web/public
-          if [ -f output/adapted_reading_material.md ]; then
-            cp output/adapted_reading_material.md web/public/adapted_reading_material.md
-          fi
-
-      - name: Commit and push results
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add output/adapted_reading_material.md web/public/adapted_reading_material.md
-          TOPIC=$(python -c "import json; print(json.load(open('input.json'))['topic'])" 2>/dev/null || echo "auto-generated")
-          git diff --staged --quiet || git commit -m "Update reading material: $TOPIC"
-          git push
 

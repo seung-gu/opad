@@ -1,46 +1,67 @@
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { NextResponse } from 'next/server'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+
+const execAsync = promisify(exec)
 
 export async function GET() {
   try {
-    // Try to read from output folder (for local development)
-    // Fallback to public folder (for Vercel deployment)
+    // Try R2 first (production)
+    try {
+      const projectRoot = join(process.cwd(), '..')
+      const pythonCode = `import sys; sys.path.insert(0, '${projectRoot}/src'); from utils.cloudflare import download_from_cloud; content = download_from_cloud(); print(content) if content else sys.exit(1)`
+      const { stdout } = await execAsync(`python3 -c "${pythonCode}"`, {
+        cwd: projectRoot,
+        env: process.env,
+      })
+      
+      if (stdout && stdout.trim()) {
+        return new NextResponse(stdout, {
+          headers: {
+            'Content-Type': 'text/markdown',
+          },
+        })
+      }
+    } catch (r2Error) {
+      // R2 not available, fall through to local file
+    }
+
+    // Fallback to local file (for local development)
     const possiblePaths = [
-      // Local development: output folder (priority)
       join(process.cwd(), '..', 'output', 'adapted_reading_material.md'),
       join(process.cwd(), 'output', 'adapted_reading_material.md'),
-      // Vercel/production: public folder (fallback)
-      join(process.cwd(), 'public', 'adapted_reading_material.md'),
     ]
-
-    let content = ''
-    let lastError: Error | null = null
 
     for (const filePath of possiblePaths) {
       try {
-        content = await readFile(filePath, 'utf-8')
-        break // Exit loop on success
-      } catch (error: any) {
-        lastError = error
+        const content = await readFile(filePath, 'utf-8')
+        return new NextResponse(content, {
+          headers: {
+            'Content-Type': 'text/markdown',
+          },
+        })
+      } catch (error) {
         continue
       }
     }
 
-    if (!content) {
-      throw lastError || new Error('File not found in any of the attempted paths')
-    }
-
-    return new NextResponse(content, {
-      headers: {
-        'Content-Type': 'text/markdown',
-      },
-    })
-  } catch (error: any) {
+    // No file found
     return new NextResponse(
-      `# Article not found\n\nPlease generate an article first.\n\n**For local development:**\nRun: \`crewai run\` in the opad project\n\n**For Vercel deployment:**\nCopy the output file to web/public/adapted_reading_material.md`,
+      `# Article not found\n\nPlease generate an article first.`,
       {
         status: 404,
+        headers: {
+          'Content-Type': 'text/markdown',
+        },
+      }
+    )
+  } catch (error: any) {
+    return new NextResponse(
+      `# Error\n\nFailed to load article: ${error.message}`,
+      {
+        status: 500,
         headers: {
           'Content-Type': 'text/markdown',
         },

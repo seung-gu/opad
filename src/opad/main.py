@@ -38,6 +38,15 @@ def run(inputs=None):
         result = ReadingMaterialCreator().crew().kickoff(inputs=inputs)
         print("\n\n=== READING MATERIAL CREATED ===\n\n")
         print(result.raw)
+        
+        # Upload to R2
+        try:
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            from utils.cloudflare import upload_to_cloud
+            upload_to_cloud(result.raw)
+        except Exception as e:
+            print(f"Failed to upload to R2: {e}")
+        
         return result
     except Exception as e:
         raise Exception(f"An error occurred while running the crew: {e}")
