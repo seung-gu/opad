@@ -8,7 +8,17 @@ export async function GET() {
   const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || ''
   const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || ''
 
+  // Debug: Show all env vars starting with R2_
+  const allR2Envs: any = {}
+  Object.keys(process.env).forEach(key => {
+    if (key.startsWith('R2_')) {
+      allR2Envs[key] = process.env[key] ? `${process.env[key]?.substring(0, 10)}...` : 'empty'
+    }
+  })
+
   const results: any = {
+    debug_all_r2_env_keys: Object.keys(process.env).filter(k => k.startsWith('R2_')),
+    debug_all_r2_envs: allR2Envs,
     env_check: {
       R2_BUCKET_NAME: R2_BUCKET_NAME ? 'set' : 'MISSING',
       R2_ACCOUNT_ID: R2_ACCOUNT_ID ? 'set' : 'MISSING',
