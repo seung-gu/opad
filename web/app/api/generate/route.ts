@@ -48,24 +48,52 @@ export async function POST(request: NextRequest) {
     // Unref to allow parent process to exit
     childProcess.unref()
     
-    // Forward stdout/stderr to console so Railway can see the logs
+    // Forward stdout/stderr to console with structured JSON logging
     childProcess.stdout.on('data', (data) => {
-      console.log(`[Python] ${data.toString()}`)
+      const lines = data.toString().split('\n').filter((line: string) => line.trim())
+      lines.forEach((line: string) => {
+        console.log(JSON.stringify({
+          source: 'python',
+          level: 'info',
+          message: line
+        }))
+      })
     })
     
     childProcess.stderr.on('data', (data) => {
-      console.error(`[Python] ${data.toString()}`)
+      const lines = data.toString().split('\n').filter((line: string) => line.trim())
+      lines.forEach((line: string) => {
+        console.error(JSON.stringify({
+          source: 'python',
+          level: 'error',
+          message: line
+        }))
+      })
     })
     
     childProcess.on('error', (error) => {
-      console.error(`Python script spawn error: ${error}`)
+      console.error(JSON.stringify({
+        source: 'web',
+        level: 'error',
+        endpoint: '/api/generate',
+        message: `Python script spawn error: ${error.message}`
+      }))
     })
     
     childProcess.on('exit', (code) => {
-      console.log(`Python script exited with code ${code}`)
+      console.log(JSON.stringify({
+        source: 'python',
+        level: 'info',
+        message: `Python script exited with code ${code}`
+      }))
     })
     
-    console.log('Python script started in background')
+    console.log(JSON.stringify({
+      source: 'web',
+      level: 'info',
+      endpoint: '/api/generate',
+      message: 'Python script started in background'
+    }))
 
     // Return immediately (async processing)
     return NextResponse.json({
@@ -73,6 +101,12 @@ export async function POST(request: NextRequest) {
       message: 'Article generation started. This may take a few minutes. The page will update automatically when ready.'
     })
   } catch (error: any) {
+    console.error(JSON.stringify({
+      source: 'web',
+      level: 'error',
+      endpoint: '/api/generate',
+      message: error.message || 'Internal server error'
+    }))
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
       { status: 500 }

@@ -51,6 +51,12 @@ export async function GET() {
       const content = await response.Body?.transformToString()
       
       if (content && content.length > 0) {
+        console.log(JSON.stringify({
+          source: 'web',
+          level: 'info',
+          endpoint: '/api/article',
+          message: `Successfully loaded article from R2 (${content.length} bytes)`
+        }))
         return new NextResponse(content, {
           headers: {
             'Content-Type': 'text/markdown',
@@ -58,7 +64,12 @@ export async function GET() {
         })
       }
     } catch (r2Error: any) {
-      console.error('R2 download error:', r2Error.message)
+      console.error(JSON.stringify({
+        source: 'web',
+        level: 'error',
+        endpoint: '/api/article',
+        message: `R2 download error: ${r2Error.message}`
+      }))
       // Fall through to local file
     }
 
@@ -71,6 +82,12 @@ export async function GET() {
     for (const filePath of possiblePaths) {
       try {
         const content = await readFile(filePath, 'utf-8')
+        console.log(JSON.stringify({
+          source: 'web',
+          level: 'info',
+          endpoint: '/api/article',
+          message: `Successfully loaded article from local file: ${filePath}`
+        }))
         return new NextResponse(content, {
           headers: {
             'Content-Type': 'text/markdown',
@@ -92,7 +109,12 @@ export async function GET() {
       }
     )
   } catch (error: any) {
-    console.error('Error in GET /api/article:', error.message)
+    console.error(JSON.stringify({
+      source: 'web',
+      level: 'error',
+      endpoint: '/api/article',
+      message: `Fatal error: ${error.message}`
+    }))
     return new NextResponse(
       `# Error\n\nFailed to load article: ${error.message}`,
       {
