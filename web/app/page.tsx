@@ -12,8 +12,10 @@ export default function Home() {
   const [progress, setProgress] = useState({ current_task: '', progress: 0, message: '' })
   const statusPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  const loadContent = () => {
-    setLoading(true)
+  const loadContent = (showLoading = true) => {
+    if (showLoading) {
+      setLoading(true)
+    }
     // Add timestamp to bypass cache
     const timestamp = new Date().getTime()
     // Use API route (works on Railway, Docker, and local development)
@@ -26,13 +28,19 @@ export default function Home() {
         throw new Error('Failed to fetch article')
       })
       .then(text => {
-        setContent(text)
-        setLoading(false)
+        // Only update if content actually changed
+        setContent(prev => prev !== text ? text : prev)
+        if (showLoading) {
+          setLoading(false)
+        }
       })
       .catch(() => {
         // On error, show generating message instead of "No article found"
-        setContent('# Generating article...\n\nPlease wait. The article will appear here when ready.')
-        setLoading(false)
+        const errorMessage = '# Generating article...\n\nPlease wait. The article will appear here when ready.'
+        setContent(prev => prev !== errorMessage ? errorMessage : prev)
+        if (showLoading) {
+          setLoading(false)
+        }
       })
   }
 
@@ -55,17 +63,38 @@ export default function Home() {
       fetch('/api/status')
         .then(res => res.json())
         .then(data => {
-          console.log('Status update:', data) // Debug log
-          setProgress({
-            current_task: data.current_task || '',
-            progress: data.progress || 0,
-            message: data.message || ''
+          // Only update progress if it actually changed
+          setProgress(prev => {
+            const newProgress = {
+              current_task: data.current_task || '',
+              progress: data.progress || 0,
+              message: data.message || ''
+            }
+            // Only update if something actually changed
+            if (prev.current_task !== newProgress.current_task || 
+                prev.progress !== newProgress.progress || 
+                prev.message !== newProgress.message) {
+              return newProgress
+            }
+            return prev
           })
+          
           if (data.status === 'completed') {
             setGenerating(false)
-            loadContent()
+            // Load content without showing loading screen
+            loadContent(false)
+            // Clear interval immediately
+            if (statusPollIntervalRef.current) {
+              clearInterval(statusPollIntervalRef.current)
+              statusPollIntervalRef.current = null
+            }
           } else if (data.status === 'error') {
             setGenerating(false)
+            // Clear interval on error
+            if (statusPollIntervalRef.current) {
+              clearInterval(statusPollIntervalRef.current)
+              statusPollIntervalRef.current = null
+            }
           }
         })
         .catch((err) => {
@@ -137,7 +166,7 @@ export default function Home() {
         <h1 className="text-3xl font-bold">OPAD Reading Materials</h1>
         <div className="flex gap-2">
           <button
-            onClick={loadContent}
+            onClick={() => loadContent(true)}
             className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors"
           >
             Refresh
