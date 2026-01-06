@@ -16,7 +16,7 @@ export default function InputForm({ onSubmit, loading = false }: InputFormProps)
   const [language, setLanguage] = useState('German')
   const [level, setLevel] = useState('B2')
   const [length, setLength] = useState('500')
-  const [topic, setTopic] = useState('Estimation of group A in football World-Cup 2026')
+  const [topic, setTopic] = useState('')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -79,8 +79,8 @@ export default function InputForm({ onSubmit, loading = false }: InputFormProps)
           type="text"
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="Enter topic for the article"
+          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400"
+          placeholder="Enter your topic"
           required
           disabled={loading}
         />
