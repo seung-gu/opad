@@ -3,6 +3,7 @@ import sys
 import warnings
 import json
 import logging
+import time
 from pathlib import Path
 
 from datetime import datetime
@@ -46,8 +47,29 @@ def run(inputs=None):
             }
 
     try:
+        start_time = time.time()
         logger.info("Starting crew execution...")
-        result = ReadingMaterialCreator().crew().kickoff(inputs=inputs)
+        
+        # Create crew instance
+        crew_instance = ReadingMaterialCreator().crew()
+        
+        # Measure total execution time
+        result = crew_instance.kickoff(inputs=inputs)
+        total_time = time.time() - start_time
+        
+        logger.info(f"=== CREW EXECUTION COMPLETED ===")
+        logger.info(f"Total execution time: {total_time:.2f} seconds ({total_time/60:.2f} minutes)")
+        
+        # Log task execution details
+        logger.info("=== TASK EXECUTION SUMMARY ===")
+        logger.info("Note: Individual task times are logged by CrewAI verbose mode above.")
+        logger.info("Check the verbose logs above for each task's start/end times.")
+        logger.info("Expected task order:")
+        logger.info("  1. find_news_articles (usually takes longest - SerperDev API calls)")
+        logger.info("  2. pick_best_article (evaluates multiple articles)")
+        logger.info("  3. adapt_news_article (rewrites long text - usually takes longest)")
+        logger.info("  4. add_vocabulary (extracts and formats vocabulary - usually fastest)")
+        
         logger.info("=== READING MATERIAL CREATED ===")
         # Log result.raw line by line to avoid formatting issues in Railway logs
         for line in result.raw.split('\n'):
