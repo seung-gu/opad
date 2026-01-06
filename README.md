@@ -75,8 +75,8 @@ Open [http://localhost:3000](http://localhost:3000) to view the web interface.
 - Generate API credentials (Account ID, Access Key ID, Secret Access Key)
 
 ### 2. Deploy to Railway
-- Push your code to GitHub
-- Create a new project in Railway from your GitHub repository
+- Create a new project in Railway
+- Connect your repository or deploy from local
 - Set the following environment variables in Railway:
   - `OPENAI_API_KEY`
   - `SERPER_API_KEY`
