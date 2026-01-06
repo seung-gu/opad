@@ -123,7 +123,18 @@ Open [http://localhost:3000](http://localhost:3000) to view the web interface.
 
 ## Changelog
 
+### Version 0.2.1 (2026-01-06)
+**Bug Fixes & Code Cleanup**
+- Fixed duplicate polling intervals causing unnecessary refreshes
+- Improved polling logic to only trigger when content actually changes
+- Removed GitHub Actions (no longer needed with Railway deployment)
+- Removed unused files and dependencies
+- Cleaned up R2 utility functions
+- Updated Dockerfile for dynamic PORT binding
+- Enhanced README with clearer deployment instructions
+
 ### Version 0.2.0 (2026-01-06)
+**Major Architecture Change: Railway + R2**
 - **Railway Deployment**: Added Docker-based deployment on Railway
 - **R2 Storage Integration**: Integrated Cloudflare R2 for markdown file storage
   - Upload generated articles directly to R2
@@ -135,10 +146,11 @@ Open [http://localhost:3000](http://localhost:3000) to view the web interface.
 - **Docker Optimization**: Multi-stage Docker build for reduced image size
 - **Web UI Enhancements**: 
   - Added input form for generating new articles
-  - Automatic polling for article updates
+  - Automatic polling for article updates (10 seconds)
   - Refresh button for manual reload
 
 ### Version 0.1.0
+**Initial Release**
 - Improved JSON output format validation
 - Added source URL and author verification
 - Enhanced level-based vocabulary filtering
