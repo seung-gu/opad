@@ -10,7 +10,9 @@ export default function Home() {
   const [generating, setGenerating] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [lastContent, setLastContent] = useState<string>('')
+  const [progress, setProgress] = useState({ current_task: '', progress: 0, message: '' })
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const statusPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const loadContent = () => {
     setLoading(true)
@@ -63,7 +65,42 @@ export default function Home() {
     }
   }, [])
   
-  // Auto-poll when generating is true
+  // Poll status when generating
+  useEffect(() => {
+    if (generating && !statusPollIntervalRef.current) {
+      const loadStatus = () => {
+        fetch('/api/status')
+          .then(res => res.json())
+          .then(data => {
+            setProgress({
+              current_task: data.current_task || '',
+              progress: data.progress || 0,
+              message: data.message || ''
+            })
+            if (data.status === 'completed') {
+              setGenerating(false)
+              loadContent()
+            } else if (data.status === 'error') {
+              setGenerating(false)
+            }
+          })
+          .catch(() => {})
+      }
+      
+      loadStatus() // Load immediately
+      const interval = setInterval(loadStatus, 2000) // Poll every 2 seconds
+      statusPollIntervalRef.current = interval
+    }
+    
+    return () => {
+      if (statusPollIntervalRef.current) {
+        clearInterval(statusPollIntervalRef.current)
+        statusPollIntervalRef.current = null
+      }
+    }
+  }, [generating])
+  
+  // Auto-poll content when generating is true
   useEffect(() => {
     if (generating && !pollIntervalRef.current) {
       const interval = setInterval(() => {
@@ -149,9 +186,18 @@ export default function Home() {
 
       {generating && (
         <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
-          <p className="text-blue-800">
-            ⏳ Generating article... This may take a few minutes. The page will update automatically when ready.
-          </p>
+          <div className="mb-2">
+            <p className="text-blue-800 font-medium mb-2">
+              ⏳ {progress.message || 'Generating article...'}
+            </p>
+            <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div
+                className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                style={{ width: `${progress.progress}%` }}
+              ></div>
+            </div>
+            <p className="text-sm text-blue-600 mt-1">{progress.progress}%</p>
+          </div>
         </div>
       )}
 
