@@ -3,6 +3,10 @@ import { join } from 'path'
 import { NextResponse } from 'next/server'
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 
+// Prevent static optimization - only run at request time
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+
 const R2_DIRECTORY = 'public'
 const ARTICLE_FILENAME = 'adapted_reading_material.md'
 const DEFAULT_ARTICLE_PATH = `${R2_DIRECTORY}/${ARTICLE_FILENAME}`

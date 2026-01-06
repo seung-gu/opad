@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { S3Client, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 
+// Prevent static optimization - only run at request time
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+
 export async function GET() {
   // Read env vars at runtime
   const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || ''
