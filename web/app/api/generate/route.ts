@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { spawn } from 'child_process'
+import { writeFile } from 'fs/promises'
+import { join } from 'path'
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,77 +16,61 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get GitHub token from environment variable
-    const githubToken = process.env.GITHUB_TOKEN
-    if (!githubToken) {
-      return NextResponse.json(
-        { error: 'GitHub token not configured' },
-        { status: 500 }
-      )
-    }
-
-    // Get repository info from environment or use defaults
-    const repoOwner = process.env.GITHUB_REPO_OWNER || 'YOUR_USERNAME'
-    const repoName = process.env.GITHUB_REPO_NAME || 'opad'
-
-    // Create input file content
-    const inputContent = JSON.stringify({
+    // Create input JSON
+    const inputs = {
       language,
       level,
       length,
       topic,
       timestamp: new Date().toISOString()
-    }, null, 2)
-
-    // Create or update the input file in GitHub
-    const filePath = 'input.json'
-    const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath}`
-
-    // Check if file exists
-    let sha: string | undefined
-    try {
-      const getResponse = await fetch(apiUrl, {
-        headers: {
-          'Authorization': `token ${githubToken}`,
-          'Accept': 'application/vnd.github.v3+json'
-        }
-      })
-      if (getResponse.ok) {
-        const fileData = await getResponse.json()
-        sha = fileData.sha
-      }
-    } catch (error) {
-      // File doesn't exist, will create new one
     }
 
-    // Create or update file
-    const content = Buffer.from(inputContent).toString('base64')
-    const response = await fetch(apiUrl, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `token ${githubToken}`,
-        'Accept': 'application/vnd.github.v3+json',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        message: `Update input: ${topic}`,
-        content: content,
-        ...(sha && { sha })
-      })
+    // Write input.json
+    const projectRoot = join(process.cwd(), '..')
+    const inputPath = join(projectRoot, 'input.json')
+    await writeFile(inputPath, JSON.stringify(inputs, null, 2))
+
+    // Execute Python script in background
+    const pythonScript = join(projectRoot, 'src', 'opad', 'main.py')
+    const env = {
+      ...process.env,
+      PYTHONPATH: join(projectRoot, 'src'),
+    }
+
+    // Execute Python script in background with stdout/stderr visible in Railway logs
+    const childProcess = spawn('python3', [pythonScript], {
+      cwd: projectRoot,
+      env: env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true
     })
+    
+    // Unref to allow parent process to exit
+    childProcess.unref()
+    
+    // Forward stdout/stderr to console so Railway can see the logs
+    childProcess.stdout.on('data', (data) => {
+      console.log(`[Python] ${data.toString()}`)
+    })
+    
+    childProcess.stderr.on('data', (data) => {
+      console.error(`[Python] ${data.toString()}`)
+    })
+    
+    childProcess.on('error', (error) => {
+      console.error(`Python script spawn error: ${error}`)
+    })
+    
+    childProcess.on('exit', (code) => {
+      console.log(`Python script exited with code ${code}`)
+    })
+    
+    console.log('Python script started in background')
 
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { error: `GitHub API error: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    // Workflow will be automatically triggered by push event on input.json
+    // Return immediately (async processing)
     return NextResponse.json({
       success: true,
-      message: 'Input saved. Workflow will start automatically.'
+      message: 'Article generation started. This may take a few minutes. The page will update automatically when ready.'
     })
   } catch (error: any) {
     return NextResponse.json(

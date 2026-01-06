@@ -2,6 +2,7 @@
 import sys
 import warnings
 import json
+import logging
 from pathlib import Path
 
 from datetime import datetime
@@ -9,6 +10,16 @@ from datetime import datetime
 from opad.crew import ReadingMaterialCreator
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 
 def run(inputs=None):
@@ -35,11 +46,26 @@ def run(inputs=None):
             }
 
     try:
+        logger.info("Starting crew execution...")
         result = ReadingMaterialCreator().crew().kickoff(inputs=inputs)
-        print("\n\n=== READING MATERIAL CREATED ===\n\n")
-        print(result.raw)
+        logger.info("=== READING MATERIAL CREATED ===")
+        # Log result.raw line by line to avoid formatting issues in Railway logs
+        for line in result.raw.split('\n'):
+            logger.info(line)
+        
+        # Upload to R2
+        try:
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            from utils.cloudflare import upload_to_cloud
+            logger.info("Uploading to R2...")
+            upload_to_cloud(result.raw)
+            logger.info("Successfully uploaded to R2")
+        except Exception as e:
+            logger.error(f"Failed to upload to R2: {e}")
+        
         return result
     except Exception as e:
+        logger.error(f"An error occurred while running the crew: {e}")
         raise Exception(f"An error occurred while running the crew: {e}")
 
 if __name__ == "__main__":

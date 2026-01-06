@@ -53,45 +53,52 @@ class ReadingMaterialCreator():
         return Agent(
             config=self.agents_config['paragraph_finder'], 
             tools=[SerperDevTool()],
-            memory=True
+            memory=True,
+            verbose=True
         )
 
     @agent
     def article_picker(self) -> Agent:
         return Agent(
-            config=self.agents_config['article_picker']
+            config=self.agents_config['article_picker'],
+            verbose=True
         )
 
     @agent
     def paragraph_writer(self) -> Agent:
         return Agent(
-            config=self.agents_config['paragraph_writer']
+            config=self.agents_config['paragraph_writer'],
+            verbose=True
         )
 
     @task
     def find_news_articles(self) -> Task:
         return Task(
             config=self.tasks_config['find_news_articles'],
-            output_pydantic=NewsArticleList
+            output_pydantic=NewsArticleList,
+            verbose=True
         )
 
     @task
     def pick_best_article(self) -> Task:
         return Task(
             config=self.tasks_config['pick_best_article'],
-            output_pydantic=SelectedArticle
+            output_pydantic=SelectedArticle,
+            verbose=True
         )
 
     @task
     def adapt_news_article(self) -> Task:
         return Task(
-            config=self.tasks_config['adapt_news_article']
+            config=self.tasks_config['adapt_news_article'],
+            verbose=True
         )
 
     @task
     def add_vocabulary(self) -> Task:
         return Task(
-            config=self.tasks_config['add_vocabulary']
+            config=self.tasks_config['add_vocabulary'],
+            verbose=True
         )
     
     @crew

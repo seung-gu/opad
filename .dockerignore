@@ -1,0 +1,15 @@
+.next
+.venv
+__pycache__
+*.pyc
+.git
+.gitignore
+.env
+.env.local
+output/*
+memory/*
+knowledge/*
+*.md
+!README.md
+test_*.py
+

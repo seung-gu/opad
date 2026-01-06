@@ -1,46 +1,102 @@
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { NextResponse } from 'next/server'
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
+
+// Prevent static optimization - only run at request time
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+
+const R2_DIRECTORY = 'public'
+const ARTICLE_FILENAME = 'adapted_reading_material.md'
+const DEFAULT_ARTICLE_PATH = `${R2_DIRECTORY}/${ARTICLE_FILENAME}`
+
+// Create S3 client for R2 - read env vars at runtime
+function getR2Client() {
+  const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || ''
+  const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || ''
+  const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || ''
+  const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || ''
+  
+  if (!R2_BUCKET_NAME || !R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
+    return null
+  }
+  
+  return new S3Client({
+    region: 'auto',
+    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: R2_ACCESS_KEY_ID,
+      secretAccessKey: R2_SECRET_ACCESS_KEY,
+    },
+  })
+}
 
 export async function GET() {
   try {
-    // Try to read from output folder (for local development)
-    // Fallback to public folder (for Vercel deployment)
+    // Try R2 first (production)
+    try {
+      const s3Client = getR2Client()
+      if (!s3Client) {
+        throw new Error('R2 client not available')
+      }
+      
+      const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || ''
+      const command = new GetObjectCommand({
+        Bucket: R2_BUCKET_NAME,
+        Key: DEFAULT_ARTICLE_PATH,
+      })
+      
+      const response = await s3Client.send(command)
+      const content = await response.Body?.transformToString()
+      
+      if (content && content.length > 0) {
+        return new NextResponse(content, {
+          headers: {
+            'Content-Type': 'text/markdown',
+          },
+        })
+      }
+    } catch (r2Error: any) {
+      console.error('R2 download error:', r2Error.message)
+      // Fall through to local file
+    }
+
+    // Fallback to local file (for local development)
     const possiblePaths = [
-      // Local development: output folder (priority)
       join(process.cwd(), '..', 'output', 'adapted_reading_material.md'),
       join(process.cwd(), 'output', 'adapted_reading_material.md'),
-      // Vercel/production: public folder (fallback)
-      join(process.cwd(), 'public', 'adapted_reading_material.md'),
     ]
-
-    let content = ''
-    let lastError: Error | null = null
 
     for (const filePath of possiblePaths) {
       try {
-        content = await readFile(filePath, 'utf-8')
-        break // Exit loop on success
-      } catch (error: any) {
-        lastError = error
+        const content = await readFile(filePath, 'utf-8')
+        return new NextResponse(content, {
+          headers: {
+            'Content-Type': 'text/markdown',
+          },
+        })
+      } catch (error) {
         continue
       }
     }
 
-    if (!content) {
-      throw lastError || new Error('File not found in any of the attempted paths')
-    }
-
-    return new NextResponse(content, {
-      headers: {
-        'Content-Type': 'text/markdown',
-      },
-    })
-  } catch (error: any) {
+    // No file found
     return new NextResponse(
-      `# Article not found\n\nPlease generate an article first.\n\n**For local development:**\nRun: \`crewai run\` in the opad project\n\n**For Vercel deployment:**\nCopy the output file to web/public/adapted_reading_material.md`,
+      `# No article found\n\nClick "Generate New Article" to create one.`,
       {
         status: 404,
+        headers: {
+          'Content-Type': 'text/markdown',
+        },
+      }
+    )
+  } catch (error: any) {
+    console.error('Error in GET /api/article:', error.message)
+    return new NextResponse(
+      `# Error\n\nFailed to load article: ${error.message}`,
+      {
+        status: 500,
         headers: {
           'Content-Type': 'text/markdown',
         },
