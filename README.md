@@ -43,14 +43,7 @@ npm install
 3. Set up environment variables:
 Create a `.env` file in the project root:
 ```bash
-OPENAI_API_KEY=your_openai_api_key
-SERPER_API_KEY=your_serper_api_key
-
-# For R2 storage (optional for local development)
-R2_ACCOUNT_ID=your_r2_account_id
-R2_ACCESS_KEY_ID=your_r2_access_key_id
-R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
-R2_BUCKET_NAME=your_r2_bucket_name
+crewai install
 ```
 
 ### Running Locally

@@ -145,5 +145,6 @@ class ReadingMaterialCreator():
             memory=True,
             short_term_memory=short_term_memory,
             long_term_memory=long_term_memory,
-            entity_memory=entity_memory
+            entity_memory=entity_memory,
+            tracing=True  # Enable tracing for CrewAI dashboard
         )
