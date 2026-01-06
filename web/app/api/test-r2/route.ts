@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { S3Client, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 
-const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || ''
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || ''
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || ''
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || ''
-
 export async function GET() {
+  // Read env vars at runtime
+  const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || ''
+  const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || ''
+  const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || ''
+  const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || ''
+
   const results: any = {
     env_check: {
       R2_BUCKET_NAME: R2_BUCKET_NAME ? 'set' : 'MISSING',

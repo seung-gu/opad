@@ -3,18 +3,24 @@ import { join } from 'path'
 import { NextResponse } from 'next/server'
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 
-// R2 configuration
-const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || ''
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || ''
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || ''
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || ''
 const R2_DIRECTORY = 'public'
 const ARTICLE_FILENAME = 'adapted_reading_material.md'
 const DEFAULT_ARTICLE_PATH = `${R2_DIRECTORY}/${ARTICLE_FILENAME}`
 
-// Create S3 client for R2
+// Create S3 client for R2 - read env vars at runtime
 function getR2Client() {
+  const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || ''
+  const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || ''
+  const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || ''
+  const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || ''
+  
   if (!R2_BUCKET_NAME || !R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
+    console.error('Missing R2 credentials:', {
+      R2_BUCKET_NAME: R2_BUCKET_NAME ? 'set' : 'MISSING',
+      R2_ACCOUNT_ID: R2_ACCOUNT_ID ? 'set' : 'MISSING',
+      R2_ACCESS_KEY_ID: R2_ACCESS_KEY_ID ? 'set' : 'MISSING',
+      R2_SECRET_ACCESS_KEY: R2_SECRET_ACCESS_KEY ? 'set' : 'MISSING',
+    })
     return null
   }
   
@@ -33,10 +39,6 @@ export async function GET() {
     // Try R2 first (production)
     try {
       console.error('=== R2 Download Attempt ===')
-      console.error('R2_BUCKET_NAME:', R2_BUCKET_NAME ? `set (${R2_BUCKET_NAME.substring(0, 5)}...)` : 'MISSING')
-      console.error('R2_ACCOUNT_ID:', R2_ACCOUNT_ID ? `set (${R2_ACCOUNT_ID.substring(0, 5)}...)` : 'MISSING')
-      console.error('R2_ACCESS_KEY_ID:', R2_ACCESS_KEY_ID ? 'set' : 'MISSING')
-      console.error('R2_SECRET_ACCESS_KEY:', R2_SECRET_ACCESS_KEY ? 'set' : 'MISSING')
       console.error('DEFAULT_ARTICLE_PATH:', DEFAULT_ARTICLE_PATH)
       
       const s3Client = getR2Client()
@@ -48,6 +50,7 @@ export async function GET() {
       console.error('R2 client created successfully')
       console.error('Attempting to download:', DEFAULT_ARTICLE_PATH)
       
+      const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || ''
       const command = new GetObjectCommand({
         Bucket: R2_BUCKET_NAME,
         Key: DEFAULT_ARTICLE_PATH,
