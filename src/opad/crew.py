@@ -53,52 +53,45 @@ class ReadingMaterialCreator():
         return Agent(
             config=self.agents_config['paragraph_finder'], 
             tools=[SerperDevTool()],
-            memory=True,
-            verbose=True
+            memory=True
         )
 
     @agent
     def article_picker(self) -> Agent:
         return Agent(
-            config=self.agents_config['article_picker'],
-            verbose=True
+            config=self.agents_config['article_picker']
         )
 
     @agent
     def paragraph_writer(self) -> Agent:
         return Agent(
-            config=self.agents_config['paragraph_writer'],
-            verbose=True
+            config=self.agents_config['paragraph_writer']
         )
 
     @task
     def find_news_articles(self) -> Task:
         return Task(
             config=self.tasks_config['find_news_articles'],
-            output_pydantic=NewsArticleList,
-            verbose=True
+            output_pydantic=NewsArticleList
         )
 
     @task
     def pick_best_article(self) -> Task:
         return Task(
             config=self.tasks_config['pick_best_article'],
-            output_pydantic=SelectedArticle,
-            verbose=True
+            output_pydantic=SelectedArticle
         )
 
     @task
     def adapt_news_article(self) -> Task:
         return Task(
-            config=self.tasks_config['adapt_news_article'],
-            verbose=True
+            config=self.tasks_config['adapt_news_article']
         )
 
     @task
     def add_vocabulary(self) -> Task:
         return Task(
-            config=self.tasks_config['add_vocabulary'],
-            verbose=True
+            config=self.tasks_config['add_vocabulary']
         )
     
     @crew
@@ -145,6 +138,5 @@ class ReadingMaterialCreator():
             memory=True,
             short_term_memory=short_term_memory,
             long_term_memory=long_term_memory,
-            entity_memory=entity_memory,
-            tracing=True  # Enable tracing for CrewAI dashboard
+            entity_memory=entity_memory
         )
