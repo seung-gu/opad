@@ -9,9 +9,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [showForm, setShowForm] = useState(false)
-  const [lastContent, setLastContent] = useState<string>('')
   const [progress, setProgress] = useState({ current_task: '', progress: 0, message: '' })
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const statusPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const loadContent = () => {
@@ -28,23 +26,7 @@ export default function Home() {
         throw new Error('Failed to fetch article')
       })
       .then(text => {
-        // Check if content actually changed (new article generated)
-        const contentChanged = text !== lastContent
-        const isGenerating = text.includes('Generating article...') || text.includes('Please wait')
-        const isNoArticle = text.includes('No article found') || text.includes('Please generate an article first')
-        
-        // If we got actual new content (not generating/no article message), stop polling
-        if (contentChanged && !isGenerating && !isNoArticle && text.trim().length > 50) {
-          setGenerating(false)
-          // Clear polling interval
-          if (pollIntervalRef.current) {
-            clearInterval(pollIntervalRef.current)
-            pollIntervalRef.current = null
-          }
-        }
-        
         setContent(text)
-        setLastContent(text)
         setLoading(false)
       })
       .catch(() => {
@@ -56,13 +38,6 @@ export default function Home() {
 
   useEffect(() => {
     loadContent()
-    
-    // Cleanup polling interval on unmount
-    return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current)
-      }
-    }
   }, [])
   
   // Poll status when generating
@@ -113,22 +88,7 @@ export default function Home() {
     }
   }, [generating])
   
-  // Auto-poll content when generating is true
-  useEffect(() => {
-    if (generating && !pollIntervalRef.current) {
-      const interval = setInterval(() => {
-        loadContent()
-      }, 10000) // Poll every 10 seconds
-      pollIntervalRef.current = interval
-    }
-    
-    return () => {
-      if (pollIntervalRef.current && !generating) {
-        clearInterval(pollIntervalRef.current)
-        pollIntervalRef.current = null
-      }
-    }
-  }, [generating])
+  // No need to poll content - status polling will trigger loadContent when completed
 
   const handleGenerate = async (inputs: {
     language: string
