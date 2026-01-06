@@ -103,25 +103,8 @@ export default function Home() {
 
       // Show success message
       alert('Article generation started! It will take a few minutes. The page will update automatically when ready.')
-
-      // Poll for updated content (every 10 seconds for faster updates)
-      let pollCount = 0
-      const maxPolls = 120 // 10 seconds * 120 = 20 minutes max
       
-      const interval = setInterval(() => {
-        pollCount++
-        loadContent()
-        
-        // Stop polling after max attempts
-        if (pollCount >= maxPolls) {
-          clearInterval(interval)
-          pollIntervalRef.current = null
-          setGenerating(false)
-          alert('Article generation may still be in progress. Please refresh the page manually.')
-        }
-      }, 10000) // Poll every 10 seconds
-      
-      pollIntervalRef.current = interval
+      // generating state is already true, useEffect will handle polling
 
     } catch (error: any) {
       alert(`Error: ${error.message}`)
