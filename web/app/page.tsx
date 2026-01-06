@@ -154,26 +154,26 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-xl">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="text-xl text-slate-900">Loading...</div>
       </div>
     )
   }
 
   return (
-    <main className="min-h-screen p-8 max-w-4xl mx-auto">
+    <main className="min-h-screen p-8 max-w-4xl mx-auto bg-slate-900 rounded-lg shadow-2xl my-8">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">OPAD Reading Materials</h1>
+        <h1 className="text-3xl font-bold text-white">OPAD Reading Materials</h1>
         <div className="flex gap-2">
           <button
             onClick={() => loadContent(true)}
-            className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors"
+            className="bg-slate-700 text-white px-4 py-2 rounded-md hover:bg-slate-600 transition-colors"
           >
             Refresh
           </button>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+            className="bg-emerald-600 text-white px-4 py-2 rounded-md hover:bg-emerald-500 transition-colors"
           >
             {showForm ? 'Hide Form' : 'Generate New Article'}
           </button>
@@ -187,18 +187,18 @@ export default function Home() {
       )}
 
       {generating && (
-        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
+        <div className="mb-4 p-4 bg-slate-800 border border-slate-700 rounded-lg shadow-lg">
           <div className="mb-2">
-            <p className="text-blue-800 font-medium mb-2">
+            <p className="text-white font-medium mb-2">
               ⏳ {progress.message || 'Generating article...'}
             </p>
-            <div className="w-full bg-gray-200 rounded-full h-2.5">
+            <div className="w-full bg-slate-700 rounded-full h-3">
               <div
-                className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                className="bg-emerald-500 h-3 rounded-full transition-all duration-300"
                 style={{ width: `${progress.progress}%` }}
               ></div>
             </div>
-            <p className="text-sm text-blue-600 mt-1">{progress.progress}%</p>
+            <p className="text-sm text-emerald-400 mt-2">{progress.progress}%</p>
           </div>
         </div>
       )}

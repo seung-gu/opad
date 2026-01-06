@@ -115,7 +115,7 @@ export default function MarkdownViewer({ content }: { content: string }) {
   }, [definitions])
 
   return (
-    <div className="prose max-w-none" ref={containerRef}>
+    <div className="prose prose-invert max-w-none text-slate-100 prose-headings:text-white prose-p:text-slate-100 prose-strong:text-white prose-li:text-slate-100 prose-ul:text-slate-100 prose-ol:text-slate-100 prose-a:text-emerald-400 prose-a:no-underline hover:prose-a:text-emerald-300 prose-code:text-emerald-300 prose-pre:bg-slate-800 prose-blockquote:text-slate-200 prose-blockquote:border-slate-600" style={{ color: '#f1f5f9' }} ref={containerRef}>
       <ReactMarkdown remarkPlugins={[remarkGfm]}>
         {content}
       </ReactMarkdown>

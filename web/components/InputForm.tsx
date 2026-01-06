@@ -24,13 +24,13 @@ export default function InputForm({ onSubmit, loading = false }: InputFormProps)
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 p-6 border rounded-lg bg-white shadow-sm">
+    <form onSubmit={handleSubmit} className="space-y-4 p-6 border border-slate-700 rounded-lg bg-slate-800 shadow-lg">
       <div>
-        <label className="block text-sm font-medium mb-2">Language</label>
+        <label className="block text-sm font-medium mb-2 text-white">Language</label>
         <select
           value={language}
           onChange={(e) => setLanguage(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-slate-600 rounded-md bg-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
           required
           disabled={loading}
         >
@@ -38,15 +38,16 @@ export default function InputForm({ onSubmit, loading = false }: InputFormProps)
           <option value="German">German</option>
           <option value="Spanish">Spanish</option>
           <option value="French">French</option>
+          <option value="Korean">Korean</option>
         </select>
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-2">Level</label>
+        <label className="block text-sm font-medium mb-2 text-white">Level</label>
         <select
           value={level}
           onChange={(e) => setLevel(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-slate-600 rounded-md bg-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
           required
           disabled={loading}
         >
@@ -60,12 +61,12 @@ export default function InputForm({ onSubmit, loading = false }: InputFormProps)
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-2">Length (words)</label>
+        <label className="block text-sm font-medium mb-2 text-white">Length (words)</label>
         <input
           type="number"
           value={length}
           onChange={(e) => setLength(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-slate-600 rounded-md bg-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
           min="100"
           max="2000"
           required
@@ -74,12 +75,12 @@ export default function InputForm({ onSubmit, loading = false }: InputFormProps)
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-2">Topic</label>
+        <label className="block text-sm font-medium mb-2 text-white">Topic</label>
         <input
           type="text"
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
-          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400"
+          className="w-full px-3 py-2 border border-slate-600 rounded-md bg-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 placeholder:text-slate-400"
           placeholder="Enter your topic"
           required
           disabled={loading}
@@ -89,7 +90,7 @@ export default function InputForm({ onSubmit, loading = false }: InputFormProps)
       <button
         type="submit"
         disabled={loading}
-        className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="w-full bg-emerald-600 text-white py-2 px-4 rounded-md hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {loading ? 'Generating...' : 'Generate Reading Material'}
       </button>
