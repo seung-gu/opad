@@ -50,9 +50,6 @@ def run(inputs=None):
         result = ReadingMaterialCreator().crew().kickoff(inputs=inputs)
 
         logger.info("=== READING MATERIAL CREATED ===")
-        # Log result.raw line by line to avoid formatting issues in Railway logs
-        for line in result.raw.split('\n'):
-            logger.info(line)
         
         # Upload to R2
         try:

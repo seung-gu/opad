@@ -134,7 +134,7 @@ class ReadingMaterialCreator():
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,  # sequential process: find articles -> pick best -> adapt for learners
-            verbose=True,
+            verbose=False,
             memory=True,
             short_term_memory=short_term_memory,
             long_term_memory=long_term_memory,
