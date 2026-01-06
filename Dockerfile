@@ -23,22 +23,6 @@ RUN npm install && npm run build
 # Runtime stage: Remove build dependencies
 FROM node:20-slim
 
-# Receive build args from Railway
-ARG R2_BUCKET_NAME
-ARG R2_ACCOUNT_ID
-ARG R2_ACCESS_KEY_ID
-ARG R2_SECRET_ACCESS_KEY
-ARG OPENAI_API_KEY
-ARG SERPER_API_KEY
-
-# Set as environment variables for runtime
-ENV R2_BUCKET_NAME=${R2_BUCKET_NAME}
-ENV R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
-ENV R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
-ENV R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
-ENV OPENAI_API_KEY=${OPENAI_API_KEY}
-ENV SERPER_API_KEY=${SERPER_API_KEY}
-
 # Install only Python runtime (no build tools)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
@@ -56,7 +40,7 @@ COPY --from=builder /app /app
 # Expose port (Railway will set PORT env var)
 EXPOSE 3000
 
-# Start Next.js server on Railway's PORT
+# Start Next.js server on Railway's PORT (default 3000)
 WORKDIR /app/web
-CMD sh -c "export NODE_ENV=production && npx next start -p ${PORT:-3000}"
+CMD sh -c "npx next start -p ${PORT:-3000}"
 
