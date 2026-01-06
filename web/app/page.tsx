@@ -26,14 +26,15 @@ export default function Home() {
         throw new Error('Failed to fetch article')
       })
       .then(text => {
-        // Check if we got actual article content (not generating message)
+        // Check if content actually changed (new article generated)
+        const contentChanged = text !== lastContent
         const isGenerating = text.includes('Generating article...') || text.includes('Please wait')
         const isNoArticle = text.includes('No article found') || text.includes('Please generate an article first')
         
-        // If we got actual content (not generating/no article message), stop generating state
-        if (!isGenerating && !isNoArticle && text.trim().length > 50) {
+        // If we got actual new content (not generating/no article message), stop polling
+        if (contentChanged && !isGenerating && !isNoArticle && text.trim().length > 50) {
           setGenerating(false)
-          // Clear polling interval if we got actual content
+          // Clear polling interval
           if (pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current)
             pollIntervalRef.current = null
