@@ -2,12 +2,15 @@
 
 import json
 import logging
+import os
 from pathlib import Path
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-STATUS_FILE = Path('status.json')
+# Get project root (assuming this file is in src/utils, go up 2 levels)
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+STATUS_FILE = _PROJECT_ROOT / 'status.json'
 
 # Task progress mapping (4 tasks = 0-95%, uploading = 95-100%)
 TASK_PROGRESS = {
@@ -36,10 +39,13 @@ def update_status(current_task: str, progress: int, status: str, message: str = 
         'updated_at': datetime.now().isoformat()
     }
     try:
+        # Ensure parent directory exists
+        STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(STATUS_FILE, 'w') as f:
             json.dump(status_data, f, indent=2)
+        logger.info(f"Updated status: {current_task} - {progress}% - {status} - {message} (file: {STATUS_FILE})")
     except Exception as e:
-        logger.warning(f"Failed to update status file: {e}")
+        logger.error(f"Failed to update status file {STATUS_FILE}: {e}")
 
 
 def get_task_info(task_name: str):

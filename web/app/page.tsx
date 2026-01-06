@@ -67,30 +67,43 @@ export default function Home() {
   
   // Poll status when generating
   useEffect(() => {
-    if (generating && !statusPollIntervalRef.current) {
-      const loadStatus = () => {
-        fetch('/api/status')
-          .then(res => res.json())
-          .then(data => {
-            setProgress({
-              current_task: data.current_task || '',
-              progress: data.progress || 0,
-              message: data.message || ''
-            })
-            if (data.status === 'completed') {
-              setGenerating(false)
-              loadContent()
-            } else if (data.status === 'error') {
-              setGenerating(false)
-            }
-          })
-          .catch(() => {})
+    if (!generating) {
+      // Clear interval when not generating
+      if (statusPollIntervalRef.current) {
+        clearInterval(statusPollIntervalRef.current)
+        statusPollIntervalRef.current = null
       }
-      
-      loadStatus() // Load immediately
-      const interval = setInterval(loadStatus, 2000) // Poll every 2 seconds
-      statusPollIntervalRef.current = interval
+      return
     }
+
+    const loadStatus = () => {
+      fetch('/api/status')
+        .then(res => res.json())
+        .then(data => {
+          console.log('Status update:', data) // Debug log
+          setProgress({
+            current_task: data.current_task || '',
+            progress: data.progress || 0,
+            message: data.message || ''
+          })
+          if (data.status === 'completed') {
+            setGenerating(false)
+            loadContent()
+          } else if (data.status === 'error') {
+            setGenerating(false)
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to fetch status:', err)
+        })
+    }
+    
+    // Load immediately
+    loadStatus()
+    
+    // Set up polling interval
+    const interval = setInterval(loadStatus, 2000) // Poll every 2 seconds
+    statusPollIntervalRef.current = interval
     
     return () => {
       if (statusPollIntervalRef.current) {

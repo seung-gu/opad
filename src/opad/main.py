@@ -56,8 +56,25 @@ def run(inputs=None):
         # Get task names for progress tracking
         task_names = ['find_news_articles', 'pick_best_article', 'adapt_news_article', 'add_vocabulary']
         
-        # Update status before starting first task
-        start_task(task_names[0])
+        # Update progress during kickoff execution using background thread
+        import threading
+        import time
+        
+        def update_progress_during_execution():
+            """Update progress at estimated intervals during kickoff execution."""
+            # Start first task
+            start_task(task_names[0])
+            time.sleep(3)  # Wait a bit
+            
+            # Progressively update to each task
+            for i, task_name in enumerate(task_names[1:], 1):
+                start_task(task_name)
+                # Estimate: each task takes ~15-30 seconds
+                time.sleep(20)
+        
+        # Start progress updater in background thread
+        progress_thread = threading.Thread(target=update_progress_during_execution, daemon=True)
+        progress_thread.start()
         
         # Execute crew - tasks will run sequentially
         result = crew_instance.kickoff(inputs=inputs)
