@@ -16,7 +16,12 @@ export async function GET() {
     }
   })
 
+  // Debug: Show ALL env var keys (not values, just keys)
+  const allEnvKeys = Object.keys(process.env).sort()
+
   const results: any = {
+    debug_total_env_count: allEnvKeys.length,
+    debug_all_env_keys: allEnvKeys,
     debug_all_r2_env_keys: Object.keys(process.env).filter(k => k.startsWith('R2_')),
     debug_all_r2_envs: allR2Envs,
     env_check: {

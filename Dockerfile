@@ -43,5 +43,16 @@ EXPOSE 3000
 # Start Next.js server on Railway's PORT
 # Railway sets PORT environment variable, Next.js needs -p flag
 WORKDIR /app/web
-CMD sh -c "npx next start -p ${PORT:-3000}"
+
+# Create startup script that exports env vars
+RUN echo '#!/bin/sh\n\
+export R2_BUCKET_NAME="${R2_BUCKET_NAME}"\n\
+export R2_ACCOUNT_ID="${R2_ACCOUNT_ID}"\n\
+export R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"\n\
+export R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"\n\
+export OPENAI_API_KEY="${OPENAI_API_KEY}"\n\
+export SERPER_API_KEY="${SERPER_API_KEY}"\n\
+exec npx next start -p ${PORT:-3000}\n' > /app/start.sh && chmod +x /app/start.sh
+
+CMD ["/app/start.sh"]
 
