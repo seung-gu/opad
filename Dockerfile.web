@@ -1,6 +1,4 @@
-# Dockerfile for Web service only
-# API and Worker services should use Start Command directly (no Dockerfile)
-
+# Dockerfile for Web service (Next.js)
 FROM node:20-slim
 
 # Install Node.js dependencies and build Next.js
@@ -19,4 +17,3 @@ EXPOSE 3000
 
 # Start Next.js server on Railway's PORT (default 3000)
 CMD sh -c "npx next start -p ${PORT:-3000}"
-
