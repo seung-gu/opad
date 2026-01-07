@@ -7,25 +7,17 @@ from typing import Optional
 from datetime import datetime
 
 # Add src to path for imports
-_src_path = Path(__file__).parent.parent.parent
+# processor.py is at /app/src/worker/processor.py
+# src is at /app/src, so we go up 2 levels
+_src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
 from opad.crew import ReadingMaterialCreator
 from opad.main import run as run_crew
 
-# Import from src (parent of opad)
-import importlib.util
-spec = importlib.util.spec_from_file_location("api.queue", _src_path / "api" / "queue.py")
-api_queue = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(api_queue)
-
-spec2 = importlib.util.spec_from_file_location("utils.cloudflare", _src_path / "utils" / "cloudflare.py")
-utils_cloudflare = importlib.util.module_from_spec(spec2)
-spec2.loader.exec_module(utils_cloudflare)
-
-update_job_status = api_queue.update_job_status
-dequeue_job = api_queue.dequeue_job
-upload_to_cloud = utils_cloudflare.upload_to_cloud
+# Import from src
+from api.queue import update_job_status, dequeue_job
+from utils.cloudflare import upload_to_cloud
 
 logger = logging.getLogger(__name__)
 
