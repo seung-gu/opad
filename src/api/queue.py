@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
 QUEUE_NAME = 'opad:jobs'
 
+if not REDIS_URL or REDIS_URL == 'redis://localhost:6379':
+    logger.warning("REDIS_URL not set or using default. Make sure Redis add-on is connected in Railway.")
+
 
 def get_redis_client() -> Optional[redis.Redis]:
     """Get Redis client connection.
@@ -28,7 +31,8 @@ def get_redis_client() -> Optional[redis.Redis]:
         client.ping()
         return client
     except (RedisError, ValueError) as e:
-        logger.error(f"Failed to connect to Redis: {e}")
+        logger.error(f"Failed to connect to Redis at {REDIS_URL}: {e}")
+        logger.error("Make sure Redis add-on is connected and REDIS_URL environment variable is set.")
         return None
 
 
