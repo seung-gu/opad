@@ -10,6 +10,7 @@ export default function Home() {
   const [generating, setGenerating] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [progress, setProgress] = useState({ current_task: '', progress: 0, message: '' })
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const statusPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const loadContent = (showLoading = true) => {
@@ -60,7 +61,12 @@ export default function Home() {
     }
 
     const loadStatus = () => {
-      fetch('/api/status')
+      // jobId가 없으면 폴링하지 않음
+      if (!currentJobId) {
+        return
+      }
+      
+      fetch(`/api/status?job_id=${currentJobId}`)
         .then(res => res.json())
         .then(data => {
           // Only update progress if it actually changed
@@ -81,6 +87,7 @@ export default function Home() {
           
           if (data.status === 'completed') {
             setGenerating(false)
+            setCurrentJobId(null) // Clear jobId
             // Load content without showing loading screen
             loadContent(false)
             // Clear interval immediately
@@ -90,6 +97,7 @@ export default function Home() {
             }
           } else if (data.status === 'error') {
             setGenerating(false)
+            setCurrentJobId(null) // Clear jobId
             // Clear interval on error
             if (statusPollIntervalRef.current) {
               clearInterval(statusPollIntervalRef.current)
@@ -115,7 +123,7 @@ export default function Home() {
         statusPollIntervalRef.current = null
       }
     }
-  }, [generating])
+  }, [generating, currentJobId])
   
   // No need to poll content - status polling will trigger loadContent when completed
 
@@ -141,6 +149,11 @@ export default function Home() {
         throw new Error(data.error || 'Failed to generate article')
       }
 
+      // Save jobId for polling
+      if (data.job_id) {
+        setCurrentJobId(data.job_id)
+      }
+
       // Show success message
       alert('Article generation started! It will take a few minutes. The page will update automatically when ready.')
       
@@ -149,6 +162,7 @@ export default function Home() {
     } catch (error: any) {
       alert(`Error: ${error.message}`)
       setGenerating(false)
+      setCurrentJobId(null) // Clear jobId on error
     }
   }
 
