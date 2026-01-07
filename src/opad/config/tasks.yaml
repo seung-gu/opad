@@ -90,10 +90,12 @@ add_vocabulary:
     Exclude proper nouns and words that {level} learners already know.
     Only include words that genuinely challenge {level} level learners.
     
-    For each word, provide definition in {language} and example sentence.
+    For each word, provide a concise definition in {language} (one sentence) and one example sentence.
     
     Replace each vocabulary word in the article text with [word:definition] format for clickable linking.
     Organize the vocabulary section with clear markdown headings and structure for easy navigation.
+    
+    Work efficiently: Extract words, create definitions, and replace them in the text in one pass.
   expected_output: >
     Adapted reading material with vocabulary words replaced with [word:definition] format.
     Vocabulary section appended with {level}-appropriate words that match the difficulty level, each with definition and example.

@@ -2,15 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  body {
+    @apply bg-white;
+  }
+}
+
 .vocab-word {
-  @apply text-blue-600 cursor-pointer hover:bg-yellow-200;
-  text-decoration: none !important;
+  @apply text-emerald-400 cursor-pointer hover:text-emerald-300 transition-colors;
+  text-decoration: underline;
+  text-decoration-color: rgba(52, 211, 153, 0.3);
+  text-underline-offset: 2px;
+}
+
+.vocab-word:hover {
+  text-decoration-color: rgba(52, 211, 153, 0.6);
 }
 
 .word-definition {
-  @apply p-2 bg-gray-100 border-l-4 border-blue-500 rounded;
+  @apply p-3 bg-slate-800 border-l-4 border-emerald-500 rounded text-white;
   display: block;
-  margin-top: 4px;
-  margin-bottom: 4px;
+  margin-top: 6px;
+  margin-bottom: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.word-definition strong {
+  @apply text-emerald-400;
+}
+
+/* Force text colors in markdown content */
+.prose-invert {
+  color: #f1f5f9 !important;
+}
+
+.prose-invert p {
+  color: #f1f5f9 !important;
+}
+
+.prose-invert h1,
+.prose-invert h2,
+.prose-invert h3,
+.prose-invert h4,
+.prose-invert h5,
+.prose-invert h6 {
+  color: #ffffff !important;
+}
+
+.prose-invert li {
+  color: #f1f5f9 !important;
+}
+
+.prose-invert strong {
+  color: #ffffff !important;
 }
 
