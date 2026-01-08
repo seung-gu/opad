@@ -92,25 +92,54 @@ API_BASE_URL=http://localhost:8000 npm run dev
 
 ---
 
-## 📦 Railway 배포 설정
+## 📦 Railway Deployment Setup
 
-### 서비스별 Start Command
+### ⚠️ Important: Environment Structure
+**All 3 services must be in the same Railway environment/project.**
+- ❌ **Wrong**: Create 3 separate environments, each with 1 service
+- ✅ **Correct**: Create all 3 services (web/api/worker) within the same environment
+- **Why**: Railway variable references (`${{ service.VAR }}`) only work within the same environment
 
-#### Web 서비스
-```bash
-cd web && npm install && npm run build && npx next start -p $PORT
+### 1. Create Services
+Create 3 services in the **same Railway project**:
+- `web` (Next.js)
+- `api` (FastAPI)
+- `worker` (Python)
+
+### 2. Configure Dockerfile Path
+For each service: Settings → Build → Dockerfile Path:
+- `web`: `Dockerfile.web`
+- `api`: `Dockerfile.api`
+- `worker`: `Dockerfile.worker`
+
+### 3. Add Redis Add-on
+- Add Redis Add-on to API service
+- Worker service references API's Redis variables
+
+### 4. Environment Variables
+
+#### Web Service
+```
+API_BASE_URL=https://${{ api.RAILWAY_PUBLIC_DOMAIN }}
 ```
 
-#### API 서비스
-```bash
-pip install -e . && uvicorn api.main:app --host 0.0.0.0 --port $PORT
+#### API Service
+- Redis Add-on automatically provides `REDIS_URL` (no configuration needed)
+
+#### Worker Service
+```
+REDIS_URL=${{ api.REDIS_URL }}
+R2_BUCKET_NAME=your-bucket
+R2_ACCOUNT_ID=your-account-id
+R2_ACCESS_KEY_ID=your-key-id
+R2_SECRET_ACCESS_KEY=your-secret-key
+OPENAI_API_KEY=your-key
+SERPER_API_KEY=your-key
 ```
 
-#### Worker 서비스
-```bash
-pip install -e . && python -m worker.main
-```
-(Worker는 HTTP 포트가 필요 없으므로 PORT 사용 안 함)
+### 5. Public Networking Setup
+- API service: Settings → Networking → Generate Domain
+- Port: Railway auto-assigns (usually 8080)
 
 ---
 
@@ -178,3 +207,38 @@ curl http://localhost:8000/jobs/{job_id}
 ### Job 상태가 업데이트되지 않음
 - Redis에 상태가 저장되는지 확인: `redis-cli GET opad:job:{job_id}`
 - Worker 로그에서 에러 확인
+
+---
+
+## 📊 Redis Data Format
+
+### Job Queue (`opad:jobs`)
+```json
+{
+  "job_id": "uuid",
+  "article_id": "uuid",
+  "inputs": {
+    "language": "German",
+    "level": "B2",
+    "length": "500",
+    "topic": "AI"
+  },
+  "created_at": "2026-01-08T14:00:00"
+}
+```
+
+### Job Status (`opad:job:{job_id}`)
+```json
+{
+  "id": "uuid",
+  "status": "queued|running|succeeded|failed",
+  "progress": 0-100,
+  "message": "Status message",
+  "error": "Error message (if failed)",
+  "updated_at": "2026-01-08T14:00:00"
+}
+```
+
+**Status Flow:**
+- `queued` → `running` → `succeeded` / `failed`
+- `progress`: 0 → 25 → 50 → 75 → 100

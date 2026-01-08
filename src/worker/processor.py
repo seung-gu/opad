@@ -93,15 +93,29 @@ def process_job(job_data: dict) -> bool:
         
     except Exception as e:
         error_msg = str(e)
-        logger.error(f"Job {job_id} failed: {error_msg}")
+        error_type = type(e).__name__
+        
+        # Parse error message for better user feedback
+        if "json" in error_msg.lower() or "JSON" in error_msg:
+            user_message = "AI model returned invalid response. This may be a temporary issue. Please try again."
+            logger.error(f"Job {job_id} failed: JSON parsing error - {error_msg}")
+        elif "timeout" in error_msg.lower():
+            user_message = "Request timed out. The AI model may be overloaded. Please try again."
+            logger.error(f"Job {job_id} failed: Timeout - {error_msg}")
+        elif "rate limit" in error_msg.lower() or "429" in error_msg:
+            user_message = "Rate limit exceeded. Please wait a moment and try again."
+            logger.error(f"Job {job_id} failed: Rate limit - {error_msg}")
+        else:
+            user_message = f"Job failed: {error_type}"
+            logger.error(f"Job {job_id} failed: {error_type} - {error_msg}")
         
         # Job 실패 상태 업데이트
         update_job_status(
             job_id=job_id,
             status='failed',
             progress=0,
-            message='Job failed',
-            error=error_msg
+            message=user_message,
+            error=f"{error_type}: {error_msg[:200]}"  # Truncate long errors
         )
         
         return False
