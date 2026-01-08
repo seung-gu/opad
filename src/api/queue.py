@@ -12,13 +12,33 @@ logger = logging.getLogger(__name__)
 
 # Redis connection
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
+REDIS_HOST = os.getenv('REDISHOST', '')
+REDIS_PORT = os.getenv('REDISPORT', '6379')
+REDIS_PASSWORD = os.getenv('REDISPASSWORD', '')
+REDIS_USER = os.getenv('REDISUSER', 'default')
 QUEUE_NAME = 'opad:jobs'
 
-# If host is missing, try different Railway internal formats
+# Log all Redis variables for debugging
+logger.info(f"REDIS_URL: {REDIS_URL}")
+logger.info(f"REDISHOST: {REDIS_HOST}")
+logger.info(f"REDISPORT: {REDIS_PORT}")
+logger.info(f"REDISPASSWORD: {REDIS_PASSWORD[:10]}..." if REDIS_PASSWORD else "REDISPASSWORD: empty")
+logger.info(f"REDISUSER: {REDIS_USER}")
+
+# If host is missing in URL, construct from individual variables
 if REDIS_URL and '@:' in REDIS_URL:
-    # Try service name only (without .railway.internal)
-    REDIS_URL = REDIS_URL.replace('@:', '@redis:')
-    logger.info(f"Fixed Redis URL using service name 'redis': {REDIS_URL}")
+    if REDIS_HOST:
+        # Use REDISHOST if available
+        REDIS_URL = REDIS_URL.replace('@:', f'@{REDIS_HOST}:')
+        logger.info(f"Fixed Redis URL using REDISHOST: {REDIS_URL}")
+    elif REDIS_PASSWORD and REDIS_PORT:
+        # Construct URL from individual variables
+        # Railway Redis add-on might need explicit construction
+        REDIS_URL = f"redis://{REDIS_USER}:{REDIS_PASSWORD}@redis:{REDIS_PORT}"
+        logger.warning(f"Constructed Redis URL from individual variables: {REDIS_URL}")
+    else:
+        logger.error("Cannot construct Redis URL: missing REDISHOST or REDISPASSWORD")
+        logger.error("Please check Railway Redis service Variables")
 
 if not REDIS_URL or REDIS_URL == 'redis://localhost:6379':
     logger.warning("REDIS_URL not set or using default. Make sure Redis add-on is connected in Railway.")
