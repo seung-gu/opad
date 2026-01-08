@@ -8,7 +8,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Add src to path
-_src_path = Path(__file__).parent.parent.parent
+# main.py is at /app/src/api/main.py
+# src is at /app/src, so we go up 2 levels
+_src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
 from api.routes import articles, jobs

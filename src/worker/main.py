@@ -6,7 +6,9 @@ import logging
 from pathlib import Path
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# main.py is at /app/src/worker/main.py
+# src is at /app/src, so we go up 2 levels (same as processor.py)
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from worker.processor import run_worker_loop
 

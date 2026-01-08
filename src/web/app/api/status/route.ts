@@ -56,14 +56,20 @@ export async function GET(request: NextRequest) {
 
     // 기존 status.json 형식과 호환되도록 변환
     // page.tsx가 기대하는 형식: { current_task, progress, status, message }
+    // Status mapping:
+    // - queued: Job is waiting in queue (not yet picked up by worker)
+    // - running: Job is actively being processed by worker
+    // - completed/error: Terminal states (stop polling)
     return NextResponse.json({
-      current_task: jobData.status === 'running' ? 'processing' : '',
+      current_task: jobData.status === 'running' ? 'processing' : 
+                   jobData.status === 'queued' ? 'queued' : '',
       progress: jobData.progress || 0,
       status: jobData.status === 'succeeded' ? 'completed' : 
              jobData.status === 'failed' ? 'error' : 
-             jobData.status === 'running' ? 'running' : 'idle',
+             jobData.status === 'running' ? 'running' :
+             jobData.status === 'queued' ? 'queued' : 'idle',
       message: jobData.message || '',
-      updated_at: jobData.finished_at || jobData.started_at || jobData.created_at
+      updated_at: jobData.updated_at || new Date().toISOString()
     })
   } catch (error: any) {
     console.error(JSON.stringify({

@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 # Add src to path
+# jobs.py is at /app/src/api/routes/jobs.py
+# src is at /app/src, so we go up 3 levels
 _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
@@ -42,8 +44,7 @@ async def get_job_status_endpoint(job_id: str):
         status=status_data.get('status', 'unknown'),
         progress=status_data.get('progress', 0),
         message=status_data.get('message'),
-        created_at=status_data.get('created_at'),  # ISO string
-        started_at=status_data.get('started_at'),
-        finished_at=status_data.get('finished_at'),
+        created_at=status_data.get('created_at'),  # ISO string, auto-parsed by Pydantic
+        updated_at=status_data.get('updated_at'),  # ISO string, auto-parsed by Pydantic
         error=status_data.get('error')
     )

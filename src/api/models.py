@@ -39,10 +39,10 @@ class JobResponse(BaseModel):
     status: str = Field(..., description="Job status: queued, running, succeeded, failed")
     progress: int = Field(0, ge=0, le=100, description="Progress percentage")
     message: Optional[str] = Field(None, description="Status message")
-    created_at: Optional[datetime] = None
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
+    created_at: Optional[datetime] = Field(None, description="Job creation timestamp")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     error: Optional[str] = Field(None, description="Error message if failed")
+    # Note: started_at and finished_at are not currently tracked in Redis
 
 
 class GenerateResponse(BaseModel):
