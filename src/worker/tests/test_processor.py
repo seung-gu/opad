@@ -6,7 +6,9 @@ import sys
 from pathlib import Path
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+# test_processor.py is at /app/src/worker/tests/test_processor.py
+# src is at /app/src, so we go up 3 levels
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from worker.processor import process_job
 
@@ -30,8 +32,8 @@ class TestWorkerErrorHandling(unittest.TestCase):
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
-    @patch('utils.progress.set_current_job_id')
-    def test_json_parsing_error(self, mock_set_job_id, mock_upload, mock_run_crew, mock_update_status):
+    @patch('opad.progress_listener.JobProgressListener')
+    def test_json_parsing_error(self, mock_listener, mock_upload, mock_run_crew, mock_update_status):
         """Test JSON parsing error handling."""
         # Mock run_crew to raise JSON error
         mock_run_crew.side_effect = Exception(
@@ -54,8 +56,8 @@ class TestWorkerErrorHandling(unittest.TestCase):
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
-    @patch('utils.progress.set_current_job_id')
-    def test_timeout_error(self, mock_set_job_id, mock_upload, mock_run_crew, mock_update_status):
+    @patch('opad.progress_listener.JobProgressListener')
+    def test_timeout_error(self, mock_listener, mock_upload, mock_run_crew, mock_update_status):
         """Test timeout error handling."""
         mock_run_crew.side_effect = Exception("Request timeout after 30 seconds")
         
@@ -70,8 +72,8 @@ class TestWorkerErrorHandling(unittest.TestCase):
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
-    @patch('utils.progress.set_current_job_id')
-    def test_rate_limit_error(self, mock_set_job_id, mock_upload, mock_run_crew, mock_update_status):
+    @patch('opad.progress_listener.JobProgressListener')
+    def test_rate_limit_error(self, mock_listener, mock_upload, mock_run_crew, mock_update_status):
         """Test rate limit error handling."""
         mock_run_crew.side_effect = Exception("Rate limit exceeded. Status code: 429")
         
@@ -86,8 +88,8 @@ class TestWorkerErrorHandling(unittest.TestCase):
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
-    @patch('utils.progress.set_current_job_id')
-    def test_generic_error(self, mock_set_job_id, mock_upload, mock_run_crew, mock_update_status):
+    @patch('opad.progress_listener.JobProgressListener')
+    def test_generic_error(self, mock_listener, mock_upload, mock_run_crew, mock_update_status):
         """Test generic error handling."""
         mock_run_crew.side_effect = ValueError("Some unexpected error")
         
@@ -102,8 +104,8 @@ class TestWorkerErrorHandling(unittest.TestCase):
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
-    @patch('utils.progress.set_current_job_id')
-    def test_successful_job(self, mock_set_job_id, mock_upload, mock_run_crew, mock_update_status):
+    @patch('opad.progress_listener.JobProgressListener')
+    def test_successful_job(self, mock_listener, mock_upload, mock_run_crew, mock_update_status):
         """Test successful job processing."""
         # Mock successful execution
         mock_result = MagicMock()
@@ -123,8 +125,8 @@ class TestWorkerErrorHandling(unittest.TestCase):
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
-    @patch('utils.progress.set_current_job_id')
-    def test_upload_failure(self, mock_set_job_id, mock_upload, mock_run_crew, mock_update_status):
+    @patch('opad.progress_listener.JobProgressListener')
+    def test_upload_failure(self, mock_listener, mock_upload, mock_run_crew, mock_update_status):
         """Test R2 upload failure handling."""
         mock_result = MagicMock()
         mock_result.raw = "# Test Article"
@@ -137,6 +139,25 @@ class TestWorkerErrorHandling(unittest.TestCase):
         call_args = mock_update_status.call_args
         self.assertEqual(call_args[1]['status'], 'failed')
         self.assertIn('Failed to upload', call_args[1]['error'])
+
+
+class TestTaskProgressMapping(unittest.TestCase):
+    """Test task progress mapping constants."""
+    
+    def test_task_progress_constants(self):
+        """Test that TASK_PROGRESS constants are correct."""
+        from utils.progress import TASK_PROGRESS
+        
+        # Verify all tasks are defined
+        self.assertIn('find_news_articles', TASK_PROGRESS)
+        self.assertIn('pick_best_article', TASK_PROGRESS)
+        self.assertIn('adapt_news_article', TASK_PROGRESS)
+        self.assertIn('add_vocabulary', TASK_PROGRESS)
+        
+        # Verify progress ranges
+        self.assertEqual(TASK_PROGRESS['find_news_articles']['start'], 0)
+        self.assertEqual(TASK_PROGRESS['find_news_articles']['end'], 25)
+        self.assertEqual(TASK_PROGRESS['add_vocabulary']['end'], 95)
 
 
 if __name__ == '__main__':
