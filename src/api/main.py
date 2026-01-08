@@ -29,11 +29,18 @@ app = FastAPI(
     version="0.3.0"
 )
 
-# CORS 설정 (Next.js에서 호출 가능하도록)
+# CORS configuration for cross-origin requests from Next.js
+# Note: allow_credentials=True requires explicit origin list (not "*")
+# Currently credentials are not needed, so we use allow_credentials=False
+# For production, set CORS_ORIGINS env var with comma-separated list of allowed origins
+cors_origins_env = os.getenv("CORS_ORIGINS", "*")
+# Handle wildcard separately: FastAPI expects string "*", not list ["*"]
+# Strip whitespace from each origin to handle "origin1, origin2" format
+cors_origins = "*" if cors_origins_env == "*" else [origin.strip() for origin in cors_origins_env.split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: 프로덕션에서는 특정 도메인만 허용
-    allow_credentials=True,
+    allow_origins=cors_origins,  # "*" (string) or ["origin1", "origin2"] (list)
+    allow_credentials=False,  # Must be False when using wildcard origins
     allow_methods=["*"],
     allow_headers=["*"],
 )

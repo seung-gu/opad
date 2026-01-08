@@ -113,6 +113,11 @@ class TestWorkerErrorHandling(unittest.TestCase):
         mock_run_crew.return_value = mock_result
         mock_upload.return_value = True
         
+        # Mock listener instance with task_failed attribute
+        mock_listener_instance = MagicMock()
+        mock_listener_instance.task_failed = False  # No tasks failed
+        mock_listener.return_value = mock_listener_instance
+        
         result = process_job(self.job_data)
         
         self.assertTrue(result)
@@ -126,19 +131,38 @@ class TestWorkerErrorHandling(unittest.TestCase):
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
     @patch('opad.progress_listener.JobProgressListener')
-    def test_upload_failure(self, mock_listener, mock_upload, mock_run_crew, mock_update_status):
-        """Test R2 upload failure handling."""
+    def test_upload_failure_fails_job(self, mock_listener, mock_upload, mock_run_crew, mock_update_status):
+        """Test that R2 upload failure fails the job.
+        
+        Rationale: Without successful upload, the generated article content is lost
+        (only exists in memory). Users cannot access the content, so marking the job
+        as 'succeeded' would be misleading. Upload failure = job failure.
+        """
         mock_result = MagicMock()
         mock_result.raw = "# Test Article"
         mock_run_crew.return_value = mock_result
-        mock_upload.return_value = False
+        # Mock upload to raise exception
+        mock_upload.side_effect = Exception("S3 connection timeout")
+        
+        # Mock listener instance with task_failed attribute
+        mock_listener_instance = MagicMock()
+        mock_listener_instance.task_failed = False  # No tasks failed
+        mock_listener.return_value = mock_listener_instance
         
         result = process_job(self.job_data)
         
+        # Job should fail due to upload failure
         self.assertFalse(result)
+        
+        # Final status should be 'failed' with error message
         call_args = mock_update_status.call_args
         self.assertEqual(call_args[1]['status'], 'failed')
-        self.assertIn('Failed to upload', call_args[1]['error'])
+        self.assertEqual(call_args[1]['progress'], 95)
+        self.assertIn('Upload', call_args[1]['message'])
+        self.assertIn('R2 upload error', call_args[1]['error'])
+        
+        # Upload should have been attempted
+        mock_upload.assert_called_once_with("# Test Article")
 
 
 class TestTaskProgressMapping(unittest.TestCase):

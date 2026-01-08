@@ -45,9 +45,10 @@ class JobProgressListener(BaseEventListener):
     
     Architecture:
     - Inherits from BaseEventListener (CrewAI's base class)
-    - Registers event handlers on the global CrewAIEventsBus
+    - Registers event handlers using @crewai_event_bus.on() decorator syntax
     - Handlers are called automatically by CrewAI when events occur
     - Each handler updates Redis via update_job_status()
+    - IMPORTANT: Must be used within crewai_event_bus.scoped_handlers() context
     
     Task Progress Mapping:
     - find_news_articles: 0% → 25%
@@ -56,14 +57,20 @@ class JobProgressListener(BaseEventListener):
     - add_vocabulary: 75% → 95%
     - R2 upload: 95% → 100% (handled separately in processor.py)
     
-    Usage:
-        listener = JobProgressListener(job_id="abc123", article_id="xyz789")
-        # Listener is now active - no need to register with crew!
-        # CrewAI will automatically call handlers when tasks execute
+    Usage (within scoped_handlers for proper isolation):
+        from crewai.events.event_bus import crewai_event_bus
         
-        crew = ReadingMaterialCreator().crew()
-        result = crew.kickoff(inputs=inputs)
-        # ✅ Progress updates happen automatically during kickoff()
+        with crewai_event_bus.scoped_handlers():
+            listener = JobProgressListener(job_id="abc123", article_id="xyz789")
+            crew = ReadingMaterialCreator().crew()
+            result = crew.kickoff(inputs=inputs)
+            # ✅ Progress updates happen automatically during kickoff()
+        # ✅ Handlers are automatically cleared after scoped_handlers exit
+    
+    Why scoped_handlers is critical:
+    - Event handlers registered within the scope are automatically cleared on exit
+    - This prevents old handlers from triggering for new jobs
+    - Eliminates cross-job state corruption
     
     Args:
         job_id: Job ID to track in Redis
@@ -74,7 +81,7 @@ class JobProgressListener(BaseEventListener):
         """Initialize the listener and register event handlers.
         
         Note: super().__init__() automatically calls setup_listeners(),
-        which registers our handlers on the global event bus.
+        which registers our handlers using the @event_bus.on() decorator.
         
         Args:
             job_id: Job ID to track
@@ -82,6 +89,7 @@ class JobProgressListener(BaseEventListener):
         """
         self.job_id = job_id
         self.article_id = article_id
+        self.task_failed = False  # Track if any task failed
         
         # Import shared task progress mapping from utils
         from utils.progress import TASK_PROGRESS
@@ -97,7 +105,7 @@ class JobProgressListener(BaseEventListener):
         """Setup event listeners on the CrewAI event bus.
         
         This method is called automatically by BaseEventListener.__init__().
-        It registers handlers for task events using the @event_bus.on() decorator.
+        It registers handlers for task events using the @event_bus.on() decorator syntax.
         
         Event Flow:
         1. CrewAI starts a task → emits TaskStartedEvent
@@ -106,28 +114,33 @@ class JobProgressListener(BaseEventListener):
         4. Handler updates Redis with task start progress
         5. Same flow for TaskCompletedEvent and TaskFailedEvent
         
+        Handler Isolation:
+        - Handlers are registered within crewai_event_bus.scoped_handlers() context
+        - When the scope exits, all handlers are automatically cleared
+        - This prevents cross-job state corruption from lingering handlers
+        
         Args:
             crewai_event_bus: Global singleton event bus (injected by parent class)
         """
-        
         @crewai_event_bus.on(TaskStartedEvent)
         def on_task_started(source, event: TaskStartedEvent):
             """Handler called when CrewAI starts a task.
             
             Event Data:
-            - event.task: Task object with description, agent, etc.
+            - event.task: Task object with name, description, agent, etc.
             - event.context: Task context (previous task outputs)
             
             Args:
                 source: Event source (usually the Crew instance)
                 event: TaskStartedEvent with task details
             """
-            # Get task description from config/tasks.yaml
+            # Get task name (not description!) from Task object
+            # Task name matches the method name in crew.py and TASK_PROGRESS keys
             # Example: 'find_news_articles', 'pick_best_article', etc.
-            task_description = event.task.description if event.task else None
+            task_name = event.task.name if event.task else None
             
-            if task_description and task_description in self.task_progress:
-                info = self.task_progress[task_description]
+            if task_name and task_name in self.task_progress:
+                info = self.task_progress[task_name]
                 
                 # Import here to avoid circular dependency
                 from api.queue import update_job_status
@@ -141,13 +154,16 @@ class JobProgressListener(BaseEventListener):
                 )
                 
                 logger.info(
-                    f"[EVENT] Task started: {task_description} "
+                    f"[EVENT] Task started: {task_name} "
                     f"({info['start']}% - {info['label']})"
                 )
             else:
-                # Unknown task - log warning
+                # Unknown task - log warning with both name and description for debugging
+                task_desc = event.task.description if event.task else None
+                desc_preview = task_desc[:50] if task_desc else 'None'
                 logger.warning(
-                    f"[EVENT] Unknown task started: {task_description}"
+                    f"[EVENT] Unknown task started. Name: '{task_name}', "
+                    f"Description: '{desc_preview}...' (truncated)"
                 )
         
         @crewai_event_bus.on(TaskCompletedEvent)
@@ -155,17 +171,18 @@ class JobProgressListener(BaseEventListener):
             """Handler called when CrewAI completes a task.
             
             Event Data:
-            - event.task: Task object
+            - event.task: Task object with name, description, etc.
             - event.output: TaskOutput with raw/pydantic/json_dict results
             
             Args:
                 source: Event source
                 event: TaskCompletedEvent with task and output
             """
-            task_description = event.task.description if event.task else None
+            # Get task name (not description!) from Task object
+            task_name = event.task.name if event.task else None
             
-            if task_description and task_description in self.task_progress:
-                info = self.task_progress[task_description]
+            if task_name and task_name in self.task_progress:
+                info = self.task_progress[task_name]
                 
                 from api.queue import update_job_status
                 
@@ -178,12 +195,16 @@ class JobProgressListener(BaseEventListener):
                 )
                 
                 logger.info(
-                    f"[EVENT] Task completed: {task_description} "
+                    f"[EVENT] Task completed: {task_name} "
                     f"({info['end']}% - {info['label']})"
                 )
             else:
+                # Unknown task - log warning with both name and description for debugging
+                task_desc = event.task.description if event.task else None
+                desc_preview = task_desc[:50] if task_desc else 'None'
                 logger.warning(
-                    f"[EVENT] Unknown task completed: {task_description}"
+                    f"[EVENT] Unknown task completed. Name: '{task_name}', "
+                    f"Description: '{desc_preview}...' (truncated)"
                 )
         
         @crewai_event_bus.on(TaskFailedEvent)
@@ -191,18 +212,23 @@ class JobProgressListener(BaseEventListener):
             """Handler called when a task fails.
             
             Event Data:
-            - event.task: Task object
+            - event.task: Task object with name, description, etc.
             - event.error: Error message
             
             Args:
                 source: Event source
                 event: TaskFailedEvent with error details
             """
-            task_description = event.task.description if event.task else None
+            # Get task name (not description!) from Task object
+            task_name = event.task.name if event.task else None
+            task_label = self.task_progress.get(task_name, {}).get('label', task_name) if task_name else 'Unknown task'
             error_msg = event.error if hasattr(event, 'error') else 'Unknown error'
             
+            # Mark that a task has failed
+            self.task_failed = True
+            
             logger.error(
-                f"[EVENT] Task failed: {task_description} - Error: {error_msg}"
+                f"[EVENT] Task failed: {task_name} ({task_label}) - Error: {error_msg}"
             )
             
             # Update job status to failed
@@ -210,14 +236,14 @@ class JobProgressListener(BaseEventListener):
             
             # Get current progress if task is known
             current_progress = 0
-            if task_description and task_description in self.task_progress:
-                current_progress = self.task_progress[task_description]['start']
+            if task_name and task_name in self.task_progress:
+                current_progress = self.task_progress[task_name]['start']
             
             update_job_status(
                 job_id=self.job_id,
                 status='failed',
                 progress=current_progress,  # Preserve progress at failure point
-                message=f"Task failed: {task_description}",
+                message=f"Task failed: {task_label}",
                 error=str(error_msg)[:200],  # Truncate long errors
                 article_id=self.article_id
             )

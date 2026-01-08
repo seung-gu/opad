@@ -132,18 +132,11 @@ async def generate_article(article_id: str, request: GenerateRequest):
         'topic': request.topic
     }
     
-    # Step 1: Enqueue job to Redis queue
-    # This adds the job to the queue for worker to pick up
-    success = enqueue_job(job_id, article_id, inputs)
-    if not success:
-        raise HTTPException(
-            status_code=503,
-            detail="Failed to enqueue job. Queue service unavailable."
-        )
-    
-    # Step 2: Initialize job status in Redis
-    # Critical: Client will poll this status, so it must exist
-    # If this fails, client will poll forever for non-existent status
+    # Step 1: Initialize job status in Redis FIRST
+    # Critical: Must create status before enqueuing to prevent orphaned jobs
+    # If status creation fails, we haven't queued the job yet, so no orphan
+    # If enqueue fails after this, status will show 'queued' but worker never picks it up
+    # This is safer than the reverse (orphaned processing job with no status)
     status_updated = update_job_status(
         job_id=job_id,
         status='queued',
@@ -152,13 +145,29 @@ async def generate_article(article_id: str, request: GenerateRequest):
         article_id=article_id
     )
     if not status_updated:
-        # Job is enqueued but status init failed
-        # Raise error to prevent client from getting job_id
-        # TODO: Consider dequeuing the job or implementing cleanup
-        logger.error(f"Failed to update job status for {job_id} after enqueue")
+        logger.error(f"Failed to initialize job status for {job_id}")
         raise HTTPException(
             status_code=503,
             detail="Failed to initialize job status. Queue service unavailable."
+        )
+    
+    # Step 2: Enqueue job to Redis queue
+    # Now that status exists, enqueue the job for worker to pick up
+    # If this fails, status exists but job won't be processed (visible failure state)
+    success = enqueue_job(job_id, article_id, inputs)
+    if not success:
+        # Update status to 'failed' since we couldn't enqueue
+        update_job_status(
+            job_id=job_id,
+            status='failed',
+            progress=0,
+            message='Failed to enqueue job',
+            error='Queue service unavailable',
+            article_id=article_id
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Failed to enqueue job. Queue service unavailable."
         )
     
     logger.info(f"Job {job_id} enqueued for article {article_id}")

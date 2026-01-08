@@ -37,7 +37,7 @@ class TestQueueBasics(unittest.TestCase):
         
         result = enqueue_job(job_id, article_id, inputs)
         self.assertTrue(result)
-        mock_redis.lpush.assert_called_once()
+        mock_redis.rpush.assert_called_once()
         
         # Test status update
         update_job_status(
@@ -57,9 +57,8 @@ class TestQueueBasics(unittest.TestCase):
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
-    @patch('utils.progress.set_current_job_id')
     @patch('api.queue.get_redis_client')
-    def test_end_to_end_job_processing(self, mock_get_redis, mock_set_job_id, 
+    def test_end_to_end_job_processing(self, mock_get_redis,
                                         mock_upload, mock_run_crew, mock_update_status):
         """Test end-to-end job processing flow."""
         # Setup

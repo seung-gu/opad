@@ -15,7 +15,12 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["opad"]
+# Include all packages in src/ directory
+# opad: CrewAI crew implementation
+# api: FastAPI service for HTTP endpoints
+# worker: Background job processor
+# utils: Shared utilities (cloudflare, progress tracking)
+packages = ["opad", "api", "api.routes", "api.tests", "worker", "worker.tests", "utils"]
 
 [tool.setuptools.package-dir]
 "" = "src"

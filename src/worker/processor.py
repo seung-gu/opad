@@ -39,22 +39,25 @@ def process_job(job_data: dict) -> bool:
     
     Processing flow:
         1. Extract job parameters (job_id, article_id, inputs)
-        2. Update status to 'running'
-        3. Execute CrewAI (calls opad.main.run_crew)
+        2. Update status to 'running' (progress=0)
+        3. Create JobProgressListener for real-time progress tracking
+        4. Execute CrewAI (calls opad.main.run_crew)
            - CrewAI generates article content
-           - Uploads to Cloudflare R2
-           - Updates progress via utils.progress
-        4. Handle success/failure
+           - Progress updates happen automatically via JobProgressListener
+        5. Upload result to Cloudflare R2 (progress=95)
+        6. Update status to 'succeeded' (progress=100)
+        7. Handle success/failure
     
     Progress tracking:
-        - utils.progress.update_status() automatically updates Redis
-        - Worker only needs to handle initial 'running' and final 'failed' states
-        - Success state is set by run_crew() after R2 upload
+        - JobProgressListener catches CrewAI events and updates Redis in real-time
+        - Worker handles initial 'running', R2 upload progress, and final 'succeeded'/'failed' states
+        - Event-based tracking provides accurate progress (not estimated)
     
     Error handling:
         - Translates technical errors to user-friendly messages
         - Preserves progress on failure (e.g., 95% stays 95%, not reset to 0%)
         - Logs detailed error for debugging
+        - R2 upload failures don't fail the entire job (content is still generated)
     
     Args:
         job_data: Job data from queue
@@ -90,19 +93,76 @@ def process_job(job_data: dict) -> bool:
     
     try:
         # ✅ Create JobProgressListener for real-time progress tracking
-        # This automatically registers to CrewAI's global event bus
+        # Use CrewAI's scoped_handlers() to ensure handlers are isolated per job
+        # This prevents cross-job state corruption from lingering handlers
         from opad.progress_listener import JobProgressListener
-        progress_listener = JobProgressListener(
+        from crewai.events.event_bus import crewai_event_bus
+        
+        # Use scoped_handlers() to create an isolated event handler scope for this job
+        # All handlers registered within this scope are automatically cleared when exiting
+        with crewai_event_bus.scoped_handlers():
+            # Create listener - handlers will be registered in the current scope
+            listener = JobProgressListener(job_id=job_id, article_id=article_id)
+            logger.info(f"Event listener registered for job {job_id} in isolated scope")
+            
+            # ✅ Execute CrewAI
+            # During execution, CrewAI emits TaskStartedEvent/TaskCompletedEvent
+            # Our progress_listener automatically catches these events and updates Redis
+            logger.info(f"Executing CrewAI for job {job_id}")
+            result = run_crew(inputs=inputs)
+            
+            logger.info(f"CrewAI execution completed for job {job_id}")
+            
+            # ✅ Check if any task failed during execution
+            # If TaskFailedEvent was emitted, listener.task_failed will be True
+            # In this case, the job status is already set to 'failed' by the event handler
+            # We should not overwrite it with 'succeeded'
+            if listener.task_failed:
+                logger.warning(
+                    f"Job {job_id} had task failures but CrewAI didn't raise exception. "
+                    f"Job status already set to 'failed' by event handler."
+                )
+                return False
+        # ✅ Event handlers are automatically cleared here (scoped_handlers exit)
+        
+        # ✅ Upload to R2
+        # CRITICAL: Upload is required for article to be accessible to users
+        # If upload fails, the generated content is lost (only exists in memory)
+        # Therefore, upload failure = job failure
+        logger.info(f"Uploading result to R2 for job {job_id}")
+        update_job_status(
             job_id=job_id,
+            status='running',
+            progress=95,
+            message='Uploading to cloud storage...',
             article_id=article_id
         )
-        logger.info(f"Event listener registered for job {job_id}")
         
-        # ✅ Execute CrewAI
-        # During execution, CrewAI emits TaskStartedEvent/TaskCompletedEvent
-        # Our progress_listener automatically catches these events and updates Redis
-        logger.info(f"Executing CrewAI for job {job_id}")
-        result = run_crew(inputs=inputs)
+        try:
+            upload_to_cloud(result.raw)
+            logger.info(f"Successfully uploaded to R2 for job {job_id}")
+        except Exception as upload_error:
+            logger.error(f"R2 upload failed for job {job_id}: {upload_error}")
+            # Upload failure means content is lost - mark job as failed
+            update_job_status(
+                job_id=job_id,
+                status='failed',
+                progress=95,
+                message='Upload to cloud storage failed',
+                error=f'R2 upload error: {str(upload_error)[:200]}',
+                article_id=article_id
+            )
+            return False
+        
+        # ✅ Update final status to 'succeeded'
+        # Only reached if upload succeeded
+        update_job_status(
+            job_id=job_id,
+            status='succeeded',
+            progress=100,
+            message='Article generated successfully!',
+            article_id=article_id
+        )
         
         logger.info(f"Job {job_id} completed successfully")
         return True
