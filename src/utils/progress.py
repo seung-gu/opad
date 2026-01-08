@@ -5,12 +5,16 @@ import logging
 import os
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 # Get project root (assuming this file is in src/utils, go up 2 levels)
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
 STATUS_FILE = _PROJECT_ROOT / 'status.json'
+
+# Global job_id for Redis updates
+_current_job_id: Optional[str] = None
 
 # Task progress mapping (4 tasks = 0-95%, uploading = 95-100%)
 TASK_PROGRESS = {
@@ -22,8 +26,18 @@ TASK_PROGRESS = {
 }
 
 
+def set_current_job_id(job_id: str):
+    """Set the current job ID for Redis updates.
+    
+    Args:
+        job_id: Job ID to track
+    """
+    global _current_job_id
+    _current_job_id = job_id
+
+
 def update_status(current_task: str, progress: int, status: str, message: str = ""):
-    """Update status file for web progress tracking.
+    """Update status file and Redis for web progress tracking.
     
     Args:
         current_task: Current task name
@@ -38,14 +52,29 @@ def update_status(current_task: str, progress: int, status: str, message: str = 
         'message': message,
         'updated_at': datetime.now().isoformat()
     }
+    
+    # Update file (legacy support)
     try:
-        # Ensure parent directory exists
         STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(STATUS_FILE, 'w') as f:
             json.dump(status_data, f, indent=2)
         logger.info(f"Updated status: {current_task} - {progress}% - {status} - {message} (file: {STATUS_FILE})")
     except Exception as e:
         logger.error(f"Failed to update status file {STATUS_FILE}: {e}")
+    
+    # Update Redis if job_id is set
+    if _current_job_id:
+        try:
+            from api.queue import update_job_status
+            update_job_status(
+                job_id=_current_job_id,
+                status='running' if status == 'running' else 'failed',
+                progress=progress,
+                message=message
+            )
+            logger.debug(f"Updated Redis for job {_current_job_id}: {progress}%")
+        except Exception as e:
+            logger.warning(f"Failed to update Redis status: {e}")
 
 
 def get_task_info(task_name: str):

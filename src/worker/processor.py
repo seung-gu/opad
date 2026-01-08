@@ -47,6 +47,10 @@ def process_job(job_data: dict) -> bool:
     
     logger.info(f"Processing job {job_id} for article {article_id}")
     
+    # Set job_id for progress tracking
+    from utils.progress import set_current_job_id
+    set_current_job_id(job_id)
+    
     # Job 상태를 running으로 업데이트
     update_job_status(
         job_id=job_id,
@@ -58,8 +62,7 @@ def process_job(job_data: dict) -> bool:
     try:
         # CrewAI 실행
         # 기존 opad.main.run 함수를 재사용
-        # 이 함수는 내부적으로 progress.update_status를 호출하지만,
-        # 우리는 Redis를 통해 상태를 관리하므로 별도로 처리 필요
+        # progress.update_status가 자동으로 Redis에도 업데이트함
         
         logger.info(f"Executing CrewAI for job {job_id}")
         result = run_crew(inputs=inputs)
