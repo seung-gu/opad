@@ -39,7 +39,7 @@ class JobResponse(BaseModel):
     status: str = Field(..., description="Job status: queued, running, succeeded, failed")
     progress: int = Field(0, ge=0, le=100, description="Progress percentage")
     message: Optional[str] = Field(None, description="Status message")
-    created_at: datetime
+    created_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     error: Optional[str] = Field(None, description="Error message if failed")
