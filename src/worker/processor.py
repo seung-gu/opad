@@ -128,9 +128,10 @@ def run_worker_loop():
                 logger.info(f"Received job: {job_data.get('job_id')}")
                 process_job(job_data)
             else:
-                # 큐가 비어있으면 잠시 대기 (로그 스팸 방지)
-                # dequeue_job이 이미 1초 timeout이 있으므로 여기서는 pass
-                pass
+                # 큐가 비어있거나 Redis 연결 실패 시 대기
+                # Redis 연결 실패 시 무한 루프 방지
+                import time
+                time.sleep(5)  # 5초 대기
                 
         except KeyboardInterrupt:
             logger.info("Worker stopped by user")
@@ -138,3 +139,5 @@ def run_worker_loop():
         except Exception as e:
             logger.error(f"Error in worker loop: {e}", exc_info=True)
             # 에러가 발생해도 worker는 계속 실행 (다음 job 처리)
+            import time
+            time.sleep(5)  # 에러 발생 시 5초 대기

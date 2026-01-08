@@ -18,10 +18,10 @@ REDIS_PASSWORD = os.getenv('REDISPASSWORD', '')
 REDIS_USER = os.getenv('REDISUSER', 'default')
 QUEUE_NAME = 'opad:jobs'
 
-# Cache connection and track retry count
+# Cache connection - single attempt only
 _redis_client_cache = None
-_redis_retry_count = 0
-_redis_max_retries = 10  # Log error only after 10 failed attempts
+_redis_connection_attempted = False
+_redis_connection_failed = False
 
 # Construct Redis URL from individual variables if URL is incomplete
 # Railway provides incomplete URL (missing host), so we need to construct it
@@ -52,13 +52,16 @@ if not REDIS_URL:
 def get_redis_client() -> Optional[redis.Redis]:
     """Get Redis client connection.
     
-    Uses Railway-provided REDIS_URL or constructs from individual variables.
-    Connection is cached - if it fails once, it won't retry to avoid log spam.
+    Attempts connection ONCE per deployment. If it fails, logs error once and stops.
     
     Returns:
         Redis client or None if connection fails
     """
-    global _redis_client_cache, _redis_retry_count
+    global _redis_client_cache, _redis_connection_attempted, _redis_connection_failed
+    
+    # If already failed, return None immediately (no log)
+    if _redis_connection_failed:
+        return None
     
     # Return cached client if available
     if _redis_client_cache:
@@ -69,17 +72,22 @@ def get_redis_client() -> Optional[redis.Redis]:
             # Cache is stale, clear it
             _redis_client_cache = None
     
+    # If already attempted and failed, don't retry
+    if _redis_connection_attempted:
+        return None
+    
+    # Mark as attempted
+    _redis_connection_attempted = True
+    
     if not REDIS_URL:
-        _redis_retry_count += 1
-        if _redis_retry_count == _redis_max_retries:
-            logger.error("[REDIS] REDIS_URL not configured after 10 attempts. Check Railway Variables.")
+        logger.error("[REDIS] REDIS_URL not configured. Set Variables: REDIS_URL=${{api.REDIS_URL}}")
+        _redis_connection_failed = True
         return None
     
     # Reject localhost URLs
     if 'localhost' in REDIS_URL or '127.0.0.1' in REDIS_URL:
-        _redis_retry_count += 1
-        if _redis_retry_count == _redis_max_retries:
-            logger.error(f"[REDIS] Invalid URL contains localhost after 10 attempts. Use ${{{{ Redis.REDIS_URL }}}}.")
+        logger.error(f"[REDIS] Invalid URL contains localhost. Use ${{{{api.REDIS_URL}}}} in Railway Variables.")
+        _redis_connection_failed = True
         return None
     
     try:
@@ -89,21 +97,21 @@ def get_redis_client() -> Optional[redis.Redis]:
             socket_connect_timeout=5
         )
         client.ping()
-        # Cache successful connection and reset retry count
+        # Cache successful connection
         _redis_client_cache = client
-        _redis_retry_count = 0
+        logger.info("[REDIS] Connected successfully")
         return client
     except (RedisError, ValueError, OSError) as e:
-        # Increment retry count and log only at threshold
-        _redis_retry_count += 1
-        if _redis_retry_count == _redis_max_retries:
-            error_msg = str(e)[:150]
-            if "localhost" in error_msg or "127.0.0.1" in error_msg:
-                logger.error(f"[REDIS] Connection to localhost failed after 10 attempts. Configure ${{{{ Redis.REDIS_URL }}}}.")
-            elif "Name or service not known" in error_msg:
-                logger.error(f"[REDIS] DNS failed after 10 attempts. Check Variables: ${{{{ Redis.REDIS_URL }}}} for API, Public URL for Worker.")
-            else:
-                logger.error(f"[REDIS] Connection failed after 10 attempts: {error_msg}")
+        # Log error ONCE and mark as failed
+        error_msg = str(e)[:150]
+        if "localhost" in error_msg or "127.0.0.1" in error_msg:
+            logger.error(f"[REDIS] Connection to localhost failed.")
+        elif "Name or service not known" in error_msg:
+            logger.error(f"[REDIS] DNS resolution failed. Set Variables: REDIS_URL=${{{{api.REDIS_URL}}}}")
+        else:
+            logger.error(f"[REDIS] Connection failed: {error_msg}")
+        logger.error("[REDIS] Will not retry. Fix Variables and redeploy.")
+        _redis_connection_failed = True
         return None
 
 
