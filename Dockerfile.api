@@ -14,8 +14,11 @@ COPY . /app
 # Install Python dependencies
 RUN pip install --no-cache-dir --break-system-packages -e .
 
+# Set Python path
+ENV PYTHONPATH=/app/src
+
 # Expose port (Railway will set PORT env var)
 EXPOSE 8000
 
 # Start FastAPI server
-CMD sh -c "PYTHONPATH=src uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
