@@ -10,43 +10,14 @@ from redis.exceptions import RedisError
 
 logger = logging.getLogger(__name__)
 
-# Redis connection
+# Redis connection - Railway provides complete REDIS_URL
 REDIS_URL = os.getenv('REDIS_URL', '')
-REDIS_HOST = os.getenv('REDISHOST', '')
-REDIS_PORT = os.getenv('REDISPORT', '6379')
-REDIS_PASSWORD = os.getenv('REDISPASSWORD', '')
-REDIS_USER = os.getenv('REDISUSER', 'default')
 QUEUE_NAME = 'opad:jobs'
 
 # Cache connection - single attempt only
 _redis_client_cache = None
 _redis_connection_attempted = False
 _redis_connection_failed = False
-
-# Construct Redis URL from individual variables if URL is incomplete
-# Railway provides incomplete URL (missing host), so we need to construct it
-if REDIS_URL and '@:' in REDIS_URL:
-    # URL is missing host (e.g., redis://user:pass@:6379)
-    if REDIS_HOST:
-        # Use REDISHOST if provided (should be set when Private Networking is enabled)
-        REDIS_URL = REDIS_URL.replace('@:', f'@{REDIS_HOST}:')
-    else:
-        # REDISHOST is empty - this means Private Networking is not configured
-        # For API service: should use Private Network (${{ Redis.REDIS_URL }})
-        # For Worker service: should use Public Network URL
-        logger.error(f"[REDIS] REDISHOST is empty - Private Networking may not be enabled")
-        logger.error(f"[REDIS] For API: Use ${{ Redis.REDIS_URL }} in Variables")
-        logger.error(f"[REDIS] For Worker: Use Public Network URL in Variables")
-        # Don't auto-fix, let it fail with clear error
-elif not REDIS_URL and REDIS_PASSWORD:
-    # No URL provided, can't construct without REDISHOST
-    if REDIS_HOST:
-        REDIS_URL = f"redis://{REDIS_USER}:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}"
-    else:
-        logger.error(f"[REDIS] Cannot build URL: missing both REDIS_URL and REDISHOST")
-
-if not REDIS_URL:
-    logger.error("[REDIS] Cannot construct Redis URL: missing required variables")
 
 
 def get_redis_client() -> Optional[redis.Redis]:
