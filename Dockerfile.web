@@ -17,3 +17,4 @@ EXPOSE 3000
 
 # Start Next.js server on Railway's PORT (default 3000)
 CMD sh -c "npx next start -p ${PORT:-3000}"
+

@@ -14,5 +14,9 @@ COPY . /app
 # Install Python dependencies
 RUN pip install --no-cache-dir --break-system-packages -e .
 
+# Set Python path (same as API service)
+ENV PYTHONPATH=/app/src
+
 # Start worker (no HTTP port needed)
-CMD sh -c "PYTHONPATH=src python -m worker.main"
+CMD ["python", "-m", "worker.main"]
+
