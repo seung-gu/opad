@@ -18,27 +18,20 @@ REDIS_PASSWORD = os.getenv('REDISPASSWORD', '')
 REDIS_USER = os.getenv('REDISUSER', 'default')
 QUEUE_NAME = 'opad:jobs'
 
-# Log all Redis variables for debugging
-logger.info(f"REDIS_URL: {REDIS_URL}")
-logger.info(f"REDISHOST: {REDIS_HOST}")
-logger.info(f"REDISPORT: {REDIS_PORT}")
-logger.info(f"REDISPASSWORD: {REDIS_PASSWORD[:10]}..." if REDIS_PASSWORD else "REDISPASSWORD: empty")
-logger.info(f"REDISUSER: {REDIS_USER}")
-
 # If host is missing in URL, construct from individual variables
 if REDIS_URL and '@:' in REDIS_URL:
     if REDIS_HOST:
         # Use REDISHOST if available
         REDIS_URL = REDIS_URL.replace('@:', f'@{REDIS_HOST}:')
-        logger.info(f"Fixed Redis URL using REDISHOST: {REDIS_URL}")
+        logger.info(f"[REDIS] Using REDISHOST: {REDIS_URL}")
     elif REDIS_PASSWORD and REDIS_PORT:
         # Construct URL from individual variables
-        # Railway Redis add-on might need explicit construction
         REDIS_URL = f"redis://{REDIS_USER}:{REDIS_PASSWORD}@redis:{REDIS_PORT}"
-        logger.warning(f"Constructed Redis URL from individual variables: {REDIS_URL}")
+        logger.warning(f"[REDIS] Constructed URL from variables: redis://{REDIS_USER}:***@redis:{REDIS_PORT}")
     else:
-        logger.error("Cannot construct Redis URL: missing REDISHOST or REDISPASSWORD")
-        logger.error("Please check Railway Redis service Variables")
+        logger.error("[REDIS] Cannot construct URL: missing REDISHOST or REDISPASSWORD")
+else:
+    logger.info(f"[REDIS] Using REDIS_URL: {REDIS_URL.split('@')[0]}@***")
 
 if not REDIS_URL or REDIS_URL == 'redis://localhost:6379':
     logger.warning("REDIS_URL not set or using default. Make sure Redis add-on is connected in Railway.")
@@ -53,12 +46,12 @@ def get_redis_client() -> Optional[redis.Redis]:
     try:
         # Parse Redis URL (Railway provides REDIS_URL)
         client = redis.from_url(REDIS_URL, decode_responses=True)
-        # Test connection
+        # Test connection (silently, don't log every check)
         client.ping()
         return client
     except (RedisError, ValueError) as e:
-        logger.error(f"Failed to connect to Redis at {REDIS_URL}: {e}")
-        logger.error("Make sure Redis add-on is connected and REDIS_URL environment variable is set.")
+        # Only log error once per connection attempt (not on every queue check)
+        logger.error(f"[REDIS] Connection failed: {str(e)[:100]}")
         return None
 
 
