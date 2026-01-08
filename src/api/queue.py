@@ -12,22 +12,13 @@ logger = logging.getLogger(__name__)
 
 # Redis connection
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
-REDIS_HOST = os.getenv('REDISHOST') or os.getenv('REDIS_HOST')
-REDIS_PORT = os.getenv('REDISPORT') or os.getenv('REDIS_PORT', '6379')
-REDIS_PASSWORD = os.getenv('REDISPASSWORD') or os.getenv('REDIS_PASSWORD')
 QUEUE_NAME = 'opad:jobs'
 
-# If REDIS_URL is missing host (e.g., redis://default:password@:6379)
-# Try to construct it from individual variables or use Railway service discovery
+# If host is missing, try different Railway internal formats
 if REDIS_URL and '@:' in REDIS_URL:
-    # Missing host in URL, try to construct it
-    if REDIS_HOST:
-        # Replace empty host with actual host
-        REDIS_URL = REDIS_URL.replace('@:', f'@{REDIS_HOST}:')
-    else:
-        # Use Railway service discovery (assuming service name is "redis")
-        REDIS_URL = REDIS_URL.replace('@:', '@redis.railway.internal:')
-        logger.info("Using Railway service discovery for Redis: redis.railway.internal")
+    # Try service name only (without .railway.internal)
+    REDIS_URL = REDIS_URL.replace('@:', '@redis:')
+    logger.info(f"Fixed Redis URL using service name 'redis': {REDIS_URL}")
 
 if not REDIS_URL or REDIS_URL == 'redis://localhost:6379':
     logger.warning("REDIS_URL not set or using default. Make sure Redis add-on is connected in Railway.")
