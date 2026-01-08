@@ -72,10 +72,20 @@
 ---
 
 ### 로드맵(마일스톤 초안)
-- **M0**: 3-service skeleton + Railway(Postgres/Redis) 기본 구성
+- **M0**: 3-service skeleton + Railway(Postgres/Redis) 기본 구성 → [#7](https://github.com/seung-gu/opad/issues/7) ✅
 - **M1**: Article/Job DB 스키마 + API 엔드포인트 + R2 key 구조 변경
 - **M2**: FE 라우트 분리(`/articles`, `/articles/[id]`, `/jobs/[jobId]`) + 폴링 UX
 - **M3**: worker 안정화(idempotency, concurrency, retry, observability) + 운영/문서화
+
+---
+
+## 2026-01-08
+
+### Completed: 3-Service Architecture Implementation [#7](https://github.com/seung-gu/opad/issues/7)
+- ✅ Web/API/Worker service separation and Railway deployment
+- ✅ Redis Job Queue implementation
+- ✅ Progress tracking (Redis-based)
+- ✅ Error handling improvements
 
 ---
 

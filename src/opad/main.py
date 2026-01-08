@@ -24,9 +24,16 @@ def run(inputs=None):
     """
     Run the reading material creator crew.
     
+    This function simply executes CrewAI and returns the result.
+    Progress tracking is handled by JobProgressListener in worker/processor.py
+    when called through the worker service.
+    
     Args:
         inputs: Dictionary with language, level, length, topic.
                 If None, reads from input.json file or uses defaults.
+    
+    Returns:
+        CrewOutput: Result from crew execution
     """
     if inputs is None:
         # Try to read from input.json file
@@ -44,68 +51,22 @@ def run(inputs=None):
             }
 
     try:
-        sys.path.insert(0, str(Path(__file__).parent.parent))
-        from utils.progress import update_status, start_task, complete_task
-        
         logger.info("Starting crew execution...")
-        update_status('initializing', 0, 'running', 'Initializing...')
         
         # Create crew instance
         crew_instance = ReadingMaterialCreator().crew()
         
-        # Get task names for progress tracking
-        task_names = ['find_news_articles', 'pick_best_article', 'adapt_news_article', 'add_vocabulary']
-        
-        # Update progress during kickoff execution using background thread
-        import threading
-        import time
-        
-        def update_progress_during_execution():
-            """Update progress at estimated intervals during kickoff execution."""
-            # Start first task
-            start_task(task_names[0])
-            time.sleep(3)  # Wait a bit
-            
-            # Progressively update to each task
-            for i, task_name in enumerate(task_names[1:], 1):
-                start_task(task_name)
-                # Estimate: each task takes ~15-30 seconds
-                time.sleep(20)
-        
-        # Start progress updater in background thread
-        progress_thread = threading.Thread(target=update_progress_during_execution, daemon=True)
-        progress_thread.start()
-        
         # Execute crew - tasks will run sequentially
+        # Note: If JobProgressListener was created elsewhere (e.g., in worker/processor.py),
+        # it will automatically catch TaskStartedEvent/TaskCompletedEvent via global event bus
         result = crew_instance.kickoff(inputs=inputs)
         
         logger.info("=== READING MATERIAL CREATED ===")
         
-        # After kickoff completes, all tasks are done
-        complete_task(task_names[-1])
-        
-        # Upload to R2
-        start_task('uploading')
-        
-        try:
-            from utils.cloudflare import upload_to_cloud
-            logger.info("Uploading to R2...")
-            upload_to_cloud(result.raw)
-            logger.info("Successfully uploaded to R2")
-            update_status('completed', 100, 'completed', 'Article generated successfully!')
-        except Exception as e:
-            logger.error(f"Failed to upload to R2: {e}")
-            update_status('error', 95, 'error', f'Upload failed: {str(e)}')
-        
         return result
     except Exception as e:
         logger.error(f"An error occurred while running the crew: {e}")
-        try:
-            from utils.progress import update_status
-            update_status('error', 0, 'error', f'Error: {str(e)}')
-        except:
-            pass
-        raise Exception(f"An error occurred while running the crew: {e}")
+        raise
 
 if __name__ == "__main__":
     run()
