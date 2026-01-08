@@ -55,12 +55,6 @@ def get_redis_client() -> Optional[redis.Redis]:
         _redis_connection_failed = True
         return None
     
-    # Reject localhost URLs
-    if 'localhost' in REDIS_URL or '127.0.0.1' in REDIS_URL:
-        logger.error(f"[REDIS] Invalid URL contains localhost. Use ${{{{api.REDIS_URL}}}} in Railway Variables.")
-        _redis_connection_failed = True
-        return None
-    
     try:
         client = redis.from_url(
             REDIS_URL,
@@ -74,14 +68,10 @@ def get_redis_client() -> Optional[redis.Redis]:
         return client
     except (RedisError, ValueError, OSError) as e:
         # Log error ONCE and mark as failed
-        error_msg = str(e)[:150]
-        if "localhost" in error_msg or "127.0.0.1" in error_msg:
-            logger.error(f"[REDIS] Connection to localhost failed.")
-        elif "Name or service not known" in error_msg:
-            logger.error(f"[REDIS] DNS resolution failed. Set Variables: REDIS_URL=${{{{api.REDIS_URL}}}}")
-        else:
-            logger.error(f"[REDIS] Connection failed: {error_msg}")
-        logger.error("[REDIS] Will not retry. Fix Variables and redeploy.")
+        error_msg = str(e)[:200]
+        logger.error(f"[REDIS] Connection failed: {error_msg}")
+        logger.error(f"[REDIS] REDIS_URL format: redis://user:pass@host:port")
+        logger.error(f"[REDIS] Set Variables: REDIS_URL=${{{{api.REDIS_URL}}}}")
         _redis_connection_failed = True
         return None
 
