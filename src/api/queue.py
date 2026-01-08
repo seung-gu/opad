@@ -18,6 +18,11 @@ REDIS_PASSWORD = os.getenv('REDISPASSWORD', '')
 REDIS_USER = os.getenv('REDISUSER', 'default')
 QUEUE_NAME = 'opad:jobs'
 
+# Cache connection and track retry count
+_redis_client_cache = None
+_redis_retry_count = 0
+_redis_max_retries = 10  # Log error only after 10 failed attempts
+
 # Construct Redis URL from individual variables if URL is incomplete
 # Railway provides incomplete URL (missing host), so we need to construct it
 if REDIS_URL and '@:' in REDIS_URL:
@@ -48,47 +53,57 @@ def get_redis_client() -> Optional[redis.Redis]:
     """Get Redis client connection.
     
     Uses Railway-provided REDIS_URL or constructs from individual variables.
+    Connection is cached - if it fails once, it won't retry to avoid log spam.
     
     Returns:
         Redis client or None if connection fails
     """
+    global _redis_client_cache, _redis_retry_count
+    
+    # Return cached client if available
+    if _redis_client_cache:
+        try:
+            _redis_client_cache.ping()
+            return _redis_client_cache
+        except:
+            # Cache is stale, clear it
+            _redis_client_cache = None
+    
     if not REDIS_URL:
+        _redis_retry_count += 1
+        if _redis_retry_count == _redis_max_retries:
+            logger.error("[REDIS] REDIS_URL not configured after 10 attempts. Check Railway Variables.")
+        return None
+    
+    # Reject localhost URLs
+    if 'localhost' in REDIS_URL or '127.0.0.1' in REDIS_URL:
+        _redis_retry_count += 1
+        if _redis_retry_count == _redis_max_retries:
+            logger.error(f"[REDIS] Invalid URL contains localhost after 10 attempts. Use ${{{{ Redis.REDIS_URL }}}}.")
         return None
     
     try:
-        # Try URL first
         client = redis.from_url(
             REDIS_URL,
             decode_responses=True,
             socket_connect_timeout=5
         )
         client.ping()
+        # Cache successful connection and reset retry count
+        _redis_client_cache = client
+        _redis_retry_count = 0
         return client
     except (RedisError, ValueError, OSError) as e:
-        # If URL fails and we have individual variables, try direct connection
-        if REDIS_HOST and REDIS_PASSWORD:
-            try:
-                logger.warning(f"[REDIS] URL failed, trying direct connection to {REDIS_HOST}:{REDIS_PORT}")
-                client = redis.Redis(
-                    host=REDIS_HOST,
-                    port=int(REDIS_PORT),
-                    username=REDIS_USER,
-                    password=REDIS_PASSWORD,
-                    decode_responses=True,
-                    socket_connect_timeout=5
-                )
-                client.ping()
-                logger.info(f"[REDIS] Direct connection successful")
-                return client
-            except Exception as e2:
-                logger.error(f"[REDIS] Direct connection also failed: {str(e2)[:100]}")
-        
-        # Log original error (only once)
-        error_msg = str(e)[:100]
-        if "Name or service not known" in error_msg:
-            logger.error(f"[REDIS] DNS resolution failed. Enable Private Networking in Railway project settings.")
-        else:
-            logger.error(f"[REDIS] Connection failed: {error_msg}")
+        # Increment retry count and log only at threshold
+        _redis_retry_count += 1
+        if _redis_retry_count == _redis_max_retries:
+            error_msg = str(e)[:150]
+            if "localhost" in error_msg or "127.0.0.1" in error_msg:
+                logger.error(f"[REDIS] Connection to localhost failed after 10 attempts. Configure ${{{{ Redis.REDIS_URL }}}}.")
+            elif "Name or service not known" in error_msg:
+                logger.error(f"[REDIS] DNS failed after 10 attempts. Check Variables: ${{{{ Redis.REDIS_URL }}}} for API, Public URL for Worker.")
+            else:
+                logger.error(f"[REDIS] Connection failed after 10 attempts: {error_msg}")
         return None
 
 
@@ -105,7 +120,7 @@ def enqueue_job(job_id: str, article_id: str, inputs: dict) -> bool:
     """
     client = get_redis_client()
     if not client:
-        logger.error("Redis client not available")
+        # Error already logged in get_redis_client (only once)
         return False
     
     job_data = {
@@ -143,7 +158,8 @@ def dequeue_job() -> Optional[dict]:
             return json.loads(job_data_str)
         return None
     except (RedisError, json.JSONDecodeError) as e:
-        logger.error(f"Failed to dequeue job: {e}")
+        # Don't log every dequeue failure (worker polls continuously)
+        # Error already logged in get_redis_client
         return None
 
 
@@ -167,7 +183,8 @@ def get_job_status(job_id: str) -> Optional[dict]:
             return json.loads(status_data)
         return None
     except (RedisError, json.JSONDecodeError) as e:
-        logger.error(f"Failed to get job status {job_id}: {e}")
+        # Don't log every status check failure (API polls frequently)
+        # Error already logged in get_redis_client
         return None
 
 
@@ -210,5 +227,6 @@ def update_job_status(
         logger.debug(f"Updated job {job_id} status: {status} - {progress}%")
         return True
     except RedisError as e:
-        logger.error(f"Failed to update job status {job_id}: {e}")
+        # Don't log every update failure (called frequently)
+        # Error already logged in get_redis_client
         return False
