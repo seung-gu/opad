@@ -26,7 +26,7 @@ from opad.main import run as run_crew
 
 # Import from src
 from api.queue import update_job_status, dequeue_job
-from utils.cloudflare import upload_to_cloud
+from utils.mongodb import save_article
 
 logger = logging.getLogger(__name__)
 
@@ -122,31 +122,42 @@ def process_job(job_data: dict) -> bool:
                 return False
         # ✅ Event handlers are automatically cleared here (scoped_handlers exit)
         
-        # ✅ Upload to R2
-        # CRITICAL: Upload is required for article to be accessible to users
-        # If upload fails, the generated content is lost (only exists in memory)
-        # Therefore, upload failure = job failure
-        logger.info(f"Uploading result to R2 for job {job_id}")
+        # ✅ Save to MongoDB
+        # CRITICAL: Save is required for article to be accessible to users
+        # If save fails, the generated content is lost (only exists in memory)
+        # Therefore, save failure = job failure
+        logger.info(f"Saving article to MongoDB for job {job_id}")
         update_job_status(
             job_id=job_id,
             status='running',
             progress=95,
-            message='Uploading to cloud storage...',
+            message='Saving article to database...',
             article_id=article_id
         )
         
         try:
-            upload_to_cloud(result.raw)
-            logger.info(f"Successfully uploaded to R2 for job {job_id}")
-        except Exception as upload_error:
-            logger.error(f"R2 upload failed for job {job_id}: {upload_error}")
-            # Upload failure means content is lost - mark job as failed
+            # Save article to MongoDB (metadata + content)
+            success = save_article(
+                article_id=article_id,
+                content=result.raw,
+                language=inputs.get('language', ''),
+                level=inputs.get('level', ''),
+                length=inputs.get('length', ''),
+                topic=inputs.get('topic', '')
+            )
+            if not success:
+                raise Exception("Failed to save article to MongoDB")
+            logger.info(f"Successfully saved article to MongoDB for job {job_id}")
+        except Exception as save_error:
+            logger.error(f"MongoDB save failed for job {job_id}: {save_error}")
+            # Save failure means content is lost - mark job as failed
+            # Progress is already 95% from line 130, update_job_status will preserve it
             update_job_status(
                 job_id=job_id,
                 status='failed',
-                progress=95,
-                message='Upload to cloud storage failed',
-                error=f'R2 upload error: {str(upload_error)[:200]}',
+                progress=0,  # Will be preserved as 95% by update_job_status logic
+                message='Failed to save article to database',
+                error=f'MongoDB save error: {str(save_error)[:200]}',
                 article_id=article_id
             )
             return False
