@@ -11,17 +11,28 @@ export default function Home() {
   const [showForm, setShowForm] = useState(false)
   const [progress, setProgress] = useState({ current_task: '', progress: 0, message: '' })
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
+  const [currentArticleId, setCurrentArticleId] = useState<string | null>(null)
   const statusPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const loadContent = (showLoading = true) => {
     if (showLoading) {
       setLoading(true)
     }
+    
+    // If no article_id, show message
+    if (!currentArticleId) {
+      const errorMessage = '# No article selected\n\nClick "Generate New Article" to create one.'
+      setContent(prev => prev !== errorMessage ? errorMessage : prev)
+      if (showLoading) {
+        setLoading(false)
+      }
+      return
+    }
+    
     // Add timestamp to bypass cache
     const timestamp = new Date().getTime()
-    // Use API route (works on Railway, Docker, and local development)
-    // API route fetches from R2 or falls back to local file
-    fetch(`/api/article?t=${timestamp}`)
+    // Call FastAPI through web API route
+    fetch(`/api/article?article_id=${currentArticleId}&t=${timestamp}`)
       .then(res => {
         if (res.ok) {
           return res.text()
@@ -46,8 +57,13 @@ export default function Home() {
   }
 
   useEffect(() => {
-    loadContent()
-  }, [])
+    // Only load content if article_id is available
+    if (currentArticleId) {
+      loadContent()
+    } else {
+      setLoading(false)
+    }
+  }, [currentArticleId])
   
   // Poll status when generating
   useEffect(() => {
@@ -149,9 +165,12 @@ export default function Home() {
         throw new Error(data.error || 'Failed to generate article')
       }
 
-      // Save jobId for polling
+      // Save jobId and articleId for polling
       if (data.job_id) {
         setCurrentJobId(data.job_id)
+      }
+      if (data.article_id) {
+        setCurrentArticleId(data.article_id)
       }
 
       // Show success message

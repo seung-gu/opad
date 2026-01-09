@@ -26,15 +26,11 @@ sys.path.insert(0, str(_src_path))
 
 from api.models import ArticleCreate, ArticleResponse, GenerateRequest, GenerateResponse
 from api.queue import enqueue_job, update_job_status
+from utils.mongodb import save_article_metadata, get_article
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/articles", tags=["articles"])
-
-# In-memory storage (temporary - will be replaced with Postgres)
-# TODO: Issue #8 - Migrate to Postgres database
-# Current limitation: Data lost on service restart
-_articles_store: dict[str, dict] = {}
 
 
 @router.post("", response_model=ArticleResponse, status_code=201)
@@ -51,8 +47,7 @@ async def create_article(article: ArticleCreate):
         4. Client then calls POST /articles/:id/generate to start generation
     
     Storage:
-        - Currently: In-memory dict (lost on restart)
-        - TODO: Issue #8 - Migrate to Postgres
+        - MongoDB: Article metadata stored persistently
     
     Args:
         article: Article creation request (language, level, length, topic)
@@ -61,20 +56,41 @@ async def create_article(article: ArticleCreate):
         ArticleResponse with article_id and metadata
     """
     article_id = str(uuid.uuid4())
-    article_data = {
-        'id': article_id,
-        'language': article.language,
-        'level': article.level,
-        'length': article.length,
-        'topic': article.topic,
-        'status': 'pending',  # Will be updated to 'generating' when job starts
-        'created_at': datetime.now()
-    }
     
-    _articles_store[article_id] = article_data
+    # Generate created_at timestamp locally BEFORE saving
+    # This eliminates the race condition window between save and fetch operations
+    created_at = datetime.utcnow()
+    
+    # Save metadata to MongoDB with pre-generated timestamp
+    success = save_article_metadata(
+        article_id=article_id,
+        language=article.language,
+        level=article.level,
+        length=article.length,
+        topic=article.topic,
+        status='pending',
+        created_at=created_at
+    )
+    
+    if not success:
+        raise HTTPException(
+            status_code=503,
+            detail="Failed to save article. Database service unavailable."
+        )
+    
     logger.info(f"Created article {article_id}")
     
-    return ArticleResponse(**article_data)
+    # Return response using local timestamp - no need to fetch from DB
+    # This eliminates the race condition and prevents orphaned records
+    return ArticleResponse(
+        id=article_id,
+        language=article.language,
+        level=article.level,
+        length=article.length,
+        topic=article.topic,
+        status='pending',
+        created_at=created_at
+    )
 
 
 @router.post("/{article_id}/generate", response_model=GenerateResponse)
@@ -107,7 +123,7 @@ async def generate_article(article_id: str, request: GenerateRequest):
         - If either fails, return 503 (service unavailable)
     
     Args:
-        article_id: Article ID (must exist in _articles_store)
+        article_id: Article ID (must exist in MongoDB)
         request: Generation parameters (language, level, length, topic)
         
     Returns:
@@ -117,8 +133,9 @@ async def generate_article(article_id: str, request: GenerateRequest):
         404: Article not found
         503: Redis unavailable (queue or status update failed)
     """
-    # Validate article exists
-    if article_id not in _articles_store:
+    # Validate article exists in MongoDB
+    article_doc = get_article(article_id)
+    if not article_doc:
         raise HTTPException(status_code=404, detail="Article not found")
     
     # Generate unique job ID
@@ -180,11 +197,11 @@ async def generate_article(article_id: str, request: GenerateRequest):
 
 
 @router.get("/{article_id}", response_model=ArticleResponse)
-async def get_article(article_id: str):
+async def get_article_endpoint(article_id: str):
     """Get article metadata by ID.
     
     Returns article metadata (language, level, length, topic, status).
-    Does NOT return generated content (that's stored in R2).
+    Does NOT return generated content (use GET /articles/:id/content for that).
     
     Args:
         article_id: Article ID
@@ -195,7 +212,51 @@ async def get_article(article_id: str):
     Raises:
         404: Article not found
     """
-    if article_id not in _articles_store:
+    article_doc = get_article(article_id)
+    if not article_doc:
         raise HTTPException(status_code=404, detail="Article not found")
     
-    return ArticleResponse(**_articles_store[article_id])
+    return ArticleResponse(
+        id=article_doc['_id'],
+        language=article_doc['language'],
+        level=article_doc['level'],
+        length=article_doc['length'],
+        topic=article_doc['topic'],
+        status=article_doc.get('status', 'pending'),
+        created_at=article_doc.get('created_at', datetime.utcnow())
+    )
+
+
+@router.get("/{article_id}/content")
+async def get_article_content(article_id: str):
+    """Get article content (markdown) from MongoDB.
+    
+    This endpoint returns the generated article content as markdown text.
+    Used by the web service to display the article.
+    
+    Args:
+        article_id: Article ID
+        
+    Returns:
+        Markdown content as plain text
+        
+    Raises:
+        404: Article not found or content not available
+    """
+    from fastapi.responses import Response
+    
+    article_doc = get_article(article_id)
+    if not article_doc:
+        raise HTTPException(status_code=404, detail="Article not found")
+    
+    content = article_doc.get('content')
+    if not content:
+        raise HTTPException(
+            status_code=404, 
+            detail="Article content not found. Article may not be generated yet."
+        )
+    
+    return Response(
+        content=content,
+        media_type='text/markdown'
+    )
