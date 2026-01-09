@@ -198,7 +198,7 @@ async def generate_article(article_id: str, request: GenerateRequest):
 
 
 @router.get("/{article_id}", response_model=ArticleResponse)
-async def get_article(article_id: str):
+async def get_article_endpoint(article_id: str):
     """Get article metadata by ID.
     
     Returns article metadata (language, level, length, topic, status).
