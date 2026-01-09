@@ -32,7 +32,7 @@ class TestWorkerErrorHandling(unittest.TestCase):
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
-    @patch('opad.progress_listener.JobProgressListener')
+    @patch('crew.progress_listener.JobProgressListener')
     def test_json_parsing_error(self, mock_listener, mock_upload, mock_run_crew, mock_update_status):
         """Test JSON parsing error handling."""
         # Mock run_crew to raise JSON error
@@ -56,7 +56,7 @@ class TestWorkerErrorHandling(unittest.TestCase):
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
-    @patch('opad.progress_listener.JobProgressListener')
+    @patch('crew.progress_listener.JobProgressListener')
     def test_timeout_error(self, mock_listener, mock_upload, mock_run_crew, mock_update_status):
         """Test timeout error handling."""
         mock_run_crew.side_effect = Exception("Request timeout after 30 seconds")
@@ -72,7 +72,7 @@ class TestWorkerErrorHandling(unittest.TestCase):
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
-    @patch('opad.progress_listener.JobProgressListener')
+    @patch('crew.progress_listener.JobProgressListener')
     def test_rate_limit_error(self, mock_listener, mock_upload, mock_run_crew, mock_update_status):
         """Test rate limit error handling."""
         mock_run_crew.side_effect = Exception("Rate limit exceeded. Status code: 429")
@@ -88,7 +88,7 @@ class TestWorkerErrorHandling(unittest.TestCase):
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
-    @patch('opad.progress_listener.JobProgressListener')
+    @patch('crew.progress_listener.JobProgressListener')
     def test_generic_error(self, mock_listener, mock_upload, mock_run_crew, mock_update_status):
         """Test generic error handling."""
         mock_run_crew.side_effect = ValueError("Some unexpected error")
@@ -104,7 +104,7 @@ class TestWorkerErrorHandling(unittest.TestCase):
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
-    @patch('opad.progress_listener.JobProgressListener')
+    @patch('crew.progress_listener.JobProgressListener')
     def test_successful_job(self, mock_listener, mock_upload, mock_run_crew, mock_update_status):
         """Test successful job processing."""
         # Mock successful execution
@@ -130,7 +130,7 @@ class TestWorkerErrorHandling(unittest.TestCase):
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
-    @patch('opad.progress_listener.JobProgressListener')
+    @patch('crew.progress_listener.JobProgressListener')
     def test_upload_failure_fails_job(self, mock_listener, mock_upload, mock_run_crew, mock_update_status):
         """Test that R2 upload failure fails the job.
         

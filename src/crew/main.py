@@ -5,7 +5,7 @@ import json
 import logging
 from pathlib import Path
 
-from opad.crew import ReadingMaterialCreator
+from crew.crew import ReadingMaterialCreator
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 

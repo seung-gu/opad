@@ -5,7 +5,7 @@ This module provides:
 2. Utility functions for task progress queries
 
 Used by:
-- opad.progress_listener.JobProgressListener (Event Listener approach)
+- crew.progress_listener.JobProgressListener (Event Listener approach)
 - Legacy standalone execution (if any)
 """
 

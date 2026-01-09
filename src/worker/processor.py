@@ -22,7 +22,7 @@ from pathlib import Path
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
-from opad.main import run as run_crew
+from crew.main import run as run_crew
 
 # Import from src
 from api.queue import update_job_status, dequeue_job
@@ -38,7 +38,7 @@ def process_job(job_data: dict) -> bool:
         1. Extract job parameters (job_id, article_id, inputs)
         2. Update status to 'running' (progress=0)
         3. Create JobProgressListener for real-time progress tracking
-        4. Execute CrewAI (calls opad.main.run_crew)
+        4. Execute CrewAI (calls crew.main.run_crew)
            - CrewAI generates article content
            - Progress updates happen automatically via JobProgressListener
         5. Upload result to Cloudflare R2 (progress=95)
@@ -92,7 +92,7 @@ def process_job(job_data: dict) -> bool:
         # ✅ Create JobProgressListener for real-time progress tracking
         # Use CrewAI's scoped_handlers() to ensure handlers are isolated per job
         # This prevents cross-job state corruption from lingering handlers
-        from opad.progress_listener import JobProgressListener
+        from crew.progress_listener import JobProgressListener
         from crewai.events.event_bus import crewai_event_bus
         
         # Use scoped_handlers() to create an isolated event handler scope for this job
