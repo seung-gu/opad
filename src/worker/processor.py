@@ -15,8 +15,6 @@ Architecture:
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
-from datetime import datetime
 
 # Add src to path for imports
 # processor.py is at /app/src/worker/processor.py
@@ -24,7 +22,6 @@ from datetime import datetime
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
-from opad.crew import ReadingMaterialCreator
 from opad.main import run as run_crew
 
 # Import from src

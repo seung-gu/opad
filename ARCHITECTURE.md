@@ -41,43 +41,126 @@
 
 ## 🎯 목표 구조 (After)
 
-```
-┌──────────────┐      HTTP       ┌──────────────┐
-│   Web        │ ──────────────> │    API       │
-│  (Next.js)   │                 │  (FastAPI)   │
-│              │ <────────────── │              │
-│ Port: 3000   │      JSON       │ Port: 8000   │
-└──────────────┘                 └───────┬──────┘
-                                         │
-                                         │ Redis Queue
-                                         │ (Job Enqueue)
-                                         ▼
-                                  ┌──────────────┐
-                                  │   Worker     │
-                                  │  (Python)    │
-                                  │              │
-                                  │ - CrewAI 실행 │ 
-                                  │ - R2 업로드    │
-                                  │ - DB 업데이트  │
-                                  └──────────────┘
+### 시스템 아키텍처
+
+```mermaid
+graph TB
+    Web[Web<br/>Next.js] -->|HTTP| API[API<br/>FastAPI]
+    API -->|RPUSH| Redis[(Redis<br/>Queue + Status)]
+    Redis -->|BLPOP| Worker[Worker<br/>Python]
+    Worker -->|Execute| CrewAI[CrewAI]
+    Worker -->|Upload| R2[(R2)]
+    
+    API -.->|SET/GET| Redis
+    Worker -.->|SET| Redis
+    
+    style Web fill:#2196F3
+    style API fill:#2196F3
+    style Worker fill:#2196F3
+    style CrewAI fill:#2196F3
+    style Redis fill:#dc382d
+    style R2 fill:#dc382d
+    
+    linkStyle 1 stroke:#4a90e2,stroke-width:2px,color:#4a90e2
+    linkStyle 2 stroke:#4a90e2,stroke-width:2px,color:#4a90e2
+    linkStyle 5 stroke:#ff9500,stroke-width:2px,color:#ff9500
+    linkStyle 6 stroke:#ff9500,stroke-width:2px,color:#ff9500
 ```
 
-### 서비스 간 통신:
-- **Web → API**: HTTP 요청 (article 생성, job enqueue, job 상태 조회)
-- **API → Redis**: Job enqueue (LPUSH)
-- **Worker → Redis**: Job consume (BRPOP)
-- **Worker → R2**: 결과 업로드
-- **Worker → Postgres**: Job 상태 업데이트 (이슈 #8에서 구현)
+### Article Generation 흐름
 
-### 새로운 흐름:
-1. 사용자가 "Generate" 클릭
-2. Next.js → FastAPI `POST /articles/:id/generate` 호출
-3. FastAPI가 즉시 `jobId` 반환 (비동기)
-4. FastAPI가 Redis 큐에 job enqueue
-5. Worker가 Redis 큐에서 job consume
-6. Worker가 CrewAI 실행 및 결과 저장
-7. Next.js가 FastAPI `GET /jobs/:jobId`로 폴링
-8. 완료되면 `/api/article`로 결과 가져옴
+```mermaid
+sequenceDiagram
+    participant Web
+    participant API
+    participant Redis
+    participant Worker
+    participant CrewAI
+    participant R2
+    
+    Web->>API: POST /articles/:id/generate
+    API->>Redis: RPUSH job
+    API-->>Web: Return job_id
+    
+    Worker->>Redis: BLPOP
+    Redis-->>Worker: job_data
+    
+    Worker->>CrewAI: Execute crew.kickoff()
+    CrewAI-->>Worker: Return article
+    
+    Worker->>R2: Upload article
+    Worker->>Redis: Update status
+```
+
+### 서비스 간 통신
+
+| From | To | Method | Purpose |
+|------|-----|--------|---------|
+| **Web** | **API** | HTTP | Article 생성, Job enqueue |
+| **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
+| **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.queue` 사용) |
+| **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
+| **Worker** | **Redis** | `SET` | Job 상태 업데이트 (공통 모듈 `api.queue` 사용) |
+| **Worker** | **CrewAI** | Function Call | Article 생성 |
+| **Worker** | **R2** | HTTP | 결과 업로드 |
+
+**참고**: API와 Worker 모두 `api.queue` 모듈을 통해 Redis에 접근합니다.
+
+### Redis 데이터 구조
+
+#### 1. Job Queue (List) - `opad:jobs`
+
+**용도**: Worker가 처리할 job들을 FIFO 순서로 저장
+
+```
+Queue: opad:jobs (List)
+┌─────────────────────────────────┐
+│ [oldest] ← ... ← [newest]       │
+│    ↑                    ↑        │
+│  BLPOP              RPUSH        │
+│ (Worker)             (API)       │
+└─────────────────────────────────┘
+```
+
+**데이터 형식**:
+```json
+{
+  "job_id": "uuid",
+  "article_id": "uuid",
+  "inputs": {
+    "language": "Korean",
+    "level": "B1",
+    "length": "300",
+    "topic": "Climate Change"
+  },
+  "created_at": "2025-01-08T12:34:56.789Z"
+}
+```
+
+#### 2. Job Status (String) - `opad:job:{job_id}`
+
+**용도**: 각 job의 현재 상태와 진행률 추적
+
+**TTL**: 24시간 (자동 삭제)
+
+**데이터 형식**:
+```json
+{
+  "id": "job-uuid",
+  "article_id": "article-uuid",
+  "status": "running",
+  "progress": 45,
+  "message": "Adapting article...",
+  "error": null,
+  "created_at": "2025-01-08T12:34:56.789Z",
+  "updated_at": "2025-01-08T12:35:12.345Z"
+}
+```
+
+**접근 패턴**:
+- **API**: 상태 초기화 (queued), 조회 (GET)
+- **Worker**: 상태 업데이트 (running, succeeded, failed)
+- **Progress Listener**: 진행률 업데이트 (0-100%)
 
 ---
 
