@@ -83,20 +83,16 @@ def get_mongodb_client() -> Optional[MongoClient]:
         return None
 
 
-def save_article(article_id: str, content: str, language: str, level: str, 
-                 length: str, topic: str) -> bool:
-    """Save article to MongoDB.
+def save_article(article_id: str, content: str) -> bool:
+    """Save article content to MongoDB.
     
-    This function saves both metadata and content to MongoDB.
-    If article already exists, it updates the content and metadata.
+    This function updates only the content and status fields.
+    Metadata fields (language, level, length, topic) are immutable
+    after article creation and should not be updated here.
     
     Args:
         article_id: Unique article identifier
         content: Markdown content
-        language: Target language
-        level: Language level (A1-C2)
-        length: Target word count
-        topic: Article topic
         
     Returns:
         True if successful, False otherwise
@@ -109,28 +105,27 @@ def save_article(article_id: str, content: str, language: str, level: str,
         db = client[DATABASE_NAME]
         collection = db[COLLECTION_NAME]
         
-        article_doc = {
-            '_id': article_id,
-            'content': content,
-            'language': language,
-            'level': level,
-            'length': length,
-            'topic': topic,
-            'status': 'completed',
-            'updated_at': datetime.utcnow()
-        }
-        
-        # Use upsert to handle both insert and update
-        collection.update_one(
+        # Only update content and status, not metadata
+        # Metadata (language, level, length, topic) was set during article creation
+        # and should remain immutable
+        result = collection.update_one(
             {'_id': article_id},
             {
-                '$set': article_doc,
-                '$setOnInsert': {'created_at': datetime.utcnow()}
-            },
-            upsert=True
+                '$set': {
+                    'content': content,
+                    'status': 'completed',
+                    'updated_at': datetime.utcnow()
+                }
+            }
         )
         
-        logger.info(f"Article {article_id} saved to MongoDB")
+        # Check if article actually exists and was updated
+        # If matched_count is 0, the article doesn't exist in MongoDB
+        if result.matched_count == 0:
+            logger.error(f"Article {article_id} not found in MongoDB. Cannot save content.")
+            return False
+        
+        logger.info(f"Article {article_id} content saved to MongoDB")
         return True
     except PyMongoError as e:
         logger.error(f"Failed to save article {article_id}: {e}")
@@ -161,7 +156,8 @@ def get_article(article_id: str) -> Optional[dict]:
 
 
 def save_article_metadata(article_id: str, language: str, level: str, 
-                          length: str, topic: str, status: str = 'pending') -> bool:
+                          length: str, topic: str, status: str = 'pending',
+                          created_at: Optional[datetime] = None) -> bool:
     """Save article metadata to MongoDB (without content).
     
     Used when creating article before generation starts.
@@ -173,6 +169,11 @@ def save_article_metadata(article_id: str, language: str, level: str,
         length: Target word count
         topic: Article topic
         status: Article status (default: 'pending')
+        created_at: Optional timestamp for created_at field. If None, uses current UTC time.
+                    This allows the caller to control the timestamp and avoid race conditions.
+                    By passing created_at from the caller, we eliminate the need to fetch
+                    the saved document immediately after saving, preventing orphaned records
+                    if MongoDB becomes unavailable between save and fetch operations.
         
     Returns:
         True if successful, False otherwise
@@ -185,6 +186,10 @@ def save_article_metadata(article_id: str, language: str, level: str,
         db = client[DATABASE_NAME]
         collection = db[COLLECTION_NAME]
         
+        # Use provided created_at or current time
+        if created_at is None:
+            created_at = datetime.utcnow()
+        
         article_doc = {
             '_id': article_id,
             'language': language,
@@ -196,11 +201,12 @@ def save_article_metadata(article_id: str, language: str, level: str,
         }
         
         # Use upsert to handle both insert and update
+        # $setOnInsert only sets created_at on insert, not on update
         collection.update_one(
             {'_id': article_id},
             {
                 '$set': article_doc,
-                '$setOnInsert': {'created_at': datetime.utcnow()}
+                '$setOnInsert': {'created_at': created_at}
             },
             upsert=True
         )

@@ -57,14 +57,19 @@ async def create_article(article: ArticleCreate):
     """
     article_id = str(uuid.uuid4())
     
-    # Save metadata to MongoDB
+    # Generate created_at timestamp locally BEFORE saving
+    # This eliminates the race condition window between save and fetch operations
+    created_at = datetime.utcnow()
+    
+    # Save metadata to MongoDB with pre-generated timestamp
     success = save_article_metadata(
         article_id=article_id,
         language=article.language,
         level=article.level,
         length=article.length,
         topic=article.topic,
-        status='pending'
+        status='pending',
+        created_at=created_at
     )
     
     if not success:
@@ -73,24 +78,18 @@ async def create_article(article: ArticleCreate):
             detail="Failed to save article. Database service unavailable."
         )
     
-    # Fetch saved article to get created_at timestamp
-    article_doc = get_article(article_id)
-    if not article_doc:
-        raise HTTPException(
-            status_code=503,
-            detail="Failed to retrieve saved article."
-        )
-    
     logger.info(f"Created article {article_id}")
     
+    # Return response using local timestamp - no need to fetch from DB
+    # This eliminates the race condition and prevents orphaned records
     return ArticleResponse(
         id=article_id,
-        language=article_doc['language'],
-        level=article_doc['level'],
-        length=article_doc['length'],
-        topic=article_doc['topic'],
-        status=article_doc['status'],
-        created_at=article_doc['created_at']
+        language=article.language,
+        level=article.level,
+        length=article.length,
+        topic=article.topic,
+        status='pending',
+        created_at=created_at
     )
 
 
@@ -224,7 +223,7 @@ async def get_article_endpoint(article_id: str):
         length=article_doc['length'],
         topic=article_doc['topic'],
         status=article_doc.get('status', 'pending'),
-        created_at=article_doc.get('created_at', datetime.now())
+        created_at=article_doc.get('created_at', datetime.utcnow())
     )
 
 

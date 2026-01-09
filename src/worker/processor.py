@@ -127,23 +127,23 @@ def process_job(job_data: dict) -> bool:
         # If save fails, the generated content is lost (only exists in memory)
         # Therefore, save failure = job failure
         logger.info(f"Saving article to MongoDB for job {job_id}")
-        update_job_status(
+        status_updated = update_job_status(
             job_id=job_id,
             status='running',
             progress=95,
             message='Saving article to database...',
             article_id=article_id
         )
+        if not status_updated:
+            logger.warning(f"Failed to update job status to 'Saving article to database...' for job {job_id}. Continuing anyway.")
         
         try:
-            # Save article to MongoDB (metadata + content)
+            # Save article content to MongoDB
+            # Note: Only content and status are updated. Metadata (language, level, length, topic)
+            # was set during article creation and remains immutable.
             success = save_article(
                 article_id=article_id,
-                content=result.raw,
-                language=inputs.get('language', ''),
-                level=inputs.get('level', ''),
-                length=inputs.get('length', ''),
-                topic=inputs.get('topic', '')
+                content=result.raw
             )
             if not success:
                 raise Exception("Failed to save article to MongoDB")
@@ -151,11 +151,10 @@ def process_job(job_data: dict) -> bool:
         except Exception as save_error:
             logger.error(f"MongoDB save failed for job {job_id}: {save_error}")
             # Save failure means content is lost - mark job as failed
-            # Progress is already 95% from line 130, update_job_status will preserve it
             update_job_status(
                 job_id=job_id,
                 status='failed',
-                progress=0,  # Will be preserved as 95% by update_job_status logic
+                progress=0,
                 message='Failed to save article to database',
                 error=f'MongoDB save error: {str(save_error)[:200]}',
                 article_id=article_id
@@ -163,14 +162,21 @@ def process_job(job_data: dict) -> bool:
             return False
         
         # ✅ Update final status to 'succeeded'
-        # Only reached if upload succeeded
-        update_job_status(
+        # CRITICAL: This update must succeed. If it fails, the job appears incomplete
+        # even though the article was successfully saved.
+        final_status_updated = update_job_status(
             job_id=job_id,
             status='succeeded',
             progress=100,
             message='Article generated successfully!',
             article_id=article_id
         )
+        if not final_status_updated:
+            logger.error(f"CRITICAL: Failed to update final job status to 'succeeded' for job {job_id}. "
+                        f"Article was saved successfully but client will not be notified of completion.")
+            # Article is saved but status update failed - this is a critical inconsistency
+            # We still return True because the article was successfully saved
+            # but log the error for monitoring
         
         logger.info(f"Job {job_id} completed successfully")
         return True
