@@ -13,13 +13,12 @@ from fastapi.middleware.cors import CORSMiddleware
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.routes import articles, jobs
+from api.routes import articles, jobs, health
+from utils.logging import setup_structured_logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Set up structured JSON logging
+setup_structured_logging()
+
 logger = logging.getLogger(__name__)
 
 # Create FastAPI app
@@ -48,6 +47,7 @@ app.add_middleware(
 # Register routes
 app.include_router(articles.router)
 app.include_router(jobs.router)
+app.include_router(health.router)
 
 
 @app.get("/")
@@ -60,13 +60,6 @@ async def root():
     }
 
 
-@app.get("/health")
-async def health():
-    """Health check endpoint.
-    
-    이슈 #10에서 더 자세한 health check 추가 예정.
-    """
-    return {"status": "healthy"}
 
 
 if __name__ == "__main__":

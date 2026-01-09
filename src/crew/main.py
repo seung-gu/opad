@@ -5,18 +5,20 @@ import json
 import logging
 from pathlib import Path
 
+# Add src to path for imports when running standalone
+_src_path = Path(__file__).parent.parent
+sys.path.insert(0, str(_src_path))
+
 from crew.crew import ReadingMaterialCreator
+from utils.logging import setup_structured_logging
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+# Set up structured JSON logging (when running standalone)
+# When called from worker, logging is already configured
+if __name__ == "__main__":
+    setup_structured_logging()
+
 logger = logging.getLogger(__name__)
 
 
