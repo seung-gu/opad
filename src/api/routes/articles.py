@@ -26,7 +26,7 @@ sys.path.insert(0, str(_src_path))
 
 from api.models import ArticleCreate, ArticleResponse, GenerateRequest, GenerateResponse
 from api.queue import enqueue_job, update_job_status
-from utils.mongodb import save_article_metadata, get_article
+from utils.mongodb import save_article_metadata, get_article, get_mongodb_client
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +134,13 @@ async def generate_article(article_id: str, request: GenerateRequest):
         503: Redis unavailable (queue or status update failed)
     """
     # Validate article exists in MongoDB
+    # Check MongoDB connection first to distinguish connection failure from "not found"
+    if not get_mongodb_client():
+        raise HTTPException(
+            status_code=503,
+            detail="Database service unavailable. Cannot validate article."
+        )
+    
     article_doc = get_article(article_id)
     if not article_doc:
         raise HTTPException(status_code=404, detail="Article not found")
@@ -211,7 +218,15 @@ async def get_article_endpoint(article_id: str):
         
     Raises:
         404: Article not found
+        503: Database service unavailable
     """
+    # Check MongoDB connection first to distinguish connection failure from "not found"
+    if not get_mongodb_client():
+        raise HTTPException(
+            status_code=503,
+            detail="Database service unavailable. Cannot retrieve article."
+        )
+    
     article_doc = get_article(article_id)
     if not article_doc:
         raise HTTPException(status_code=404, detail="Article not found")
@@ -242,8 +257,16 @@ async def get_article_content(article_id: str):
         
     Raises:
         404: Article not found or content not available
+        503: Database service unavailable
     """
     from fastapi.responses import Response
+    
+    # Check MongoDB connection first to distinguish connection failure from "not found"
+    if not get_mongodb_client():
+        raise HTTPException(
+            status_code=503,
+            detail="Database service unavailable. Cannot retrieve article content."
+        )
     
     article_doc = get_article(article_id)
     if not article_doc:

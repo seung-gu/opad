@@ -139,19 +139,24 @@ def get_article(article_id: str) -> Optional[dict]:
         article_id: Article identifier
         
     Returns:
-        Article document (with content) or None if not found
+        Article document (with content) or None if not found.
+        Note: Returns None for both "article not found" and "MongoDB connection failed".
+        Callers should check get_mongodb_client() separately to distinguish these cases.
     """
     client = get_mongodb_client()
     if not client:
+        # MongoDB connection failed - return None
+        # Caller should check get_mongodb_client() to distinguish from "not found"
         return None
     
     try:
         db = client[DATABASE_NAME]
         collection = db[COLLECTION_NAME]
         article = collection.find_one({'_id': article_id})
-        return article
+        return article  # None if not found, dict if found
     except PyMongoError as e:
         logger.error(f"Failed to get article {article_id}: {e}")
+        # Database error during query - treat as connection failure
         return None
 
 
