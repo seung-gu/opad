@@ -29,9 +29,18 @@ class JSONFormatter(logging.Formatter):
 
 
 def setup_structured_logging():
-    """Configure structured JSON logging for the application."""
+    """Configure structured JSON logging for the application.
+    
+    This configures all loggers including uvicorn access logs.
+    """
     handler = logging.StreamHandler()
     handler.setFormatter(JSONFormatter())
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
     root_logger.handlers = [handler]
+    
+    # Configure uvicorn access logger to use structured logging
+    # This prevents duplicate access logs in different format
+    uvicorn_access = logging.getLogger("uvicorn.access")
+    uvicorn_access.handlers = [handler]
+    uvicorn_access.setLevel(logging.WARNING)  # Reduce access log noise (only log warnings/errors)

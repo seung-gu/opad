@@ -13,8 +13,15 @@ export default function Home() {
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [currentArticleId, setCurrentArticleId] = useState<string | null>(null)
   const statusPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const fetchAbortControllerRef = useRef<AbortController | null>(null)
 
   const loadContent = (showLoading = true) => {
+    // Cancel any pending fetch request to prevent race conditions
+    if (fetchAbortControllerRef.current) {
+      fetchAbortControllerRef.current.abort()
+      fetchAbortControllerRef.current = null
+    }
+    
     if (showLoading) {
       setLoading(true)
     }
@@ -29,10 +36,16 @@ export default function Home() {
       return
     }
     
+    // Create new AbortController for this request
+    const abortController = new AbortController()
+    fetchAbortControllerRef.current = abortController
+    
     // Add timestamp to bypass cache
     const timestamp = new Date().getTime()
     // Call FastAPI through web API route
-    fetch(`/api/article?article_id=${currentArticleId}&t=${timestamp}`)
+    fetch(`/api/article?article_id=${currentArticleId}&t=${timestamp}`, {
+      signal: abortController.signal
+    })
       .then(res => {
         if (res.ok) {
           return res.text()
@@ -40,18 +53,28 @@ export default function Home() {
         throw new Error('Failed to fetch article')
       })
       .then(text => {
-        // Only update if content actually changed
-        setContent(prev => prev !== text ? text : prev)
-        if (showLoading) {
-          setLoading(false)
+        // Only update if this request wasn't aborted
+        if (!abortController.signal.aborted) {
+          setContent(prev => prev !== text ? text : prev)
+          if (showLoading) {
+            setLoading(false)
+          }
+          fetchAbortControllerRef.current = null
         }
       })
-      .catch(() => {
+      .catch((error) => {
+        // Ignore abort errors (expected when cancelling)
+        if (error.name === 'AbortError') {
+          return
+        }
         // On error, show generating message instead of "No article found"
-        const errorMessage = '# Generating article...\n\nPlease wait. The article will appear here when ready.'
-        setContent(prev => prev !== errorMessage ? errorMessage : prev)
-        if (showLoading) {
-          setLoading(false)
+        if (!abortController.signal.aborted) {
+          const errorMessage = '# Generating article...\n\nPlease wait. The article will appear here when ready.'
+          setContent(prev => prev !== errorMessage ? errorMessage : prev)
+          if (showLoading) {
+            setLoading(false)
+          }
+          fetchAbortControllerRef.current = null
         }
       })
   }
@@ -62,6 +85,14 @@ export default function Home() {
       loadContent()
     } else {
       setLoading(false)
+    }
+    
+    // Cleanup: cancel any pending fetch when article_id changes or component unmounts
+    return () => {
+      if (fetchAbortControllerRef.current) {
+        fetchAbortControllerRef.current.abort()
+        fetchAbortControllerRef.current = null
+      }
     }
   }, [currentArticleId])
   

@@ -66,4 +66,11 @@ if __name__ == "__main__":
     import uvicorn
     # Railway는 PORT 환경변수를 제공
     port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Disable uvicorn access logs to reduce noise
+    # Application logs (via our structured logging) will still be captured
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        access_log=False  # Disable uvicorn's access log (reduces duplicate logs)
+    )
