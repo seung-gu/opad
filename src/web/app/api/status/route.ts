@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     const jobData = await response.json()
 
     // 기존 status.json 형식과 호환되도록 변환
-    // page.tsx가 기대하는 형식: { current_task, progress, status, message }
+    // page.tsx가 기대하는 형식: { current_task, progress, status, message, error }
     // Status mapping:
     // - queued: Job is waiting in queue (not yet picked up by worker)
     // - running: Job is actively being processed by worker
@@ -69,6 +69,7 @@ export async function GET(request: NextRequest) {
              jobData.status === 'running' ? 'running' :
              jobData.status === 'queued' ? 'queued' : 'idle',
       message: jobData.message || '',
+      error: jobData.error || null,  // Include error message for failed jobs
       updated_at: jobData.updated_at || new Date().toISOString()
     })
   } catch (error: any) {

@@ -9,7 +9,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [showForm, setShowForm] = useState(false)
-  const [progress, setProgress] = useState({ current_task: '', progress: 0, message: '' })
+  const [progress, setProgress] = useState({ current_task: '', progress: 0, message: '', error: null as string | null })
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [currentArticleId, setCurrentArticleId] = useState<string | null>(null)
   const statusPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -121,12 +121,14 @@ export default function Home() {
             const newProgress = {
               current_task: data.current_task || '',
               progress: data.progress || 0,
-              message: data.message || ''
+              message: data.message || '',
+              error: data.error || null
             }
             // Only update if something actually changed
             if (prev.current_task !== newProgress.current_task || 
                 prev.progress !== newProgress.progress || 
-                prev.message !== newProgress.message) {
+                prev.message !== newProgress.message ||
+                prev.error !== newProgress.error) {
               return newProgress
             }
             return prev
@@ -145,6 +147,9 @@ export default function Home() {
           } else if (data.status === 'error') {
             setGenerating(false)
             setCurrentJobId(null) // Clear jobId
+            // Show error message in content area
+            const errorMessage = `# ❌ Generation Failed\n\n**Error:** ${data.error || data.message || 'Unknown error occurred'}\n\nPlease try generating a new article.`
+            setContent(errorMessage)
             // Clear interval on error
             if (statusPollIntervalRef.current) {
               clearInterval(statusPollIntervalRef.current)
@@ -256,6 +261,12 @@ export default function Home() {
             <p className="text-white font-medium mb-2">
               ⏳ {progress.message || 'Generating article...'}
             </p>
+            {progress.error && (
+              <div className="mb-2 p-3 bg-red-900/50 border border-red-700 rounded-md">
+                <p className="text-red-300 text-sm font-medium">Error:</p>
+                <p className="text-red-200 text-sm">{progress.error}</p>
+              </div>
+            )}
             <div className="w-full bg-slate-700 rounded-full h-3">
               <div
                 className="bg-emerald-500 h-3 rounded-full transition-all duration-300"
