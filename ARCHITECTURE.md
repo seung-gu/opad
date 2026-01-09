@@ -41,43 +41,82 @@
 
 ## 🎯 목표 구조 (After)
 
-```
-┌──────────────┐      HTTP       ┌──────────────┐
-│   Web        │ ──────────────> │    API       │
-│  (Next.js)   │                 │  (FastAPI)   │
-│              │ <────────────── │              │
-│ Port: 3000   │      JSON       │ Port: 8000   │
-└──────────────┘                 └───────┬──────┘
-                                         │
-                                         │ Redis Queue
-                                         │ (Job Enqueue)
-                                         ▼
-                                  ┌──────────────┐
-                                  │   Worker     │
-                                  │  (Python)    │
-                                  │              │
-                                  │ - CrewAI 실행 │ 
-                                  │ - R2 업로드    │
-                                  │ - DB 업데이트  │
-                                  └──────────────┘
+### 시스템 아키텍처
+
+```mermaid
+graph LR
+    Web[Web<br/>Next.js<br/>:3000] -->|HTTP POST| API[API<br/>FastAPI<br/>:8000]
+    API -->|RPUSH| Redis[(Redis<br/>Queue)]
+    Redis -->|BLPOP| Worker[Worker<br/>Python]
+    Worker -->|Execute| CrewAI[CrewAI<br/>4 Tasks]
+    Worker -->|Upload| R2[R2<br/>Storage]
+    
+    style Web fill:#61dafb
+    style API fill:#009688
+    style Redis fill:#dc382d
+    style Worker fill:#3776ab
+    style CrewAI fill:#ffd43b
+    style R2 fill:#f68220
 ```
 
-### 서비스 간 통신:
-- **Web → API**: HTTP 요청 (article 생성, job enqueue, job 상태 조회)
-- **API → Redis**: Job enqueue (LPUSH)
-- **Worker → Redis**: Job consume (BRPOP)
-- **Worker → R2**: 결과 업로드
-- **Worker → Postgres**: Job 상태 업데이트 (이슈 #8에서 구현)
+### Article Generation 흐름
 
-### 새로운 흐름:
-1. 사용자가 "Generate" 클릭
-2. Next.js → FastAPI `POST /articles/:id/generate` 호출
-3. FastAPI가 즉시 `jobId` 반환 (비동기)
-4. FastAPI가 Redis 큐에 job enqueue
-5. Worker가 Redis 큐에서 job consume
-6. Worker가 CrewAI 실행 및 결과 저장
-7. Next.js가 FastAPI `GET /jobs/:jobId`로 폴링
-8. 완료되면 `/api/article`로 결과 가져옴
+```mermaid
+sequenceDiagram
+    participant Web
+    participant API
+    participant Redis
+    participant Worker
+    participant CrewAI
+    participant R2
+    
+    Web->>API: POST /articles/:id/generate
+    API->>Redis: RPUSH job
+    API-->>Web: Return job_id
+    
+    Worker->>Redis: BLPOP
+    Redis-->>Worker: job_data
+    
+    Worker->>CrewAI: Execute crew.kickoff()
+    CrewAI-->>Worker: Return article
+    
+    Worker->>R2: Upload article
+    Worker->>Redis: Update status
+```
+
+### 서비스 간 통신
+
+| From | To | Method | Purpose |
+|------|-----|--------|---------|
+| **Web** | **API** | HTTP | Article 생성, Job enqueue |
+| **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
+| **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
+| **Worker** | **CrewAI** | Function Call | Article 생성 |
+| **Worker** | **R2** | HTTP | 결과 업로드 |
+
+### Redis Queue 구조 (FIFO)
+
+```
+Queue: opad:jobs (List)
+┌─────────────────────────────────┐
+│ [oldest] ← ... ← [newest]       │
+│    ↑                    ↑        │
+│  BLPOP              RPUSH        │
+│ (Worker)             (API)       │
+└─────────────────────────────────┘
+
+Job Data:
+{
+  "job_id": "uuid",
+  "article_id": "uuid",
+  "inputs": {
+    "language": "Korean",
+    "level": "B1",
+    "length": "300",
+    "topic": "Climate Change"
+  }
+}
+```
 
 ---
 
