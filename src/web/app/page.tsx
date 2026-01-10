@@ -67,25 +67,23 @@ export default function Home() {
         if (error.name === 'AbortError') {
           return
         }
-        // On error, show generating message instead of "No article found"
+        // On error, show error message
         if (!abortController.signal.aborted) {
-          const errorMessage = '# Generating article...\n\nPlease wait. The article will appear here when ready.'
+          const errorMessage = `# ⚠️ Error Loading Article\n\n**Failed to load article content.**\n\nThis could be due to:\n- Database connection issue\n- Article not found\n- Network error\n\nPlease try:\n- Clicking "Refresh" button\n- Generating a new article`
           setContent(prev => prev !== errorMessage ? errorMessage : prev)
           if (showLoading) {
             setLoading(false)
           }
           fetchAbortControllerRef.current = null
+          console.error('Failed to load article:', error)
         }
       })
   }
 
   useEffect(() => {
-    // Only load content if article_id is available
-    if (currentArticleId) {
-      loadContent()
-    } else {
-      setLoading(false)
-    }
+    // Always call loadContent on mount or when currentArticleId changes
+    // loadContent handles the case when currentArticleId is null (shows message)
+    loadContent(true)
     
     // Cleanup: cancel any pending fetch when article_id changes or component unmounts
     return () => {
@@ -94,6 +92,7 @@ export default function Home() {
         fetchAbortControllerRef.current = null
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentArticleId])
   
   // Poll status when generating

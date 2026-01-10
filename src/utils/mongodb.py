@@ -58,11 +58,23 @@ def get_mongodb_client() -> Optional[MongoClient]:
         _connection_failed = True
         return None
     
-    # Attempt connection
+    # Attempt connection with optimized settings for Railway
     try:
         client = MongoClient(
             MONGO_URL,
-            serverSelectionTimeoutMS=5000  # 5s timeout
+            serverSelectionTimeoutMS=5000,  # 5s timeout for server selection
+            connectTimeoutMS=5000,  # 5s timeout for initial connection
+            socketTimeoutMS=30000,  # 30s timeout for operations
+            maxPoolSize=10,  # Connection pool size (reasonable for Railway)
+            minPoolSize=0,   # Don't maintain idle connections (saves resources)
+            maxIdleTimeMS=30000,  # Close idle connections after 30s (handles Railway idle timeout)
+            waitQueueTimeoutMS=10000,  # Wait up to 10s for available connection
+            retryWrites=True,  # Retry writes on network errors (auto-reconnect)
+            retryReads=True,   # Retry reads on network errors (auto-reconnect)
+            # Compression: Use zlib (built-in, no extra dependencies)
+            # This reduces network traffic and can help with log costs
+            compressors=['zlib'],
+            zlibCompressionLevel=1  # Fast compression (speed over ratio)
         )
         client.admin.command('ping')  # Verify connection works
         
