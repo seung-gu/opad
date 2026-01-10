@@ -11,13 +11,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from worker.processor import run_worker_loop
+from utils.logging import setup_structured_logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+# Set up structured JSON logging
+setup_structured_logging()
+
 logger = logging.getLogger(__name__)
 
 

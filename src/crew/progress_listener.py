@@ -99,7 +99,7 @@ class JobProgressListener(BaseEventListener):
         # This calls setup_listeners() which needs self.job_id, etc.
         super().__init__()
         
-        logger.info(f"JobProgressListener initialized for job {job_id}")
+        logger.info("JobProgressListener initialized", extra={"jobId": job_id, "articleId": article_id})
     
     def setup_listeners(self, crewai_event_bus: 'CrewAIEventsBus') -> None:
         """Setup event listeners on the CrewAI event bus.

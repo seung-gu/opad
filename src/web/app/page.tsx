@@ -9,12 +9,47 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [showForm, setShowForm] = useState(false)
-  const [progress, setProgress] = useState({ current_task: '', progress: 0, message: '' })
+  const [progress, setProgress] = useState({ current_task: '', progress: 0, message: '', error: null as string | null })
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [currentArticleId, setCurrentArticleId] = useState<string | null>(null)
   const statusPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const fetchAbortControllerRef = useRef<AbortController | null>(null)
+
+  // Load latest article on mount
+  useEffect(() => {
+    const loadLatestArticle = async () => {
+      try {
+        // Call through Next.js API route to avoid CORS issues
+        const response = await fetch('/api/latest')
+        
+        if (response.ok) {
+          const article = await response.json()
+          setCurrentArticleId(article.id)
+          console.log('Loaded latest article:', article.id)
+        } else if (response.status === 404) {
+          // No articles exist yet - this is normal for first-time users
+          console.log('No articles found - showing welcome message')
+          setLoading(false)
+        } else {
+          console.error('Failed to load latest article:', response.statusText)
+          setLoading(false)
+        }
+      } catch (error) {
+        console.error('Error loading latest article:', error)
+        setLoading(false)
+      }
+    }
+    
+    loadLatestArticle()
+  }, []) // Only run on mount
 
   const loadContent = (showLoading = true) => {
+    // Cancel any pending fetch request to prevent race conditions
+    if (fetchAbortControllerRef.current) {
+      fetchAbortControllerRef.current.abort()
+      fetchAbortControllerRef.current = null
+    }
+    
     if (showLoading) {
       setLoading(true)
     }
@@ -29,10 +64,16 @@ export default function Home() {
       return
     }
     
+    // Create new AbortController for this request
+    const abortController = new AbortController()
+    fetchAbortControllerRef.current = abortController
+    
     // Add timestamp to bypass cache
     const timestamp = new Date().getTime()
     // Call FastAPI through web API route
-    fetch(`/api/article?article_id=${currentArticleId}&t=${timestamp}`)
+    fetch(`/api/article?article_id=${currentArticleId}&t=${timestamp}`, {
+      signal: abortController.signal
+    })
       .then(res => {
         if (res.ok) {
           return res.text()
@@ -40,29 +81,46 @@ export default function Home() {
         throw new Error('Failed to fetch article')
       })
       .then(text => {
-        // Only update if content actually changed
-        setContent(prev => prev !== text ? text : prev)
-        if (showLoading) {
-          setLoading(false)
+        // Only update if this request wasn't aborted
+        if (!abortController.signal.aborted) {
+          setContent(prev => prev !== text ? text : prev)
+          if (showLoading) {
+            setLoading(false)
+          }
+          fetchAbortControllerRef.current = null
         }
       })
-      .catch(() => {
-        // On error, show generating message instead of "No article found"
-        const errorMessage = '# Generating article...\n\nPlease wait. The article will appear here when ready.'
-        setContent(prev => prev !== errorMessage ? errorMessage : prev)
-        if (showLoading) {
-          setLoading(false)
+      .catch((error) => {
+        // Ignore abort errors (expected when cancelling)
+        if (error.name === 'AbortError') {
+          return
+        }
+        // On error, show error message
+        if (!abortController.signal.aborted) {
+          const errorMessage = `# ⚠️ Error Loading Article\n\n**Failed to load article content.**\n\nThis could be due to:\n- Database connection issue\n- Article not found\n- Network error\n\nPlease try:\n- Clicking "Refresh" button\n- Generating a new article`
+          setContent(prev => prev !== errorMessage ? errorMessage : prev)
+          if (showLoading) {
+            setLoading(false)
+          }
+          fetchAbortControllerRef.current = null
+          console.error('Failed to load article:', error)
         }
       })
   }
 
   useEffect(() => {
-    // Only load content if article_id is available
-    if (currentArticleId) {
-      loadContent()
-    } else {
-      setLoading(false)
+    // Always call loadContent on mount or when currentArticleId changes
+    // loadContent handles the case when currentArticleId is null (shows message)
+    loadContent(true)
+    
+    // Cleanup: cancel any pending fetch when article_id changes or component unmounts
+    return () => {
+      if (fetchAbortControllerRef.current) {
+        fetchAbortControllerRef.current.abort()
+        fetchAbortControllerRef.current = null
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentArticleId])
   
   // Poll status when generating
@@ -90,12 +148,14 @@ export default function Home() {
             const newProgress = {
               current_task: data.current_task || '',
               progress: data.progress || 0,
-              message: data.message || ''
+              message: data.message || '',
+              error: data.error || null
             }
             // Only update if something actually changed
             if (prev.current_task !== newProgress.current_task || 
                 prev.progress !== newProgress.progress || 
-                prev.message !== newProgress.message) {
+                prev.message !== newProgress.message ||
+                prev.error !== newProgress.error) {
               return newProgress
             }
             return prev
@@ -114,6 +174,9 @@ export default function Home() {
           } else if (data.status === 'error') {
             setGenerating(false)
             setCurrentJobId(null) // Clear jobId
+            // Show error message in content area
+            const errorMessage = `# ❌ Generation Failed\n\n**Error:** ${data.error || data.message || 'Unknown error occurred'}\n\nPlease try generating a new article.`
+            setContent(errorMessage)
             // Clear interval on error
             if (statusPollIntervalRef.current) {
               clearInterval(statusPollIntervalRef.current)
@@ -225,6 +288,12 @@ export default function Home() {
             <p className="text-white font-medium mb-2">
               ⏳ {progress.message || 'Generating article...'}
             </p>
+            {progress.error && (
+              <div className="mb-2 p-3 bg-red-900/50 border border-red-700 rounded-md">
+                <p className="text-red-300 text-sm font-medium">Error:</p>
+                <p className="text-red-200 text-sm">{progress.error}</p>
+              </div>
+            )}
             <div className="w-full bg-slate-700 rounded-full h-3">
               <div
                 className="bg-emerald-500 h-3 rounded-full transition-all duration-300"

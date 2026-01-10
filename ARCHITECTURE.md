@@ -49,7 +49,7 @@ graph TB
     API -->|RPUSH| Redis[(Redis<br/>Queue + Status)]
     Redis -->|BLPOP| Worker[Worker<br/>Python]
     Worker -->|Execute| CrewAI[CrewAI]
-    Worker -->|Upload| R2[(R2)]
+    Worker -->|Upload| R2[(MongoDB)]
     
     API -.->|SET/GET| Redis
     Worker -.->|SET| Redis

@@ -26,11 +26,51 @@ sys.path.insert(0, str(_src_path))
 
 from api.models import ArticleCreate, ArticleResponse, GenerateRequest, GenerateResponse
 from api.queue import enqueue_job, update_job_status
-from utils.mongodb import save_article_metadata, get_article
+from utils.mongodb import save_article_metadata, get_article, get_mongodb_client, get_latest_article
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/articles", tags=["articles"])
+
+
+@router.get("/latest")
+async def get_latest_article_endpoint():
+    """Get the most recently created article.
+    
+    This endpoint is used by the frontend on page load to restore
+    the last article the user was viewing.
+    
+    Returns:
+        Article metadata and content if available, or 404 if no articles exist
+    """
+    # Check MongoDB connection first
+    client = get_mongodb_client()
+    if not client:
+        raise HTTPException(
+            status_code=503,
+            detail="Database service unavailable"
+        )
+    
+    article = get_latest_article()
+    
+    if not article:
+        raise HTTPException(
+            status_code=404,
+            detail="No articles found"
+        )
+    
+    article_id = article.get('_id')
+    logger.info("Retrieved latest article", extra={"articleId": article_id})
+    
+    return {
+        'id': article.get('_id'),
+        'language': article.get('language'),
+        'level': article.get('level'),
+        'length': article.get('length'),
+        'topic': article.get('topic'),
+        'status': article.get('status', 'pending'),
+        'created_at': article.get('created_at', datetime.utcnow()).isoformat() + 'Z'
+    }
 
 
 @router.post("", response_model=ArticleResponse, status_code=201)
@@ -78,7 +118,7 @@ async def create_article(article: ArticleCreate):
             detail="Failed to save article. Database service unavailable."
         )
     
-    logger.info(f"Created article {article_id}")
+    logger.info("Created article", extra={"articleId": article_id})
     
     # Return response using local timestamp - no need to fetch from DB
     # This eliminates the race condition and prevents orphaned records
@@ -134,6 +174,13 @@ async def generate_article(article_id: str, request: GenerateRequest):
         503: Redis unavailable (queue or status update failed)
     """
     # Validate article exists in MongoDB
+    # Check MongoDB connection first to distinguish connection failure from "not found"
+    if not get_mongodb_client():
+        raise HTTPException(
+            status_code=503,
+            detail="Database service unavailable. Cannot validate article."
+        )
+    
     article_doc = get_article(article_id)
     if not article_doc:
         raise HTTPException(status_code=404, detail="Article not found")
@@ -162,7 +209,7 @@ async def generate_article(article_id: str, request: GenerateRequest):
         article_id=article_id
     )
     if not status_updated:
-        logger.error(f"Failed to initialize job status for {job_id}")
+        logger.error("Failed to initialize job status", extra={"jobId": job_id, "articleId": article_id})
         raise HTTPException(
             status_code=503,
             detail="Failed to initialize job status. Queue service unavailable."
@@ -187,7 +234,7 @@ async def generate_article(article_id: str, request: GenerateRequest):
             detail="Failed to enqueue job. Queue service unavailable."
         )
     
-    logger.info(f"Job {job_id} enqueued for article {article_id}")
+    logger.info("Job enqueued", extra={"jobId": job_id, "articleId": article_id})
     
     return GenerateResponse(
         job_id=job_id,
@@ -211,7 +258,15 @@ async def get_article_endpoint(article_id: str):
         
     Raises:
         404: Article not found
+        503: Database service unavailable
     """
+    # Check MongoDB connection first to distinguish connection failure from "not found"
+    if not get_mongodb_client():
+        raise HTTPException(
+            status_code=503,
+            detail="Database service unavailable. Cannot retrieve article."
+        )
+    
     article_doc = get_article(article_id)
     if not article_doc:
         raise HTTPException(status_code=404, detail="Article not found")
@@ -242,8 +297,16 @@ async def get_article_content(article_id: str):
         
     Raises:
         404: Article not found or content not available
+        503: Database service unavailable
     """
     from fastapi.responses import Response
+    
+    # Check MongoDB connection first to distinguish connection failure from "not found"
+    if not get_mongodb_client():
+        raise HTTPException(
+            status_code=503,
+            detail="Database service unavailable. Cannot retrieve article content."
+        )
     
     article_doc = get_article(article_id)
     if not article_doc:

@@ -9,6 +9,11 @@ from pymongo.errors import ConnectionFailure, PyMongoError
 
 logger = logging.getLogger(__name__)
 
+# Suppress verbose PyMongo logs (but cannot suppress MongoDB server logs)
+# Set pymongo logger to WARNING to reduce noise from driver-level logs
+pymongo_logger = logging.getLogger('pymongo')
+pymongo_logger.setLevel(logging.WARNING)
+
 # MongoDB connection string from environment
 # Railway MongoDB add-on provides MONGO_URL automatically
 MONGO_URL = os.getenv('MONGO_URL')
@@ -53,11 +58,23 @@ def get_mongodb_client() -> Optional[MongoClient]:
         _connection_failed = True
         return None
     
-    # Attempt connection
+    # Attempt connection with optimized settings for Railway
     try:
         client = MongoClient(
             MONGO_URL,
-            serverSelectionTimeoutMS=5000  # 5s timeout
+            serverSelectionTimeoutMS=5000,  # 5s timeout for server selection
+            connectTimeoutMS=5000,  # 5s timeout for initial connection
+            socketTimeoutMS=30000,  # 30s timeout for operations
+            maxPoolSize=10,  # Connection pool size (reasonable for Railway)
+            minPoolSize=0,   # Don't maintain idle connections (saves resources)
+            maxIdleTimeMS=30000,  # Close idle connections after 30s (handles Railway idle timeout)
+            waitQueueTimeoutMS=10000,  # Wait up to 10s for available connection
+            retryWrites=True,  # Retry writes on network errors (auto-reconnect)
+            retryReads=True,   # Retry reads on network errors (auto-reconnect)
+            # Compression: Use zlib (built-in, no extra dependencies)
+            # This reduces network traffic and can help with log costs
+            compressors=['zlib'],
+            zlibCompressionLevel=1  # Fast compression (speed over ratio)
         )
         client.admin.command('ping')  # Verify connection works
         
@@ -122,13 +139,13 @@ def save_article(article_id: str, content: str) -> bool:
         # Check if article actually exists and was updated
         # If matched_count is 0, the article doesn't exist in MongoDB
         if result.matched_count == 0:
-            logger.error(f"Article {article_id} not found in MongoDB. Cannot save content.")
+            logger.error("Article not found in MongoDB. Cannot save content.", extra={"articleId": article_id})
             return False
         
-        logger.info(f"Article {article_id} content saved to MongoDB")
+        logger.info("Article content saved to MongoDB", extra={"articleId": article_id})
         return True
     except PyMongoError as e:
-        logger.error(f"Failed to save article {article_id}: {e}")
+        logger.error("Failed to save article", extra={"articleId": article_id, "error": str(e)})
         return False
 
 
@@ -139,19 +156,24 @@ def get_article(article_id: str) -> Optional[dict]:
         article_id: Article identifier
         
     Returns:
-        Article document (with content) or None if not found
+        Article document (with content) or None if not found.
+        Note: Returns None for both "article not found" and "MongoDB connection failed".
+        Callers should check get_mongodb_client() separately to distinguish these cases.
     """
     client = get_mongodb_client()
     if not client:
+        # MongoDB connection failed - return None
+        # Caller should check get_mongodb_client() to distinguish from "not found"
         return None
     
     try:
         db = client[DATABASE_NAME]
         collection = db[COLLECTION_NAME]
         article = collection.find_one({'_id': article_id})
-        return article
+        return article  # None if not found, dict if found
     except PyMongoError as e:
-        logger.error(f"Failed to get article {article_id}: {e}")
+        logger.error("Failed to get article", extra={"articleId": article_id, "error": str(e)})
+        # Database error during query - treat as connection failure
         return None
 
 
@@ -211,8 +233,43 @@ def save_article_metadata(article_id: str, language: str, level: str,
             upsert=True
         )
         
-        logger.info(f"Article metadata {article_id} saved to MongoDB")
+        logger.info("Article metadata saved to MongoDB", extra={"articleId": article_id})
         return True
     except PyMongoError as e:
-        logger.error(f"Failed to save article metadata {article_id}: {e}")
+        logger.error("Failed to save article metadata", extra={"articleId": article_id, "error": str(e)})
         return False
+
+
+def get_latest_article() -> Optional[dict]:
+    """Get the most recently created article.
+    
+    Returns:
+        Article document with all fields or None if no articles exist
+    """
+    client = get_mongodb_client()
+    if not client:
+        return None
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[COLLECTION_NAME]
+        
+        # Find the most recent article by created_at
+        article = collection.find_one(
+            {},
+            sort=[('created_at', -1)]  # Sort by created_at descending (newest first)
+        )
+        
+        if article:
+            article_id = article.get('_id')
+            logger.debug("Found latest article", extra={"articleId": article_id})
+        else:
+            logger.debug("No articles found in database")
+        
+        return article
+    except (ConnectionFailure, PyMongoError) as e:
+        logger.error("Failed to get latest article", extra={"error": str(e)})
+        # Clear cache to force reconnection on next call
+        global _client_cache
+        _client_cache = None
+        return None
