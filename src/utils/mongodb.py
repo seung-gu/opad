@@ -238,3 +238,37 @@ def save_article_metadata(article_id: str, language: str, level: str,
     except PyMongoError as e:
         logger.error(f"Failed to save article metadata {article_id}: {e}")
         return False
+
+
+def get_latest_article() -> Optional[dict]:
+    """Get the most recently created article.
+    
+    Returns:
+        Article document with all fields or None if no articles exist
+    """
+    client = get_mongodb_client()
+    if not client:
+        return None
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[COLLECTION_NAME]
+        
+        # Find the most recent article by created_at
+        article = collection.find_one(
+            {},
+            sort=[('created_at', -1)]  # Sort by created_at descending (newest first)
+        )
+        
+        if article:
+            logger.debug(f"Found latest article: {article.get('_id')}")
+        else:
+            logger.debug("No articles found in database")
+        
+        return article
+    except (ConnectionFailure, PyMongoError) as e:
+        logger.error(f"Failed to get latest article: {e}")
+        # Clear cache to force reconnection on next call
+        global _client_cache
+        _client_cache = None
+        return None

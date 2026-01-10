@@ -15,6 +15,31 @@ export default function Home() {
   const statusPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const fetchAbortControllerRef = useRef<AbortController | null>(null)
 
+  // Load latest article on mount
+  useEffect(() => {
+    const loadLatestArticle = async () => {
+      try {
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
+        const response = await fetch(`${apiBaseUrl}/articles/latest`)
+        
+        if (response.ok) {
+          const article = await response.json()
+          setCurrentArticleId(article.id)
+          console.log('Loaded latest article:', article.id)
+        } else if (response.status === 404) {
+          // No articles exist yet - this is normal for first-time users
+          console.log('No articles found - showing welcome message')
+        } else {
+          console.error('Failed to load latest article:', response.statusText)
+        }
+      } catch (error) {
+        console.error('Error loading latest article:', error)
+      }
+    }
+    
+    loadLatestArticle()
+  }, []) // Only run on mount
+
   const loadContent = (showLoading = true) => {
     // Cancel any pending fetch request to prevent race conditions
     if (fetchAbortControllerRef.current) {
