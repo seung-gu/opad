@@ -77,7 +77,7 @@ def process_job(job_data: dict) -> bool:
         logger.error(f"Invalid job data: {job_data}")
         return False
     
-    logger.info(f"Processing job {job_id} for article {article_id}")
+    logger.info("Processing job", extra={"jobId": job_id, "articleId": article_id})
     
     # Update status to 'running' (initial state)
     update_job_status(
@@ -100,15 +100,15 @@ def process_job(job_data: dict) -> bool:
         with crewai_event_bus.scoped_handlers():
             # Create listener - handlers will be registered in the current scope
             listener = JobProgressListener(job_id=job_id, article_id=article_id)
-            logger.info(f"Event listener registered for job {job_id} in isolated scope")
+            logger.info("Event listener registered", extra={"jobId": job_id})
             
             # ✅ Execute CrewAI
             # During execution, CrewAI emits TaskStartedEvent/TaskCompletedEvent
             # Our progress_listener automatically catches these events and updates Redis
-            logger.info(f"Executing CrewAI for job {job_id}")
+            logger.info("Executing CrewAI", extra={"jobId": job_id})
             result = run_crew(inputs=inputs)
             
-            logger.info(f"CrewAI execution completed for job {job_id}")
+            logger.info("CrewAI execution completed", extra={"jobId": job_id})
             
             # ✅ Check if any task failed during execution
             # If TaskFailedEvent was emitted, listener.task_failed will be True
@@ -116,8 +116,8 @@ def process_job(job_data: dict) -> bool:
             # We should not overwrite it with 'succeeded'
             if listener.task_failed:
                 logger.warning(
-                    f"Job {job_id} had task failures but CrewAI didn't raise exception. "
-                    f"Job status already set to 'failed' by event handler."
+                    "Job had task failures but CrewAI didn't raise exception. Job status already set to 'failed' by event handler.",
+                    extra={"jobId": job_id}
                 )
                 return False
         # ✅ Event handlers are automatically cleared here (scoped_handlers exit)
@@ -126,7 +126,7 @@ def process_job(job_data: dict) -> bool:
         # CRITICAL: Save is required for article to be accessible to users
         # If save fails, the generated content is lost (only exists in memory)
         # Therefore, save failure = job failure
-        logger.info(f"Saving article to MongoDB for job {job_id}")
+        logger.info("Saving article to MongoDB", extra={"jobId": job_id, "articleId": article_id})
         status_updated = update_job_status(
             job_id=job_id,
             status='running',
@@ -135,7 +135,10 @@ def process_job(job_data: dict) -> bool:
             article_id=article_id
         )
         if not status_updated:
-            logger.warning(f"Failed to update job status to 'Saving article to database...' for job {job_id}. Continuing anyway.")
+            logger.warning(
+                "Failed to update job status to 'Saving article to database...'. Continuing anyway.",
+                extra={"jobId": job_id}
+            )
         
         try:
             # Save article content to MongoDB
@@ -147,9 +150,9 @@ def process_job(job_data: dict) -> bool:
             )
             if not success:
                 raise Exception("Failed to save article to MongoDB")
-            logger.info(f"Successfully saved article to MongoDB for job {job_id}")
+            logger.info("Successfully saved article to MongoDB", extra={"jobId": job_id, "articleId": article_id})
         except Exception as save_error:
-            logger.error(f"MongoDB save failed for job {job_id}: {save_error}")
+            logger.error("MongoDB save failed", extra={"jobId": job_id, "articleId": article_id, "error": str(save_error)})
             # Save failure means content is lost - mark job as failed
             update_job_status(
                 job_id=job_id,
@@ -172,13 +175,15 @@ def process_job(job_data: dict) -> bool:
             article_id=article_id
         )
         if not final_status_updated:
-            logger.error(f"CRITICAL: Failed to update final job status to 'succeeded' for job {job_id}. "
-                        f"Article was saved successfully but client will not be notified of completion.")
+            logger.error(
+                "CRITICAL: Failed to update final job status to 'succeeded'. Article was saved successfully but client will not be notified of completion.",
+                extra={"jobId": job_id, "articleId": article_id}
+            )
             # Article is saved but status update failed - this is a critical inconsistency
             # We still return True because the article was successfully saved
             # but log the error for monitoring
         
-        logger.info(f"Job {job_id} completed successfully")
+        logger.info("Job completed successfully", extra={"jobId": job_id, "articleId": article_id})
         return True
         
     except Exception as e:
@@ -189,16 +194,16 @@ def process_job(job_data: dict) -> bool:
         # This improves UX by hiding implementation details
         if "json" in error_msg.lower() or "JSON" in error_msg:
             user_message = "AI model returned invalid response. This may be a temporary issue. Please try again."
-            logger.error(f"Job {job_id} failed: JSON parsing error - {error_msg}")
+            logger.error("Job failed: JSON parsing error", extra={"jobId": job_id, "articleId": article_id, "error": error_msg, "errorType": "JSONParsingError"})
         elif "timeout" in error_msg.lower():
             user_message = "Request timed out. The AI model may be overloaded. Please try again."
-            logger.error(f"Job {job_id} failed: Timeout - {error_msg}")
+            logger.error("Job failed: Timeout", extra={"jobId": job_id, "articleId": article_id, "error": error_msg, "errorType": "Timeout"})
         elif "rate limit" in error_msg.lower() or "429" in error_msg:
             user_message = "Rate limit exceeded. Please wait a moment and try again."
-            logger.error(f"Job {job_id} failed: Rate limit - {error_msg}")
+            logger.error("Job failed: Rate limit", extra={"jobId": job_id, "articleId": article_id, "error": error_msg, "errorType": "RateLimit"})
         else:
             user_message = f"Job failed: {error_type}"
-            logger.error(f"Job {job_id} failed: {error_type} - {error_msg}")
+            logger.error("Job failed", extra={"jobId": job_id, "articleId": article_id, "error": error_msg, "errorType": error_type})
         
         # Update status to 'failed'
         # Note: progress=0 is passed, but update_job_status will preserve existing progress
@@ -252,7 +257,8 @@ def run_worker_loop():
             job_data = dequeue_job()
             
             if job_data:
-                logger.info(f"Received job: {job_data.get('job_id')}")
+                job_id = job_data.get('job_id')
+                logger.info("Received job", extra={"jobId": job_id})
                 process_job(job_data)
             else:
                 # Queue is empty or Redis connection failed

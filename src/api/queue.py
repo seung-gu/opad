@@ -147,10 +147,10 @@ def enqueue_job(job_id: str, article_id: str, inputs: dict) -> bool:
         # Combined with BLPOP (pop from left), this ensures FIFO order
         # Example: RPUSH "opad:jobs" '{"job_id": "123", ...}'
         client.rpush(QUEUE_NAME, json.dumps(job_data))
-        logger.info(f"Job {job_id} enqueued successfully")
+        logger.info("Job enqueued successfully", extra={"jobId": job_id, "articleId": article_id})
         return True
     except RedisError as e:
-        logger.error(f"Failed to enqueue job {job_id}: {e}")
+        logger.error("Failed to enqueue job", extra={"jobId": job_id, "articleId": article_id, "error": str(e)})
         return False
 
 
@@ -335,7 +335,10 @@ def update_job_status(
         # Auto-cleanup prevents Redis from filling up with old jobs
         # Example: SETEX "opad:job:123" 86400 '{"status": "running", ...}'
         client.setex(status_key, 86400, json.dumps(status_data))
-        logger.debug(f"Updated job {job_id} status: {status} - {final_progress}%")
+        extra_data = {"jobId": job_id, "status": status, "progress": final_progress}
+        if article_id or existing_article_id:
+            extra_data["articleId"] = article_id or existing_article_id
+        logger.debug("Updated job status", extra=extra_data)
         return True
     except RedisError as e:
         # Don't log every update failure (called frequently during job execution)

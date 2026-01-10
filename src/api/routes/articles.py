@@ -59,7 +59,8 @@ async def get_latest_article_endpoint():
             detail="No articles found"
         )
     
-    logger.info(f"Retrieved latest article: {article.get('_id')}")
+    article_id = article.get('_id')
+    logger.info("Retrieved latest article", extra={"articleId": article_id})
     
     return {
         'id': article.get('_id'),
@@ -117,7 +118,7 @@ async def create_article(article: ArticleCreate):
             detail="Failed to save article. Database service unavailable."
         )
     
-    logger.info(f"Created article {article_id}")
+    logger.info("Created article", extra={"articleId": article_id})
     
     # Return response using local timestamp - no need to fetch from DB
     # This eliminates the race condition and prevents orphaned records
@@ -208,7 +209,7 @@ async def generate_article(article_id: str, request: GenerateRequest):
         article_id=article_id
     )
     if not status_updated:
-        logger.error(f"Failed to initialize job status for {job_id}")
+        logger.error("Failed to initialize job status", extra={"jobId": job_id, "articleId": article_id})
         raise HTTPException(
             status_code=503,
             detail="Failed to initialize job status. Queue service unavailable."
@@ -233,7 +234,7 @@ async def generate_article(article_id: str, request: GenerateRequest):
             detail="Failed to enqueue job. Queue service unavailable."
         )
     
-    logger.info(f"Job {job_id} enqueued for article {article_id}")
+    logger.info("Job enqueued", extra={"jobId": job_id, "articleId": article_id})
     
     return GenerateResponse(
         job_id=job_id,

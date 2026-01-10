@@ -139,13 +139,13 @@ def save_article(article_id: str, content: str) -> bool:
         # Check if article actually exists and was updated
         # If matched_count is 0, the article doesn't exist in MongoDB
         if result.matched_count == 0:
-            logger.error(f"Article {article_id} not found in MongoDB. Cannot save content.")
+            logger.error("Article not found in MongoDB. Cannot save content.", extra={"articleId": article_id})
             return False
         
-        logger.info(f"Article {article_id} content saved to MongoDB")
+        logger.info("Article content saved to MongoDB", extra={"articleId": article_id})
         return True
     except PyMongoError as e:
-        logger.error(f"Failed to save article {article_id}: {e}")
+        logger.error("Failed to save article", extra={"articleId": article_id, "error": str(e)})
         return False
 
 
@@ -172,7 +172,7 @@ def get_article(article_id: str) -> Optional[dict]:
         article = collection.find_one({'_id': article_id})
         return article  # None if not found, dict if found
     except PyMongoError as e:
-        logger.error(f"Failed to get article {article_id}: {e}")
+        logger.error("Failed to get article", extra={"articleId": article_id, "error": str(e)})
         # Database error during query - treat as connection failure
         return None
 
@@ -233,10 +233,10 @@ def save_article_metadata(article_id: str, language: str, level: str,
             upsert=True
         )
         
-        logger.info(f"Article metadata {article_id} saved to MongoDB")
+        logger.info("Article metadata saved to MongoDB", extra={"articleId": article_id})
         return True
     except PyMongoError as e:
-        logger.error(f"Failed to save article metadata {article_id}: {e}")
+        logger.error("Failed to save article metadata", extra={"articleId": article_id, "error": str(e)})
         return False
 
 
@@ -261,13 +261,14 @@ def get_latest_article() -> Optional[dict]:
         )
         
         if article:
-            logger.debug(f"Found latest article: {article.get('_id')}")
+            article_id = article.get('_id')
+            logger.debug("Found latest article", extra={"articleId": article_id})
         else:
             logger.debug("No articles found in database")
         
         return article
     except (ConnectionFailure, PyMongoError) as e:
-        logger.error(f"Failed to get latest article: {e}")
+        logger.error("Failed to get latest article", extra={"error": str(e)})
         # Clear cache to force reconnection on next call
         global _client_cache
         _client_cache = None

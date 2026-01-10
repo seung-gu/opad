@@ -9,6 +9,14 @@ from typing import Dict, Any
 class JSONFormatter(logging.Formatter):
     """Format log records as JSON for structured logging."""
     
+    # Standard LogRecord attributes that should not be included as extra fields
+    _STANDARD_ATTRS = {
+        'name', 'msg', 'args', 'created', 'filename', 'funcName', 'levelname',
+        'levelno', 'lineno', 'module', 'msecs', 'message', 'pathname',
+        'process', 'processName', 'relativeCreated', 'thread', 'threadName',
+        'exc_info', 'exc_text', 'stack_info', 'taskName'
+    }
+    
     def format(self, record: logging.LogRecord) -> str:
         log_data: Dict[str, Any] = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -21,9 +29,12 @@ class JSONFormatter(logging.Formatter):
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
         
-        # Add extra fields if present
-        if hasattr(record, "extra"):
-            log_data.update(record.extra)
+        # Add extra fields (all non-standard LogRecord attributes)
+        # When using logger.info("message", extra={"jobId": "123"}), 
+        # Python adds jobId as a direct attribute in record.__dict__
+        for key, value in record.__dict__.items():
+            if key not in self._STANDARD_ATTRS and not callable(value):
+                log_data[key] = value
         
         return json.dumps(log_data)
 
