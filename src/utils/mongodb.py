@@ -9,6 +9,11 @@ from pymongo.errors import ConnectionFailure, PyMongoError
 
 logger = logging.getLogger(__name__)
 
+# Suppress verbose PyMongo logs (but cannot suppress MongoDB server logs)
+# Set pymongo logger to WARNING to reduce noise from driver-level logs
+pymongo_logger = logging.getLogger('pymongo')
+pymongo_logger.setLevel(logging.WARNING)
+
 # MongoDB connection string from environment
 # Railway MongoDB add-on provides MONGO_URL automatically
 MONGO_URL = os.getenv('MONGO_URL')
