@@ -19,8 +19,8 @@ export default function Home() {
   useEffect(() => {
     const loadLatestArticle = async () => {
       try {
-        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
-        const response = await fetch(`${apiBaseUrl}/articles/latest`)
+        // Call through Next.js API route to avoid CORS issues
+        const response = await fetch('/api/latest')
         
         if (response.ok) {
           const article = await response.json()
@@ -29,11 +29,14 @@ export default function Home() {
         } else if (response.status === 404) {
           // No articles exist yet - this is normal for first-time users
           console.log('No articles found - showing welcome message')
+          setLoading(false)
         } else {
           console.error('Failed to load latest article:', response.statusText)
+          setLoading(false)
         }
       } catch (error) {
         console.error('Error loading latest article:', error)
+        setLoading(false)
       }
     }
     
