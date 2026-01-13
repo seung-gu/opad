@@ -11,6 +11,7 @@ class ArticleCreate(BaseModel):
     level: str = Field(..., description="Language level (A1-C2)")
     length: str = Field(..., description="Target word count")
     topic: str = Field(..., description="Article topic")
+    owner_id: Optional[str] = Field(None, description="Owner ID for multi-user support")
 
 
 class ArticleResponse(BaseModel):
@@ -22,6 +23,8 @@ class ArticleResponse(BaseModel):
     topic: str
     status: str = Field(..., description="Article status")
     created_at: datetime
+    owner_id: Optional[str] = Field(None, description="Owner ID for multi-user support")
+    inputs: Optional[dict] = Field(None, description="Structured input parameters")
 
 
 class GenerateRequest(BaseModel):

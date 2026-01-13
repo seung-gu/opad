@@ -127,23 +127,11 @@ def process_job(job_data: dict) -> bool:
         # If save fails, the generated content is lost (only exists in memory)
         # Therefore, save failure = job failure
         logger.info("Saving article to MongoDB", extra={"jobId": job_id, "articleId": article_id})
-        status_updated = update_job_status(
-            job_id=job_id,
-            status='running',
-            progress=95,
-            message='Saving article to database...',
-            article_id=article_id
-        )
-        if not status_updated:
-            logger.warning(
-                "Failed to update job status to 'Saving article to database...'. Continuing anyway.",
-                extra={"jobId": job_id}
-            )
-        
         try:
             # Save article content to MongoDB
             # Note: Only content and status are updated. Metadata (language, level, length, topic)
             # was set during article creation and remains immutable.
+            # result.raw contains markdown text with all information (title, source, url, date, author, body)
             success = save_article(
                 article_id=article_id,
                 content=result.raw

@@ -109,7 +109,7 @@ def save_article(article_id: str, content: str) -> bool:
     
     Args:
         article_id: Unique article identifier
-        content: Markdown content
+        content: Markdown content (includes all information: title, source, URL, date, author, body)
         
     Returns:
         True if successful, False otherwise
@@ -125,15 +125,15 @@ def save_article(article_id: str, content: str) -> bool:
         # Only update content and status, not metadata
         # Metadata (language, level, length, topic) was set during article creation
         # and should remain immutable
+        update_data = {
+            'content': content,
+            'status': 'completed',
+            'updated_at': datetime.utcnow()
+        }
+        
         result = collection.update_one(
             {'_id': article_id},
-            {
-                '$set': {
-                    'content': content,
-                    'status': 'completed',
-                    'updated_at': datetime.utcnow()
-                }
-            }
+            {'$set': update_data}
         )
         
         # Check if article actually exists and was updated
@@ -179,7 +179,8 @@ def get_article(article_id: str) -> Optional[dict]:
 
 def save_article_metadata(article_id: str, language: str, level: str, 
                           length: str, topic: str, status: str = 'pending',
-                          created_at: Optional[datetime] = None) -> bool:
+                          created_at: Optional[datetime] = None,
+                          owner_id: Optional[str] = None) -> bool:
     """Save article metadata to MongoDB (without content).
     
     Used when creating article before generation starts.
@@ -196,6 +197,7 @@ def save_article_metadata(article_id: str, language: str, level: str,
                     By passing created_at from the caller, we eliminate the need to fetch
                     the saved document immediately after saving, preventing orphaned records
                     if MongoDB becomes unavailable between save and fetch operations.
+        owner_id: Optional owner ID for multi-user support
         
     Returns:
         True if successful, False otherwise
@@ -212,15 +214,30 @@ def save_article_metadata(article_id: str, language: str, level: str,
         if created_at is None:
             created_at = datetime.utcnow()
         
+        # Build inputs object (structured parameters)
+        inputs = {
+            'language': language,
+            'level': level,
+            'length': length,
+            'topic': topic
+        }
+        
         article_doc = {
             '_id': article_id,
+            # Keep existing fields for backward compatibility
             'language': language,
             'level': level,
             'length': length,
             'topic': topic,
+            # New structured field
+            'inputs': inputs,
             'status': status,
             'updated_at': datetime.utcnow()
         }
+        
+        # Add optional fields if provided
+        if owner_id is not None:
+            article_doc['owner_id'] = owner_id
         
         # Use upsert to handle both insert and update
         # $setOnInsert only sets created_at on insert, not on update

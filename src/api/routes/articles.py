@@ -62,6 +62,13 @@ async def get_latest_article_endpoint():
     article_id = article.get('_id')
     logger.info("Retrieved latest article", extra={"articleId": article_id})
     
+    # Get created_at and convert to datetime if it's not already
+    created_at = article.get('created_at')
+    if created_at and isinstance(created_at, str):
+        created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+    elif created_at is None:
+        created_at = datetime.utcnow()
+    
     return {
         'id': article.get('_id'),
         'language': article.get('language'),
@@ -69,7 +76,9 @@ async def get_latest_article_endpoint():
         'length': article.get('length'),
         'topic': article.get('topic'),
         'status': article.get('status', 'pending'),
-        'created_at': article.get('created_at', datetime.utcnow()).isoformat() + 'Z'
+        'created_at': created_at.isoformat() + 'Z' if isinstance(created_at, datetime) else created_at,
+        'owner_id': article.get('owner_id'),
+        'inputs': article.get('inputs')
     }
 
 
@@ -101,6 +110,14 @@ async def create_article(article: ArticleCreate):
     # This eliminates the race condition window between save and fetch operations
     created_at = datetime.utcnow()
     
+    # Build inputs object (structured parameters)
+    inputs = {
+        'language': article.language,
+        'level': article.level,
+        'length': article.length,
+        'topic': article.topic
+    }
+    
     # Save metadata to MongoDB with pre-generated timestamp
     success = save_article_metadata(
         article_id=article_id,
@@ -109,7 +126,8 @@ async def create_article(article: ArticleCreate):
         length=article.length,
         topic=article.topic,
         status='pending',
-        created_at=created_at
+        created_at=created_at,
+        owner_id=article.owner_id
     )
     
     if not success:
@@ -129,7 +147,9 @@ async def create_article(article: ArticleCreate):
         length=article.length,
         topic=article.topic,
         status='pending',
-        created_at=created_at
+        created_at=created_at,
+        owner_id=article.owner_id,
+        inputs=inputs
     )
 
 
@@ -271,6 +291,13 @@ async def get_article_endpoint(article_id: str):
     if not article_doc:
         raise HTTPException(status_code=404, detail="Article not found")
     
+    # Get created_at and ensure it's a datetime object
+    created_at = article_doc.get('created_at')
+    if created_at and isinstance(created_at, str):
+        created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+    elif created_at is None:
+        created_at = datetime.utcnow()
+    
     return ArticleResponse(
         id=article_doc['_id'],
         language=article_doc['language'],
@@ -278,7 +305,9 @@ async def get_article_endpoint(article_id: str):
         length=article_doc['length'],
         topic=article_doc['topic'],
         status=article_doc.get('status', 'pending'),
-        created_at=article_doc.get('created_at', datetime.utcnow())
+        created_at=created_at,
+        owner_id=article_doc.get('owner_id'),
+        inputs=article_doc.get('inputs')
     )
 
 
