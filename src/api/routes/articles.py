@@ -69,16 +69,19 @@ async def get_latest_article_endpoint():
     elif created_at is None:
         created_at = datetime.utcnow()
     
+    # Extract fields from inputs object
+    inputs = article.get('inputs', {})
+    
     return {
         'id': article.get('_id'),
-        'language': article.get('language'),
-        'level': article.get('level'),
-        'length': article.get('length'),
-        'topic': article.get('topic'),
+        'language': inputs.get('language'),
+        'level': inputs.get('level'),
+        'length': inputs.get('length'),
+        'topic': inputs.get('topic'),
         'status': article.get('status', 'pending'),
         'created_at': created_at.isoformat() + 'Z' if isinstance(created_at, datetime) else created_at,
         'owner_id': article.get('owner_id'),
-        'inputs': article.get('inputs')
+        'inputs': inputs
     }
 
 
@@ -298,16 +301,19 @@ async def get_article_endpoint(article_id: str):
     elif created_at is None:
         created_at = datetime.utcnow()
     
+    # Extract fields from inputs object
+    inputs = article_doc.get('inputs', {})
+    
     return ArticleResponse(
         id=article_doc['_id'],
-        language=article_doc['language'],
-        level=article_doc['level'],
-        length=article_doc['length'],
-        topic=article_doc['topic'],
+        language=inputs.get('language'),
+        level=inputs.get('level'),
+        length=inputs.get('length'),
+        topic=inputs.get('topic'),
         status=article_doc.get('status', 'pending'),
         created_at=created_at,
         owner_id=article_doc.get('owner_id'),
-        inputs=article_doc.get('inputs')
+        inputs=inputs
     )
 
 

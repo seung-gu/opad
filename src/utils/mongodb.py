@@ -224,20 +224,11 @@ def save_article_metadata(article_id: str, language: str, level: str,
         
         article_doc = {
             '_id': article_id,
-            # Keep existing fields for backward compatibility
-            'language': language,
-            'level': level,
-            'length': length,
-            'topic': topic,
-            # New structured field
-            'inputs': inputs,
+            'inputs': inputs,  # Store only inputs (structured)
             'status': status,
-            'updated_at': datetime.utcnow()
+            'updated_at': datetime.utcnow(),
+            'owner_id': owner_id
         }
-        
-        # Add optional fields if provided
-        if owner_id is not None:
-            article_doc['owner_id'] = owner_id
         
         # Use upsert to handle both insert and update
         # $setOnInsert only sets created_at on insert, not on update
