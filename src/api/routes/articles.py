@@ -114,6 +114,17 @@ def _build_article_response(article: dict) -> dict:
     inputs = article.get('inputs', {})
     created_at = _parse_created_at(article)
     
+    # Format timestamp: timezone-aware datetimes already include timezone info in isoformat()
+    if isinstance(created_at, datetime):
+        if created_at.tzinfo is not None:
+            # Timezone-aware: isoformat() returns '2025-01-13T12:34:56+00:00', don't add 'Z'
+            formatted_time = created_at.isoformat()
+        else:
+            # Timezone-naive: isoformat() returns '2025-01-13T12:34:56', add 'Z' to indicate UTC
+            formatted_time = created_at.isoformat() + 'Z'
+    else:
+        formatted_time = created_at
+    
     return {
         'id': article.get('_id'),
         'language': inputs.get('language'),
@@ -121,7 +132,7 @@ def _build_article_response(article: dict) -> dict:
         'length': inputs.get('length'),
         'topic': inputs.get('topic'),
         'status': article.get('status', 'pending'),
-        'created_at': created_at.isoformat() + 'Z' if isinstance(created_at, datetime) else created_at,
+        'created_at': formatted_time,
         'owner_id': article.get('owner_id'),
         'inputs': inputs
     }
@@ -137,13 +148,24 @@ def _prepare_inputs(request: GenerateRequest) -> dict:
     }
 
 
-def _handle_duplicate(article_id: str, inputs: dict) -> Optional[GenerateResponse]:
-    """Check for duplicate job and return response if found."""
+def _handle_duplicate(article_id: str, inputs: dict, force: bool = False) -> None:
+    """Check for duplicate job and raise HTTPException if found.
+    
+    Args:
+        force: If True, skip duplicate check and allow new job creation.
+    
+    Raises HTTP 409 Conflict with existing_job information for user decision.
+    The existing_job contains status (succeeded, running, failed, queued) and progress.
+    """
+    if force:
+        logger.info("Force generation requested, skipping duplicate check", extra={"articleId": article_id})
+        return
+    
     params_hash = _calculate_params_hash(inputs)
     existing_job_id = _check_duplicate_job(params_hash)
     
     if not existing_job_id:
-        return None
+        return
     
     logger.info("Duplicate job detected", extra={"articleId": article_id, "existingJobId": existing_job_id})
     
@@ -155,13 +177,15 @@ def _handle_duplicate(article_id: str, inputs: dict) -> Optional[GenerateRespons
         except Exception as e:
             logger.warning("Failed to parse existing job status", extra={"existingJobId": existing_job_id, "error": str(e)})
     
-    return GenerateResponse(
-        job_id="",
-        article_id=article_id,
-        message="A job with identical parameters was created within the last 24 hours. Please confirm if you want to generate again.",
-        duplicate=True,
-        existing_job=existing_job
-    )
+    # Build error detail with existing job information for frontend
+    detail = {
+        "error": "Duplicate job detected",
+        "message": "A job with identical parameters was created within the last 24 hours.",
+        "existing_job": existing_job.dict() if existing_job else None,
+        "article_id": article_id
+    }
+    
+    raise HTTPException(status_code=409, detail=detail)
 
 
 def _create_and_enqueue_job(article_id: str, inputs: dict) -> GenerateResponse:
@@ -171,15 +195,27 @@ def _create_and_enqueue_job(article_id: str, inputs: dict) -> GenerateResponse:
     If status creation fails, we haven't queued the job yet (no orphan).
     If enqueue fails after status creation, status shows 'queued' but worker never picks it up
     (visible failure state, better than orphaned processing job with no status).
+    
+    Also critical: params_hash must be stored AFTER job status is successfully created.
+    If status creation fails, params_hash should not be stored to prevent orphaned duplicate detection.
     """
     job_id = str(uuid.uuid4())
     params_hash = _calculate_params_hash(inputs)
-    _store_params_hash(params_hash, job_id)
     
-    # Step 1: Initialize job status FIRST (before enqueueing)
+    # Step 1: Initialize job status FIRST (before storing params_hash and enqueueing)
+    # If this fails, we don't store params_hash, preventing orphaned duplicate detection
     if not update_job_status(job_id, 'queued', 0, 'Job queued, waiting for worker...', article_id=article_id):
         logger.error("Failed to initialize job status", extra={"jobId": job_id, "articleId": article_id})
         raise HTTPException(status_code=503, detail="Failed to initialize job status")
+    
+    # Step 1.5: Store params_hash AFTER status is successfully created
+    # This ensures that if duplicate detection finds this job, get_job_status will return valid data
+    # Critical: params_hash storage must succeed for duplicate detection to work
+    if not _store_params_hash(params_hash, job_id):
+        logger.error("Failed to store params_hash", extra={"jobId": job_id, "articleId": article_id})
+        # Don't fail the entire request, but log the error
+        # Duplicate detection will not work for this job, but job can still proceed
+        # This is a degraded state, but better than failing the entire generation
     
     # Step 2: Enqueue job to Redis queue
     # If this fails, status exists but job won't be processed (visible failure state)
@@ -251,14 +287,18 @@ async def create_article(article: ArticleCreate):
 
 
 @router.post("/{article_id}/generate", response_model=GenerateResponse)
-async def generate_article(article_id: str, request: GenerateRequest):
-    """Start article generation by enqueueing a job."""
+async def generate_article(article_id: str, request: GenerateRequest, force: bool = False):
+    """Start article generation by enqueueing a job.
+    
+    Args:
+        force: If True, skip duplicate check and create new job even if duplicate exists.
+    
+    Returns 409 Conflict if duplicate job exists (with existing_job info for user decision).
+    """
     _validate_article(article_id)
     inputs = _prepare_inputs(request)
     
-    duplicate_response = _handle_duplicate(article_id, inputs)
-    if duplicate_response:
-        return duplicate_response
+    _handle_duplicate(article_id, inputs, force=force)  # Raises HTTPException(409) if duplicate
     
     return _create_and_enqueue_job(article_id, inputs)
 
@@ -269,6 +309,10 @@ async def get_article_endpoint(article_id: str):
     _validate_article(article_id)
     
     article_doc = get_article(article_id)
+    if not article_doc:
+        # Race condition: article was deleted between validation and fetch
+        raise HTTPException(status_code=404, detail="Article not found")
+    
     response_data = _build_article_response(article_doc)
     return ArticleResponse(**response_data)
 
@@ -281,6 +325,10 @@ async def get_article_content(article_id: str):
     _validate_article(article_id)
     
     article_doc = get_article(article_id)
+    if not article_doc:
+        # Race condition: article was deleted between validation and fetch
+        raise HTTPException(status_code=404, detail="Article not found")
+    
     content = article_doc.get('content')
     if not content:
         raise HTTPException(status_code=404, detail="Article content not found")

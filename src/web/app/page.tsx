@@ -26,6 +26,7 @@ export default function Home() {
           const article = await response.json()
           setCurrentArticleId(article.id)
           console.log('Loaded latest article:', article.id)
+          setLoading(false)
         } else if (response.status === 404) {
           // No articles exist yet - this is normal for first-time users
           console.log('No articles found - showing welcome message')
@@ -211,7 +212,7 @@ export default function Home() {
     level: string
     length: string
     topic: string
-  }) => {
+  }, force: boolean = false) => {
     setGenerating(true)
     try {
       const response = await fetch('/api/generate', {
@@ -219,7 +220,7 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(inputs),
+        body: JSON.stringify({ ...inputs, force }),
       })
 
       const data = await response.json()
@@ -228,31 +229,33 @@ export default function Home() {
         throw new Error(data.error || 'Failed to generate article')
       }
 
-      // Handle duplicate job
+      // Handle duplicate job - ask user to use existing or generate new
       if (data.duplicate && data.existing_job) {
         const job = data.existing_job
         const messages: Record<string, string> = {
-          succeeded: `Already completed (${job.progress}%). View result or generate new?`,
-          running: `Running (${job.progress}%). Track existing or generate new?`,
-          failed: `Failed: ${job.error || 'Unknown'}. Retry?`,
-          queued: 'Already queued. Wait or generate new?'
+          succeeded: `Already completed (${job.progress}%). Use existing result or generate new?`,
+          running: `Already running (${job.progress}%). Track existing or generate new?`,
+          failed: `Previous job failed: ${job.error || 'Unknown'}. Generate new?`,
+          queued: 'Already queued. Wait for existing or generate new?'
         }
         
-        if (!window.confirm(messages[job.status] || data.message || 'Duplicate found. Generate new?')) {
+        // User confirms: use existing job (OK = true)
+        if (window.confirm(messages[job.status] || data.message || 'Duplicate job detected. Use existing job?')) {
           if (job.status === 'succeeded' && data.article_id) {
             setCurrentArticleId(data.article_id)
             loadContent(true)
+            setGenerating(false)
           } else if (job.status === 'running' || job.status === 'queued') {
             setCurrentJobId(job.id)
             setGenerating(true)
+          } else {
+            setGenerating(false)
           }
-          setGenerating(false)
           return
         }
         
-        alert('Please try again to generate a new job.')
-        setGenerating(false)
-        return
+        // User cancels: generate new job (Cancel = false) - retry with force=true
+        return handleGenerate(inputs, true)
       }
 
       // Save jobId and articleId for polling

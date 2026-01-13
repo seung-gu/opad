@@ -222,8 +222,8 @@ def save_article_metadata(article_id: str, language: str, level: str,
             'topic': topic
         }
         
+        # Build update document (exclude _id - it's immutable and only used in query filter)
         article_doc = {
-            '_id': article_id,
             'inputs': inputs,  # Store only inputs (structured)
             'status': status,
             'updated_at': datetime.utcnow(),
@@ -232,11 +232,12 @@ def save_article_metadata(article_id: str, language: str, level: str,
         
         # Use upsert to handle both insert and update
         # $setOnInsert only sets created_at on insert, not on update
+        # Note: _id is only used in query filter, not in $set (MongoDB _id is immutable)
         collection.update_one(
             {'_id': article_id},
             {
                 '$set': article_doc,
-                '$setOnInsert': {'created_at': created_at}
+                '$setOnInsert': {'created_at': created_at, '_id': article_id}
             },
             upsert=True
         )

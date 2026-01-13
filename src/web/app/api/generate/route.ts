@@ -69,7 +69,11 @@ export async function POST(request: NextRequest) {
     }))
 
     // Step 2: Enqueue generation job
-    const generateResponse = await fetch(`${apiBaseUrl}/articles/${articleId}/generate`, {
+    // Check for force parameter in request body
+    const force = body.force === true
+    
+    const generateUrl = `${apiBaseUrl}/articles/${articleId}/generate${force ? '?force=true' : ''}`
+    const generateResponse = await fetch(generateUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -82,6 +86,28 @@ export async function POST(request: NextRequest) {
       }),
     })
 
+    // Handle duplicate job (409 Conflict)
+    if (generateResponse.status === 409) {
+      const errorData = await generateResponse.json().catch(() => ({}))
+      const detail = errorData.detail || {}
+      
+      console.log(JSON.stringify({
+        source: 'web',
+        level: 'info',
+        endpoint: '/api/generate',
+        message: `Duplicate job detected: ${detail.existing_job?.id}`
+      }))
+      
+      // Return in same format as before for frontend compatibility
+      return NextResponse.json({
+        success: false,
+        duplicate: true,
+        existing_job: detail.existing_job || null,
+        article_id: detail.article_id || articleId,
+        message: detail.message || 'A job with identical parameters was created within the last 24 hours.'
+      })
+    }
+    
     if (!generateResponse.ok) {
       const errorData = await generateResponse.json().catch(() => ({}))
       throw new Error(
@@ -90,26 +116,22 @@ export async function POST(request: NextRequest) {
     }
 
     const generateData = await generateResponse.json()
+    const jobId = generateData.job_id
     
-    // Check for duplicate job
-    if (generateData.duplicate === true) {
-      console.log(JSON.stringify({
+    if (!jobId) {
+      // job_id should always be present for successful generation
+      console.error(JSON.stringify({
         source: 'web',
-        level: 'info',
+        level: 'error',
         endpoint: '/api/generate',
-        message: `Duplicate job detected: ${generateData.existing_job?.id}`
+        message: `Missing job_id in generate response for article ${articleId}`
       }))
-      
-      return NextResponse.json({
-        success: false,
-        duplicate: true,
-        existing_job: generateData.existing_job,
-        article_id: articleId,
-        message: generateData.message || 'A job with identical parameters was created within the last 24 hours.'
-      })
+      return NextResponse.json(
+        { success: false, error: 'Failed to generate job: missing job_id' },
+        { status: 500 }
+      )
     }
     
-    const jobId = generateData.job_id
     console.log(JSON.stringify({
       source: 'web',
       level: 'info',

@@ -49,9 +49,7 @@ class JobResponse(BaseModel):
 
 
 class GenerateResponse(BaseModel):
-    """Response model for generate endpoint."""
+    """Response model for generate endpoint (only returned when generation actually starts)."""
     job_id: str = Field(..., description="Job ID for tracking")
     article_id: str = Field(..., description="Article ID")
     message: str = Field(..., description="Status message")
-    duplicate: Optional[bool] = Field(None, description="True if duplicate job was found (user confirmation required)")
-    existing_job: Optional[JobResponse] = Field(None, description="Existing job information if duplicate found")
