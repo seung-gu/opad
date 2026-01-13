@@ -16,7 +16,7 @@ Architecture:
 import json
 import logging
 import os
-from typing import Optional
+from typing import Optional, Tuple
 from datetime import datetime
 import redis
 from redis.exceptions import RedisError

@@ -90,8 +90,26 @@ export async function POST(request: NextRequest) {
     }
 
     const generateData = await generateResponse.json()
+    
+    // Check for duplicate job
+    if (generateData.duplicate === true) {
+      console.log(JSON.stringify({
+        source: 'web',
+        level: 'info',
+        endpoint: '/api/generate',
+        message: `Duplicate job detected: ${generateData.existing_job?.id}`
+      }))
+      
+      return NextResponse.json({
+        success: false,
+        duplicate: true,
+        existing_job: generateData.existing_job,
+        article_id: articleId,
+        message: generateData.message || 'A job with identical parameters was created within the last 24 hours.'
+      })
+    }
+    
     const jobId = generateData.job_id
-
     console.log(JSON.stringify({
       source: 'web',
       level: 'info',
@@ -99,7 +117,6 @@ export async function POST(request: NextRequest) {
       message: `Job enqueued: ${jobId} for article ${articleId}`
     }))
 
-    // Return jobId and articleId for client to poll
     return NextResponse.json({
       success: true,
       job_id: jobId,

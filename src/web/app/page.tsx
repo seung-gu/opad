@@ -228,6 +228,33 @@ export default function Home() {
         throw new Error(data.error || 'Failed to generate article')
       }
 
+      // Handle duplicate job
+      if (data.duplicate && data.existing_job) {
+        const job = data.existing_job
+        const messages: Record<string, string> = {
+          succeeded: `Already completed (${job.progress}%). View result or generate new?`,
+          running: `Running (${job.progress}%). Track existing or generate new?`,
+          failed: `Failed: ${job.error || 'Unknown'}. Retry?`,
+          queued: 'Already queued. Wait or generate new?'
+        }
+        
+        if (!window.confirm(messages[job.status] || data.message || 'Duplicate found. Generate new?')) {
+          if (job.status === 'succeeded' && data.article_id) {
+            setCurrentArticleId(data.article_id)
+            loadContent(true)
+          } else if (job.status === 'running' || job.status === 'queued') {
+            setCurrentJobId(job.id)
+            setGenerating(true)
+          }
+          setGenerating(false)
+          return
+        }
+        
+        alert('Please try again to generate a new job.')
+        setGenerating(false)
+        return
+      }
+
       // Save jobId and articleId for polling
       if (data.job_id) {
         setCurrentJobId(data.job_id)
