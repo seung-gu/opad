@@ -190,7 +190,16 @@ def _handle_duplicate(article_id: str, inputs: dict, force: bool = False) -> Non
     # Use model_dump(mode='json') to serialize datetime objects to JSON-compatible strings
     # IMPORTANT: Use existing_job's article_id, not the new one from the current request
     # This ensures the frontend displays the correct article that was already generated
-    existing_article_id = existing_job.article_id if existing_job else article_id
+    # Extract article_id: prefer parsed JobResponse, fallback to raw data
+    if existing_job:
+        existing_article_id = existing_job.article_id
+    elif existing_job_data:
+        existing_article_id = existing_job_data.get('article_id')
+    else:
+        # System error: job_id exists but no data found (should not happen in normal operation)
+        logger.error("Duplicate job detected but job data not found", extra={"existingJobId": existing_job_id})
+        existing_article_id = None
+
     detail = {
         "error": "Duplicate job detected",
         "message": "A job with identical parameters was created within the last 24 hours.",

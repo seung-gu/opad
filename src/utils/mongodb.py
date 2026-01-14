@@ -249,6 +249,42 @@ def save_article_metadata(article_id: str, language: str, level: str,
         return False
 
 
+def ensure_indexes() -> bool:
+    """Ensure MongoDB indexes exist for articles collection.
+    
+    Creates indexes if they don't exist:
+    - created_at: descending (for get_latest_article queries)
+    - owner_id: ascending, sparse (for future multi-user queries)
+    
+    This function is idempotent - safe to call multiple times.
+    MongoDB will skip index creation if the index already exists.
+    
+    Returns:
+        True if indexes were created/verified successfully, False otherwise
+    """
+    client = get_mongodb_client()
+    if not client:
+        return False
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[COLLECTION_NAME]
+        
+        # Create index on created_at (descending) for latest article queries
+        collection.create_index([('created_at', -1)])
+        logger.info("Created index on created_at (descending)")
+        
+        # Create sparse index on owner_id (for future multi-user support)
+        # Sparse index only includes documents that have the owner_id field
+        collection.create_index([('owner_id', 1)], sparse=True)
+        logger.info("Created sparse index on owner_id")
+        
+        return True
+    except PyMongoError as e:
+        logger.error("Failed to create indexes", extra={"error": str(e)})
+        return False
+
+
 def get_latest_article() -> Optional[dict]:
     """Get the most recently created article.
     
