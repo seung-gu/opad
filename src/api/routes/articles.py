@@ -178,10 +178,11 @@ def _handle_duplicate(article_id: str, inputs: dict, force: bool = False) -> Non
             logger.warning("Failed to parse existing job status", extra={"existingJobId": existing_job_id, "error": str(e)})
     
     # Build error detail with existing job information for frontend
+    # Use model_dump(mode='json') to serialize datetime objects to JSON-compatible strings
     detail = {
         "error": "Duplicate job detected",
         "message": "A job with identical parameters was created within the last 24 hours.",
-        "existing_job": existing_job.dict() if existing_job else None,
+        "existing_job": existing_job.model_dump(mode='json') if existing_job else None,
         "article_id": article_id
     }
     
