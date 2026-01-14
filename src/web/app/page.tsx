@@ -229,33 +229,33 @@ export default function Home() {
         throw new Error(data.error || 'Failed to generate article')
       }
 
-      // Handle duplicate job - ask user to use existing or generate new
+      // Handle duplicate job - ask user to generate new or use existing
       if (data.duplicate && data.existing_job) {
         const job = data.existing_job
         const messages: Record<string, string> = {
-          succeeded: `Already completed (${job.progress}%). Use existing result or generate new?`,
-          running: `Already running (${job.progress}%). Track existing or generate new?`,
-          failed: `Previous job failed: ${job.error || 'Unknown'}. Generate new?`,
-          queued: 'Already queued. Wait for existing or generate new?'
+          succeeded: 'A completed job exists. Do you want to generate new?',
+          running: `A running job exists (${job.progress}%). Do you want to generate new?`,
+          failed: `Previous job failed: ${job.error || 'Unknown error'}. Do you want to generate new?`,
+          queued: 'A queued job exists. Do you want to generate new?'
         }
         
-        // User confirms: use existing job (OK = true)
-        if (window.confirm(messages[job.status] || data.message || 'Duplicate job detected. Use existing job?')) {
-          if (job.status === 'succeeded' && data.article_id) {
-            setCurrentArticleId(data.article_id)
-            loadContent(true)
-            setGenerating(false)
-          } else if (job.status === 'running' || job.status === 'queued') {
-            setCurrentJobId(job.id)
-            setGenerating(true)
-          } else {
-            setGenerating(false)
-          }
-          return
+        // User confirms: generate new job (OK = true)
+        if (window.confirm(messages[job.status])) {
+          return handleGenerate(inputs, true)
         }
         
-        // User cancels: generate new job (Cancel = false) - retry with force=true
-        return handleGenerate(inputs, true)
+        // User cancels: use existing job (Cancel = false)
+        if (job.status === 'succeeded' && data.article_id) {
+          setCurrentArticleId(data.article_id)
+          loadContent(true)
+          setGenerating(false)
+        } else if (job.status === 'running' || job.status === 'queued') {
+          setCurrentJobId(job.id)
+          setGenerating(true)
+        } else {
+          setGenerating(false)
+        }
+        return
       }
 
       // Save jobId and articleId for polling
