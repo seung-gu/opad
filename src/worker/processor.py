@@ -153,23 +153,15 @@ def process_job(job_data: dict) -> bool:
             return False
         
         # ✅ Update final status to 'succeeded'
-        # CRITICAL: This update must succeed. If it fails, the job appears incomplete
-        # even though the article was successfully saved.
-        final_status_updated = update_job_status(
-            job_id=job_id,
-            status='succeeded',
-            progress=100,
-            message='Article generated successfully!',
-            article_id=article_id
-        )
-        if not final_status_updated:
-            logger.error(
-                "CRITICAL: Failed to update final job status to 'succeeded'. Article was saved successfully but client will not be notified of completion.",
-                extra={"jobId": job_id, "articleId": article_id}
+        if not update_job_status(job_id, 'succeeded', 100, 'Article generated successfully!', article_id=article_id):
+            logger.error("Failed to update final status, marking as failed", extra={"jobId": job_id})
+            update_job_status(
+                job_id, 'failed', 100, 
+                'Article saved but status update failed', 
+                error='Redis status update failed',
+                article_id=article_id
             )
-            # Article is saved but status update failed - this is a critical inconsistency
-            # We still return True because the article was successfully saved
-            # but log the error for monitoring
+            return False
         
         logger.info("Job completed successfully", extra={"jobId": job_id, "articleId": article_id})
         return True

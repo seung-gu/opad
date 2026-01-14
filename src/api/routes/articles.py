@@ -65,7 +65,16 @@ def _check_duplicate_job(params_hash: str) -> Optional[str]:
 
 
 def _store_params_hash(params_hash: str, job_id: str) -> bool:
-    """Store params_hash in Redis with 24-hour TTL."""
+    """Store params_hash in Redis with 24-hour TTL.
+    
+    TODO: Race condition possible with concurrent requests
+    If two requests with identical parameters arrive simultaneously, both can pass
+    duplicate detection and create duplicate jobs. To fix, use atomic SET NX:
+    - Change: client.setex(hash_key, PARAMS_HASH_TTL, job_id)
+    - To: client.set(hash_key, job_id, nx=True, ex=PARAMS_HASH_TTL)
+    - Then check return value and handle race condition in _create_and_enqueue_job
+    Currently not implemented due to low probability and added complexity.
+    """
     from api.queue import get_redis_client
     from redis.exceptions import RedisError
     
@@ -179,11 +188,14 @@ def _handle_duplicate(article_id: str, inputs: dict, force: bool = False) -> Non
     
     # Build error detail with existing job information for frontend
     # Use model_dump(mode='json') to serialize datetime objects to JSON-compatible strings
+    # IMPORTANT: Use existing_job's article_id, not the new one from the current request
+    # This ensures the frontend displays the correct article that was already generated
+    existing_article_id = existing_job.article_id if existing_job else article_id
     detail = {
         "error": "Duplicate job detected",
         "message": "A job with identical parameters was created within the last 24 hours.",
         "existing_job": existing_job.model_dump(mode='json') if existing_job else None,
-        "article_id": article_id
+        "article_id": existing_article_id
     }
     
     raise HTTPException(status_code=409, detail=detail)
