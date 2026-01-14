@@ -89,7 +89,8 @@ export async function POST(request: NextRequest) {
     // Handle duplicate job (409 Conflict)
     if (generateResponse.status === 409) {
       const errorData = await generateResponse.json().catch(() => ({}))
-      const detail = errorData.detail || {}
+      // FastAPI returns HTTPException detail directly in response body, not nested under "detail"
+      const detail = errorData.detail || errorData
       
       console.log(JSON.stringify({
         source: 'web',
