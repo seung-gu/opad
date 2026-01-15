@@ -509,3 +509,74 @@ def delete_article(article_id: str) -> bool:
     except PyMongoError as e:
         logger.error("Failed to delete article", extra={"articleId": article_id, "error": str(e)})
         return False
+
+
+def get_database_stats() -> Optional[dict]:
+    """Get MongoDB database and collection statistics.
+    
+    Returns information about:
+    - Collection size (dataSize)
+    - Index size (indexSize)
+    - Total size (totalSize)
+    - Document count
+    - Average document size
+    
+    Returns:
+        Dictionary with statistics or None if unavailable
+    """
+    client = get_mongodb_client()
+    if not client:
+        return None
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[COLLECTION_NAME]
+        
+        # Get collection stats
+        stats = db.command("collStats", COLLECTION_NAME)
+        
+        # Get document count by status
+        total_count = collection.count_documents({})
+        deleted_count = collection.count_documents({'status': 'deleted'})
+        active_count = total_count - deleted_count
+        
+        # Format sizes in MB
+        data_size_mb = stats.get('size', 0) / (1024 * 1024)
+        index_size_mb = stats.get('totalIndexSize', 0) / (1024 * 1024)
+        storage_size_mb = stats.get('storageSize', 0) / (1024 * 1024)
+        total_size_mb = data_size_mb + index_size_mb
+        
+        result = {
+            'collection': COLLECTION_NAME,
+            'total_documents': total_count,
+            'active_documents': active_count,
+            'deleted_documents': deleted_count,
+            'data_size_mb': round(data_size_mb, 2),
+            'index_size_mb': round(index_size_mb, 2),
+            'storage_size_mb': round(storage_size_mb, 2),
+            'total_size_mb': round(total_size_mb, 2),
+            'avg_document_size_bytes': round(stats.get('avgObjSize', 0), 2),
+            'indexes': stats.get('nindexes', 0),
+            'index_details': []
+        }
+        
+        # Get index details
+        indexes = collection.list_indexes()
+        for idx in indexes:
+            idx_name = idx.get('name', 'unknown')
+            idx_keys = idx.get('key', {})
+            result['index_details'].append({
+                'name': idx_name,
+                'keys': idx_keys
+            })
+        
+        logger.info("Database statistics retrieved", extra={
+            "totalDocuments": total_count,
+            "dataSizeMB": round(data_size_mb, 2),
+            "indexSizeMB": round(index_size_mb, 2)
+        })
+        
+        return result
+    except PyMongoError as e:
+        logger.error("Failed to get database stats", extra={"error": str(e)})
+        return None
