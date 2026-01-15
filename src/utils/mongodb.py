@@ -125,10 +125,10 @@ def save_article(article_id: str, content: str) -> bool:
         # Only update content and status, not metadata
         # Metadata (language, level, length, topic) was set during article creation
         # and should remain immutable
-        # Note: Use 'succeeded' status to match ArticleStatus type definition
+        # Note: Use 'completed' status for MongoDB (matches existing data)
         update_data = {
             'content': content,
-            'status': 'succeeded',
+            'status': 'completed',
             'updated_at': datetime.now(timezone.utc)
         }
         
@@ -413,7 +413,7 @@ def list_articles(
     Args:
         skip: Number of articles to skip (for pagination)
         limit: Maximum number of articles to return
-        status: Filter by status (e.g., 'pending', 'succeeded', 'deleted')
+        status: Filter by status (e.g., 'pending', 'completed', 'deleted')
         language: Filter by language
         level: Filter by level
         owner_id: Filter by owner_id

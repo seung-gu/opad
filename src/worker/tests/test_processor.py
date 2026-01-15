@@ -117,10 +117,10 @@ class TestWorkerErrorHandling(unittest.TestCase):
         result = process_job(self.job_data)
         
         self.assertTrue(result)
-        # Should update status to succeeded
+        # Should update status to completed
         mock_update_status.assert_called()
         call_args = mock_update_status.call_args
-        self.assertEqual(call_args[1]['status'], 'succeeded')
+        self.assertEqual(call_args[1]['status'], 'completed')
         self.assertEqual(call_args[1]['progress'], 100)
     
     @patch('worker.processor.update_job_status')
@@ -132,7 +132,7 @@ class TestWorkerErrorHandling(unittest.TestCase):
         
         Rationale: Without successful save, the generated article content is lost
         (only exists in memory). Users cannot access the content, so marking the job
-        as 'succeeded' would be misleading. Save failure = job failure.
+        as 'completed' would be misleading. Save failure = job failure.
         """
         mock_result = MagicMock()
         mock_result.raw = "# Test Article"

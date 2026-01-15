@@ -112,7 +112,7 @@ def _build_article_response(article: dict) -> dict:
         'level': inputs['level'],
         'length': inputs['length'],
         'topic': inputs['topic'],
-        'status': article.get('status', 'pending'),
+        'status': article.get('status'),
         'created_at': formatted_time,
         'owner_id': article.get('owner_id'),
         'inputs': inputs

@@ -82,12 +82,12 @@ class TestQueueBasics(unittest.TestCase):
         
         # Verify
         self.assertTrue(result)
-        # Should update status multiple times: running -> succeeded
+        # Should update status multiple times: running -> completed
         self.assertGreaterEqual(mock_update_status.call_count, 2)
         
         # Check final status update
         final_call = mock_update_status.call_args_list[-1]
-        self.assertEqual(final_call[1]['status'], 'succeeded')
+        self.assertEqual(final_call[1]['status'], 'completed')
         self.assertEqual(final_call[1]['progress'], 100)
 
 

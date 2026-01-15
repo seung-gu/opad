@@ -42,12 +42,12 @@ def process_job(job_data: dict) -> bool:
            - CrewAI generates article content
            - Progress updates happen automatically via JobProgressListener
         5. Upload result to Cloudflare R2 (progress=95)
-        6. Update status to 'succeeded' (progress=100)
+        6. Update status to 'completed' (progress=100)
         7. Handle success/failure
     
     Progress tracking:
         - JobProgressListener catches CrewAI events and updates Redis in real-time
-        - Worker handles initial 'running', R2 upload progress, and final 'succeeded'/'failed' states
+        - Worker handles initial 'running', R2 upload progress, and final 'completed'/'failed' states
         - Event-based tracking provides accurate progress (not estimated)
     
     Error handling:
@@ -66,7 +66,7 @@ def process_job(job_data: dict) -> bool:
             }
         
     Returns:
-        True if job succeeded, False if failed
+        True if job completed, False if failed
     """
     job_id = job_data.get('job_id')
     article_id = job_data.get('article_id')
@@ -113,7 +113,7 @@ def process_job(job_data: dict) -> bool:
             # ✅ Check if any task failed during execution
             # If TaskFailedEvent was emitted, listener.task_failed will be True
             # In this case, the job status is already set to 'failed' by the event handler
-            # We should not overwrite it with 'succeeded'
+            # We should not overwrite it with 'completed'
             if listener.task_failed:
                 logger.warning(
                     "Job had task failures but CrewAI didn't raise exception. Job status already set to 'failed' by event handler.",
@@ -152,8 +152,8 @@ def process_job(job_data: dict) -> bool:
             )
             return False
         
-        # ✅ Update final status to 'succeeded'
-        if not update_job_status(job_id, 'succeeded', 100, 'Article generated successfully!', article_id=article_id):
+        # ✅ Update final status to 'completed'
+        if not update_job_status(job_id, 'completed', 100, 'Article generated successfully!', article_id=article_id):
             logger.error("Failed to update final status, marking as failed", extra={"jobId": job_id})
             update_job_status(
                 job_id, 'failed', 100, 

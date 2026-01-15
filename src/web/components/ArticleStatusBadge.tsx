@@ -13,7 +13,7 @@ interface ArticleStatusBadgeProps {
  * Provides consistent styling and color coding for different statuses:
  * - pending: yellow/orange
  * - running: blue
- * - succeeded: green
+ * - completed: green
  * - failed: red
  * - deleted: gray
  */
@@ -27,7 +27,7 @@ export default function ArticleStatusBadge({ status, className = '' }: ArticleSt
       label: 'Running',
       colorClass: 'bg-blue-100 text-blue-800 border-blue-200'
     },
-    succeeded: {
+    completed: {
       label: 'Completed',
       colorClass: 'bg-green-100 text-green-800 border-green-200'
     },

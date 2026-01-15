@@ -28,7 +28,7 @@ async def get_job_status_endpoint(job_id: str):
     상태 흐름:
     - queued: 큐에 대기 중
     - running: Worker가 처리 중
-    - succeeded: 완료
+    - completed: 완료
     - failed: 실패
     """
     status_data = get_job_status(job_id)

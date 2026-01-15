@@ -11,7 +11,7 @@ const STATUS_OPTIONS: { value: ArticleStatus | ''; label: string }[] = [
   { value: '', label: 'All Statuses' },
   { value: 'pending', label: 'Pending' },
   { value: 'running', label: 'Running' },
-  { value: 'succeeded', label: 'Completed' },
+  { value: 'completed', label: 'Completed' },
   { value: 'failed', label: 'Failed' }
 ]
 

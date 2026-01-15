@@ -261,7 +261,7 @@ export default function Home() {
         
         const job = data.existing_job
         const messages: Record<string, string> = {
-          succeeded: 'A completed job exists within the last 24 hours. Do you want to generate new?',
+          completed: 'A completed job exists within the last 24 hours. Do you want to generate new?',
           running: `A running job exists (${job.progress}%). Do you want to generate new?`,
           failed: `Previous job failed: ${job.error || 'Unknown error'}. Do you want to generate new?`,
           queued: 'A queued job already exists. Do you want to generate new?'
@@ -273,7 +273,7 @@ export default function Home() {
         }
         
         // User cancels: use existing job (Cancel = false)
-        if (job.status === 'succeeded' && data.article_id) {
+        if (job.status === 'completed' && data.article_id) {
           // Load content directly without showing loading state to prevent flicker
           if (currentArticleId !== data.article_id) {
             // Load content first (generating is still true, so useEffect won't trigger)

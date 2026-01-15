@@ -204,7 +204,7 @@ def get_job_status(job_id: str) -> Optional[dict]:
         {
             'id': 'job-uuid',
             'article_id': 'article-uuid',
-            'status': 'queued' | 'running' | 'succeeded' | 'failed',
+            'status': 'queued' | 'running' | 'completed' | 'failed',
             'progress': 0-100,
             'message': 'Current task description',
             'error': 'Error message if failed',
@@ -213,7 +213,7 @@ def get_job_status(job_id: str) -> Optional[dict]:
         }
     
     Status lifecycle:
-        queued → running → succeeded/failed
+        queued → running → completed/failed
         
     TTL: 24 hours (auto-deleted after)
     
@@ -261,13 +261,13 @@ def update_job_status(
         - Prevents data loss from partial updates
     
     Status lifecycle:
-        queued (API) → running (Worker) → succeeded/failed (Worker)
+        queued (API) → running (Worker) → completed/failed (Worker)
                                       ↑
                                    progress updates (progress.py)
     
     Args:
         job_id: Job identifier (UUID)
-        status: Job status ('queued', 'running', 'succeeded', 'failed')
+        status: Job status ('queued', 'running', 'completed', 'failed')
         progress: Progress percentage (0-100)
         message: User-facing status message
         error: Error message if status='failed'
