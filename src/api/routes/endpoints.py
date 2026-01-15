@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api", tags=["meta"])
+router = APIRouter(tags=["meta"])
 
 
 @router.get("/endpoints")
