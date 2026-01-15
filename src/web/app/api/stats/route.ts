@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8000'
 
     // Call FastAPI to get database statistics
-    const response = await fetch(`${apiBaseUrl}/articles/stats`, {
+    const response = await fetch(`${apiBaseUrl}/stats`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
