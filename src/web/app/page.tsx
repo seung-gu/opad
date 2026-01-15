@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import MarkdownViewer from '@/components/MarkdownViewer'
 import InputForm from '@/components/InputForm'
 
@@ -44,7 +44,7 @@ export default function Home() {
     loadLatestArticle()
   }, []) // Only run on mount
 
-  const loadContent = (showLoading = true, articleId?: string | null) => {
+  const loadContent = useCallback((showLoading = true, articleId?: string | null) => {
     // Use provided articleId or fall back to currentArticleId
     const targetArticleId = articleId !== undefined ? articleId : currentArticleId
     
@@ -118,12 +118,13 @@ export default function Home() {
           console.error('Failed to load article:', error)
         }
       })
-  }
+  }, [currentArticleId])
 
   useEffect(() => {
     // Always call loadContent on mount or when currentArticleId changes
     // loadContent handles the case when currentArticleId is null (shows message)
     // Only load if not currently generating (to prevent flicker when cancelling duplicate)
+    // When generating becomes false, reload content to ensure it's up to date
     if (!generating && currentArticleId) {
       loadContent(true)
     }
@@ -135,8 +136,7 @@ export default function Home() {
         fetchAbortControllerRef.current = null
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentArticleId])
+  }, [currentArticleId, generating, loadContent])
   
   // Poll status when generating
   useEffect(() => {
@@ -239,12 +239,9 @@ export default function Home() {
 
       const data = await response.json()
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate article')
-      }
-
-      // Handle duplicate job - ask user to generate new or use existing
-      if (data.duplicate) {
+      // Handle duplicate job (409 Conflict) - must check before general error handling
+      // since 409 has response.ok === false
+      if (response.status === 409 || data.duplicate) {
         // If existing_job is null, job status data couldn't be retrieved
         if (!data.existing_job) {
           // Still show message and allow regeneration

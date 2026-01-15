@@ -25,14 +25,16 @@ from pathlib import Path
 _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse
+from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse, ArticleListResponse
 from api.queue import enqueue_job, update_job_status, get_job_status
 from utils.mongodb import (
     save_article_metadata, 
     get_article, 
     get_mongodb_client, 
     get_latest_article,
-    find_duplicate_article
+    find_duplicate_article,
+    list_articles,
+    delete_article
 )
 
 logger = logging.getLogger(__name__)
@@ -220,6 +222,67 @@ def _create_and_enqueue_job(article_id: str, inputs: dict, job_id: str, owner_id
     )
 
 
+@router.get("")
+async def list_articles_endpoint(
+    skip: int = 0,
+    limit: int = 20,
+    status: Optional[str] = None,
+    language: Optional[str] = None,
+    level: Optional[str] = None,
+    owner_id: Optional[str] = None
+):
+    """Get article list with filters and pagination.
+    
+    Query parameters:
+        skip: Number of articles to skip (default: 0)
+        limit: Maximum number of articles to return (default: 20, max: 100)
+        status: Filter by status (optional)
+        language: Filter by language (optional)
+        level: Filter by level (optional)
+        owner_id: Filter by owner_id (optional)
+    
+    Returns:
+        ArticleListResponse with articles, total count, and pagination info
+    """
+    _check_mongodb_connection()
+    
+    # Validate limit
+    if limit > 100:
+        limit = 100
+    if limit < 1:
+        limit = 1
+    
+    # Get articles from MongoDB
+    # By default, exclude soft-deleted articles unless status='deleted' is explicitly requested
+    articles, total = list_articles(skip, limit, status, language, level, owner_id, exclude_deleted=True)
+    
+    # Build response list
+    article_responses = []
+    for article in articles:
+        try:
+            article_responses.append(_build_article_response(article))
+        except Exception as e:
+            # Skip invalid articles (log but don't fail entire request)
+            logger.warning("Skipping invalid article", extra={
+                "articleId": article.get('_id'),
+                "error": str(e)
+            })
+    
+    logger.info("Listed articles", extra={
+        "count": len(article_responses),
+        "total": total,
+        "skip": skip,
+        "limit": limit
+    })
+    
+    return ArticleListResponse(
+        articles=article_responses,
+        total=total,
+        skip=skip,
+        limit=limit
+    )
+
+
 @router.get("/latest")
 async def get_latest_article_endpoint():
     """Get the most recently created article."""
@@ -287,12 +350,19 @@ async def generate_article(request: GenerateRequest, force: bool = False):
 
 @router.get("/{article_id}", response_model=ArticleResponse)
 async def get_article_endpoint(article_id: str):
-    """Get article metadata by ID."""
+    """Get article metadata by ID.
+    
+    Returns 404 if article is soft-deleted (status='deleted').
+    """
     _validate_article(article_id)
     
     article_doc = get_article(article_id)
     if not article_doc:
         # Race condition: article was deleted between validation and fetch
+        raise HTTPException(status_code=404, detail="Article not found")
+    
+    # Check if article is soft-deleted
+    if article_doc.get('status') == 'deleted':
         raise HTTPException(status_code=404, detail="Article not found")
     
     response_data = _build_article_response(article_doc)
@@ -301,7 +371,10 @@ async def get_article_endpoint(article_id: str):
 
 @router.get("/{article_id}/content")
 async def get_article_content(article_id: str):
-    """Get article content (markdown) from MongoDB."""
+    """Get article content (markdown) from MongoDB.
+    
+    Returns 404 if article is soft-deleted (status='deleted').
+    """
     from fastapi.responses import Response
     
     _validate_article(article_id)
@@ -311,8 +384,37 @@ async def get_article_content(article_id: str):
         # Race condition: article was deleted between validation and fetch
         raise HTTPException(status_code=404, detail="Article not found")
     
+    # Check if article is soft-deleted
+    if article_doc.get('status') == 'deleted':
+        raise HTTPException(status_code=404, detail="Article not found")
+    
     content = article_doc.get('content')
     if not content:
         raise HTTPException(status_code=404, detail="Article content not found")
     
     return Response(content=content, media_type='text/markdown')
+
+
+@router.delete("/{article_id}")
+async def delete_article_endpoint(article_id: str):
+    """Soft delete article by setting status='deleted'.
+    
+    Soft delete preserves data for potential recovery and audit trail.
+    Article remains in database but is marked as deleted.
+    
+    Returns:
+        Success message with deleted article_id
+    """
+    _validate_article(article_id)
+    
+    success = delete_article(article_id)
+    if not success:
+        raise HTTPException(status_code=503, detail="Failed to delete article")
+    
+    logger.info("Article deleted via API", extra={"articleId": article_id})
+    
+    return {
+        "success": True,
+        "article_id": article_id,
+        "message": "Article soft deleted (status='deleted')"
+    }

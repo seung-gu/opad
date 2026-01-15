@@ -44,3 +44,11 @@ class GenerateResponse(BaseModel):
     job_id: str = Field(..., description="Job ID for tracking")
     article_id: str = Field(..., description="Article ID")
     message: str = Field(..., description="Status message")
+
+
+class ArticleListResponse(BaseModel):
+    """Response model for article list with pagination."""
+    articles: list[ArticleResponse]
+    total: int = Field(..., description="Total number of articles matching filters")
+    skip: int = Field(..., description="Number of articles skipped")
+    limit: int = Field(..., description="Maximum number of articles returned")

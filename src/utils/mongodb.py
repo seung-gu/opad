@@ -396,3 +396,74 @@ def get_latest_article() -> Optional[dict]:
         global _client_cache
         _client_cache = None
         return None
+
+
+def list_articles(
+    skip: int = 0,
+    limit: int = 20,
+    status: Optional[str] = None,
+    language: Optional[str] = None,
+    level: Optional[str] = None,
+    owner_id: Optional[str] = None,
+    exclude_deleted: bool = True
+) -> tuple[list[dict], int]:
+    """List articles with filtering, sorting, and pagination.
+    
+    Args:
+        skip: Number of articles to skip (for pagination)
+        limit: Maximum number of articles to return
+        status: Filter by status (e.g., 'pending', 'succeeded', 'deleted')
+        language: Filter by language
+        level: Filter by level
+        owner_id: Filter by owner_id
+        exclude_deleted: If True (default), exclude soft-deleted articles (status='deleted')
+                        unless status='deleted' is explicitly requested
+    
+    Returns:
+        (articles, total_count) tuple
+        - articles: List of article documents
+        - total_count: Total number of articles matching filters
+    """
+    client = get_mongodb_client()
+    if not client:
+        return [], 0
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[COLLECTION_NAME]
+        
+        # Build filter query
+        filter_query = {}
+        if status:
+            filter_query['status'] = status
+        elif exclude_deleted:
+            # By default, exclude soft-deleted articles unless status is explicitly set
+            filter_query['status'] = {'$ne': 'deleted'}
+        if language:
+            filter_query['inputs.language'] = language
+        if level:
+            filter_query['inputs.level'] = level
+        if owner_id:
+            filter_query['owner_id'] = owner_id
+        
+        # Get total count for pagination
+        total_count = collection.count_documents(filter_query)
+        
+        # Get articles with sorting and pagination
+        articles = list(collection.find(filter_query)
+                       .sort('created_at', -1)  # Newest first
+                       .skip(skip)
+                       .limit(limit))
+        
+        logger.info("Listed articles", extra={
+            "count": len(articles),
+            "total": total_count,
+            "skip": skip,
+            "limit": limit,
+            "filters": filter_query
+        })
+        
+        return articles, total_count
+    except PyMongoError as e:
+        logger.error("Failed to list articles", extra={"error": str(e)})
+        return [], 0
