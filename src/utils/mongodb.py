@@ -541,9 +541,16 @@ def get_database_stats() -> Optional[dict]:
         active_count = total_count - deleted_count
         
         # Format sizes in MB
-        data_size_mb = stats.get('size', 0) / (1024 * 1024)
-        index_size_mb = stats.get('totalIndexSize', 0) / (1024 * 1024)
-        storage_size_mb = stats.get('storageSize', 0) / (1024 * 1024)
+        # 'size': Uncompressed document data size (bytes)
+        # 'storageSize': Allocated disk space for collection (bytes)
+        # 'totalIndexSize': Total size of all indexes (bytes)
+        data_size_bytes = stats.get('size', 0)
+        index_size_bytes = stats.get('totalIndexSize', 0)
+        storage_size_bytes = stats.get('storageSize', 0)
+        
+        data_size_mb = data_size_bytes / (1024 * 1024)
+        index_size_mb = index_size_bytes / (1024 * 1024)
+        storage_size_mb = storage_size_bytes / (1024 * 1024)
         total_size_mb = data_size_mb + index_size_mb
         
         result = {
@@ -552,12 +559,23 @@ def get_database_stats() -> Optional[dict]:
             'active_documents': active_count,
             'deleted_documents': deleted_count,
             'data_size_mb': round(data_size_mb, 2),
+            'data_size_bytes': data_size_bytes,  # Raw bytes for verification
             'index_size_mb': round(index_size_mb, 2),
+            'index_size_bytes': index_size_bytes,  # Raw bytes for verification
             'storage_size_mb': round(storage_size_mb, 2),
+            'storage_size_bytes': storage_size_bytes,  # Raw bytes for verification
             'total_size_mb': round(total_size_mb, 2),
             'avg_document_size_bytes': round(stats.get('avgObjSize', 0), 2),
             'indexes': stats.get('nindexes', 0),
-            'index_details': []
+            'index_details': [],
+            # Debug: Include raw MongoDB stats for verification
+            'raw_stats': {
+                'size': stats.get('size'),
+                'storageSize': stats.get('storageSize'),
+                'totalIndexSize': stats.get('totalIndexSize'),
+                'avgObjSize': stats.get('avgObjSize'),
+                'count': stats.get('count'),
+            }
         }
         
         # Get index details

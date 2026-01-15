@@ -297,6 +297,22 @@ async def get_latest_article_endpoint():
     return _build_article_response(article)
 
 
+@router.get("/stats")
+async def get_database_stats_endpoint():
+    """Get MongoDB database statistics.
+    
+    Returns information about collection size, index size, document counts, etc.
+    Useful for debugging disk space issues.
+    """
+    _check_mongodb_connection()
+    
+    stats = get_database_stats()
+    if not stats:
+        raise HTTPException(status_code=503, detail="Failed to retrieve database statistics")
+    
+    return stats
+
+
 @router.post("/generate", response_model=GenerateResponse)
 async def generate_article(request: GenerateRequest, force: bool = False):
     """Create article and start generation (unified endpoint).
@@ -419,19 +435,3 @@ async def delete_article_endpoint(article_id: str):
         "article_id": article_id,
         "message": "Article soft deleted (status='deleted')"
     }
-
-
-@router.get("/stats")
-async def get_database_stats_endpoint():
-    """Get MongoDB database statistics.
-    
-    Returns information about collection size, index size, document counts, etc.
-    Useful for debugging disk space issues.
-    """
-    _check_mongodb_connection()
-    
-    stats = get_database_stats()
-    if not stats:
-        raise HTTPException(status_code=503, detail="Failed to retrieve database statistics")
-    
-    return stats
