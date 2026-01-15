@@ -396,3 +396,205 @@ def get_latest_article() -> Optional[dict]:
         global _client_cache
         _client_cache = None
         return None
+
+
+def list_articles(
+    skip: int = 0,
+    limit: int = 20,
+    status: Optional[str] = None,
+    language: Optional[str] = None,
+    level: Optional[str] = None,
+    owner_id: Optional[str] = None,
+    exclude_deleted: bool = True
+) -> tuple[list[dict], int]:
+    """List articles with filtering, sorting, and pagination.
+    
+    Args:
+        skip: Number of articles to skip (for pagination)
+        limit: Maximum number of articles to return
+        status: Filter by status (e.g., 'pending', 'succeeded', 'deleted')
+        language: Filter by language
+        level: Filter by level
+        owner_id: Filter by owner_id
+        exclude_deleted: If True (default), exclude soft-deleted articles (status='deleted')
+                        unless status='deleted' is explicitly requested
+    
+    Returns:
+        (articles, total_count) tuple
+        - articles: List of article documents
+        - total_count: Total number of articles matching filters
+    """
+    client = get_mongodb_client()
+    if not client:
+        return [], 0
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[COLLECTION_NAME]
+        
+        # Build filter query
+        filter_query = {}
+        if status:
+            filter_query['status'] = status
+        elif exclude_deleted:
+            # By default, exclude soft-deleted articles unless status is explicitly set
+            filter_query['status'] = {'$ne': 'deleted'}
+        if language:
+            filter_query['inputs.language'] = language
+        if level:
+            filter_query['inputs.level'] = level
+        if owner_id:
+            filter_query['owner_id'] = owner_id
+        
+        # Get total count for pagination
+        total_count = collection.count_documents(filter_query)
+        
+        # Get articles with sorting and pagination
+        articles = list(collection.find(filter_query)
+                       .sort('created_at', -1)  # Newest first
+                       .skip(skip)
+                       .limit(limit))
+        
+        logger.info("Listed articles", extra={
+            "count": len(articles),
+            "total": total_count,
+            "skip": skip,
+            "limit": limit,
+            "filters": filter_query
+        })
+        
+        return articles, total_count
+    except PyMongoError as e:
+        logger.error("Failed to list articles", extra={"error": str(e)})
+        return [], 0
+
+
+def delete_article(article_id: str) -> bool:
+    """Soft delete article by setting status='deleted'.
+    
+    Soft delete preserves data for potential recovery and audit trail.
+    Article remains in database but is marked as deleted.
+    
+    Args:
+        article_id: Article ID to delete
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    client = get_mongodb_client()
+    if not client:
+        return False
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[COLLECTION_NAME]
+        
+        # Soft delete: set status='deleted'
+        result = collection.update_one(
+            {'_id': article_id},
+            {
+                '$set': {
+                    'status': 'deleted',
+                    'updated_at': datetime.now(timezone.utc)
+                }
+            }
+        )
+        
+        if result.matched_count == 0:
+            logger.warning("Article not found for deletion", extra={"articleId": article_id})
+            return False
+        
+        logger.info("Article soft deleted", extra={"articleId": article_id})
+        return True
+    except PyMongoError as e:
+        logger.error("Failed to delete article", extra={"articleId": article_id, "error": str(e)})
+        return False
+
+
+def get_database_stats() -> Optional[dict]:
+    """Get MongoDB database and collection statistics.
+    
+    Returns information about:
+    - Collection size (dataSize)
+    - Index size (indexSize)
+    - Total size (totalSize)
+    - Document count
+    - Average document size
+    
+    Returns:
+        Dictionary with statistics or None if unavailable
+    """
+    client = get_mongodb_client()
+    if not client:
+        return None
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[COLLECTION_NAME]
+        
+        # Get collection stats
+        stats = db.command("collStats", COLLECTION_NAME)
+        
+        # Get document count by status
+        total_count = collection.count_documents({})
+        deleted_count = collection.count_documents({'status': 'deleted'})
+        active_count = total_count - deleted_count
+        
+        # Format sizes in MB
+        # 'size': Uncompressed document data size (bytes)
+        # 'storageSize': Allocated disk space for collection (bytes)
+        # 'totalIndexSize': Total size of all indexes (bytes)
+        data_size_bytes = stats.get('size', 0)
+        index_size_bytes = stats.get('totalIndexSize', 0)
+        storage_size_bytes = stats.get('storageSize', 0)
+        
+        data_size_mb = data_size_bytes / (1024 * 1024)
+        index_size_mb = index_size_bytes / (1024 * 1024)
+        storage_size_mb = storage_size_bytes / (1024 * 1024)
+        total_size_mb = data_size_mb + index_size_mb
+        
+        result = {
+            'collection': COLLECTION_NAME,
+            'total_documents': total_count,
+            'active_documents': active_count,
+            'deleted_documents': deleted_count,
+            'data_size_mb': round(data_size_mb, 2),
+            'data_size_bytes': data_size_bytes,  # Raw bytes for verification
+            'index_size_mb': round(index_size_mb, 2),
+            'index_size_bytes': index_size_bytes,  # Raw bytes for verification
+            'storage_size_mb': round(storage_size_mb, 2),
+            'storage_size_bytes': storage_size_bytes,  # Raw bytes for verification
+            'total_size_mb': round(total_size_mb, 2),
+            'avg_document_size_bytes': round(stats.get('avgObjSize', 0), 2),
+            'indexes': stats.get('nindexes', 0),
+            'index_details': [],
+            # Debug: Include raw MongoDB stats for verification
+            'raw_stats': {
+                'size': stats.get('size'),
+                'storageSize': stats.get('storageSize'),
+                'totalIndexSize': stats.get('totalIndexSize'),
+                'avgObjSize': stats.get('avgObjSize'),
+                'count': stats.get('count'),
+            }
+        }
+        
+        # Get index details
+        indexes = collection.list_indexes()
+        for idx in indexes:
+            idx_name = idx.get('name', 'unknown')
+            idx_keys = idx.get('key', {})
+            result['index_details'].append({
+                'name': idx_name,
+                'keys': idx_keys
+            })
+        
+        logger.info("Database statistics retrieved", extra={
+            "totalDocuments": total_count,
+            "dataSizeMB": round(data_size_mb, 2),
+            "indexSizeMB": round(index_size_mb, 2)
+        })
+        
+        return result
+    except PyMongoError as e:
+        logger.error("Failed to get database stats", extra={"error": str(e)})
+        return None
