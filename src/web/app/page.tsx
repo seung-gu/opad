@@ -255,10 +255,10 @@ export default function Home() {
         
         const job = data.existing_job
         const messages: Record<string, string> = {
-          succeeded: 'A completed job exists. Do you want to generate new?',
+          succeeded: 'A completed job exists within the last 24 hours. Do you want to generate new?',
           running: `A running job exists (${job.progress}%). Do you want to generate new?`,
           failed: `Previous job failed: ${job.error || 'Unknown error'}. Do you want to generate new?`,
-          queued: 'A queued job exists. Do you want to generate new?'
+          queued: 'A queued job already exists. Do you want to generate new?'
         }
         
         // User confirms: generate new job (OK = true)
@@ -269,7 +269,7 @@ export default function Home() {
         // User cancels: use existing job (Cancel = false)
         if (job.status === 'succeeded' && data.article_id) {
           setCurrentArticleId(data.article_id)
-          loadContent(true)
+          // loadContent will be triggered by useEffect when currentArticleId changes
           setGenerating(false)
         } else if (job.status === 'running' || job.status === 'queued') {
           setCurrentJobId(job.id)
@@ -278,6 +278,11 @@ export default function Home() {
           setGenerating(false)
         }
         return
+      }
+
+      // Handle other non-2xx errors (409 duplicate is already handled above)
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to generate article')
       }
 
       // Save jobId and articleId for polling
