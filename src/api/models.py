@@ -5,15 +5,6 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-class ArticleCreate(BaseModel):
-    """Request model for creating an article."""
-    language: str = Field(..., description="Target language")
-    level: str = Field(..., description="Language level (A1-C2)")
-    length: str = Field(..., description="Target word count")
-    topic: str = Field(..., description="Article topic")
-    owner_id: Optional[str] = Field(None, description="Owner ID for multi-user support")
-
-
 class ArticleResponse(BaseModel):
     """Response model for article."""
     id: str = Field(..., description="Article ID")

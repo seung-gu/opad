@@ -3,7 +3,7 @@
 import os
 import logging
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, PyMongoError
 
@@ -128,7 +128,7 @@ def save_article(article_id: str, content: str) -> bool:
         update_data = {
             'content': content,
             'status': 'completed',
-            'updated_at': datetime.utcnow()
+            'updated_at': datetime.now(timezone.utc)
         }
         
         result = collection.update_one(
@@ -180,7 +180,8 @@ def get_article(article_id: str) -> Optional[dict]:
 def save_article_metadata(article_id: str, language: str, level: str, 
                           length: str, topic: str, status: str = 'pending',
                           created_at: Optional[datetime] = None,
-                          owner_id: Optional[str] = None) -> bool:
+                          owner_id: Optional[str] = None,
+                          job_id: Optional[str] = None) -> bool:
     """Save article metadata to MongoDB (without content).
     
     Used when creating article before generation starts.
@@ -198,6 +199,7 @@ def save_article_metadata(article_id: str, language: str, level: str,
                     the saved document immediately after saving, preventing orphaned records
                     if MongoDB becomes unavailable between save and fetch operations.
         owner_id: Optional owner ID for multi-user support
+        job_id: Optional job ID for tracking generation job
         
     Returns:
         True if successful, False otherwise
@@ -212,7 +214,7 @@ def save_article_metadata(article_id: str, language: str, level: str,
         
         # Use provided created_at or current time
         if created_at is None:
-            created_at = datetime.utcnow()
+            created_at = datetime.now(timezone.utc)
         
         # Build inputs object (structured parameters)
         inputs = {
@@ -226,8 +228,9 @@ def save_article_metadata(article_id: str, language: str, level: str,
         article_doc = {
             'inputs': inputs,  # Store only inputs (structured)
             'status': status,
-            'updated_at': datetime.utcnow(),
-            'owner_id': owner_id
+            'updated_at': datetime.now(timezone.utc),
+            'owner_id': owner_id,
+            'job_id': job_id  # Store job_id for duplicate detection
         }
         
         # Use upsert to handle both insert and update
@@ -242,7 +245,7 @@ def save_article_metadata(article_id: str, language: str, level: str,
             upsert=True
         )
         
-        logger.info("Article metadata saved to MongoDB", extra={"articleId": article_id})
+        logger.info("Article metadata saved to MongoDB", extra={"articleId": article_id, "jobId": job_id})
         return True
     except PyMongoError as e:
         logger.error("Failed to save article metadata", extra={"articleId": article_id, "error": str(e)})
@@ -255,6 +258,7 @@ def ensure_indexes() -> bool:
     Creates indexes if they don't exist:
     - created_at: descending (for get_latest_article queries)
     - owner_id: ascending, sparse (for future multi-user queries)
+    - compound index: owner_id + inputs.* + created_at (for duplicate detection)
     
     This function is idempotent - safe to call multiple times.
     MongoDB will skip index creation if the index already exists.
@@ -279,10 +283,84 @@ def ensure_indexes() -> bool:
         collection.create_index([('owner_id', 1)], sparse=True)
         logger.info("Created sparse index on owner_id")
         
+        # Create compound index for duplicate detection
+        # This enables efficient queries on: owner_id + inputs.* + created_at
+        # Used by find_duplicate_article() for O(log N) duplicate detection
+        collection.create_index([
+            ('owner_id', 1),
+            ('inputs.language', 1),
+            ('inputs.level', 1),
+            ('inputs.length', 1),
+            ('inputs.topic', 1),
+            ('created_at', -1)
+        ])
+        logger.info("Created compound index for duplicate detection (owner_id + inputs + created_at)")
+        
         return True
     except PyMongoError as e:
         logger.error("Failed to create indexes", extra={"error": str(e)})
         return False
+
+
+def find_duplicate_article(inputs: dict, owner_id: Optional[str] = None, hours: int = 24) -> Optional[dict]:
+    """Find duplicate article by inputs within specified hours.
+    
+    Searches for articles with identical inputs created within the time window.
+    Used for duplicate detection before creating new articles.
+    
+    Args:
+        inputs: Article inputs dict with keys: language, level, length, topic
+        owner_id: Owner ID for user-specific search (None for anonymous)
+        hours: Time window in hours (default: 24)
+        
+    Returns:
+        Article document if duplicate found, None otherwise
+        
+    Performance:
+        Uses compound index on (owner_id, inputs.*, created_at) for O(log N) lookup
+    """
+    client = get_mongodb_client()
+    if not client:
+        return None
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[COLLECTION_NAME]
+        
+        # Calculate cutoff time
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        
+        # Build query: exact inputs match + owner_id + recent created_at
+        query = {
+            'inputs': inputs,  # Exact match on nested dict
+            'created_at': {'$gte': cutoff},
+            'owner_id': owner_id  # None matches None (anonymous users)
+        }
+        
+        # Find most recent matching article
+        article = collection.find_one(
+            query,
+            sort=[('created_at', -1)]  # Most recent first
+        )
+        
+        if article:
+            article_id = article.get('_id')
+            logger.debug("Found duplicate article", extra={
+                "articleId": article_id,
+                "ownerId": owner_id,
+                "inputs": inputs
+            })
+        
+        return article
+    except (ConnectionFailure, PyMongoError) as e:
+        logger.error("Failed to find duplicate article", extra={
+            "error": str(e),
+            "ownerId": owner_id
+        })
+        # Clear cache to force reconnection on next call
+        global _client_cache
+        _client_cache = None
+        return None
 
 
 def get_latest_article() -> Optional[dict]:

@@ -88,7 +88,11 @@ export default function Home() {
           if (showLoading) {
             setLoading(false)
           }
-          fetchAbortControllerRef.current = null
+          // Only clear ref if it still points to this controller
+          // This prevents race conditions when multiple fetches are triggered
+          if (fetchAbortControllerRef.current === abortController) {
+            fetchAbortControllerRef.current = null
+          }
         }
       })
       .catch((error) => {
@@ -103,7 +107,11 @@ export default function Home() {
           if (showLoading) {
             setLoading(false)
           }
-          fetchAbortControllerRef.current = null
+          // Only clear ref if it still points to this controller
+          // This prevents race conditions when multiple fetches are triggered
+          if (fetchAbortControllerRef.current === abortController) {
+            fetchAbortControllerRef.current = null
+          }
           console.error('Failed to load article:', error)
         }
       })
@@ -230,7 +238,21 @@ export default function Home() {
       }
 
       // Handle duplicate job - ask user to generate new or use existing
-      if (data.duplicate && data.existing_job) {
+      if (data.duplicate) {
+        // If existing_job is null, job status data couldn't be retrieved
+        if (!data.existing_job) {
+          // Still show message and allow regeneration
+          const shouldRegenerate = window.confirm(
+            'A duplicate job was detected, but its status could not be retrieved. Do you want to generate a new article anyway?'
+          )
+          if (shouldRegenerate) {
+            return await handleGenerate(inputs, true)
+          }
+          // User cancelled: clear generating state
+          setGenerating(false)
+          return
+        }
+        
         const job = data.existing_job
         const messages: Record<string, string> = {
           succeeded: 'A completed job exists. Do you want to generate new?',
@@ -241,7 +263,7 @@ export default function Home() {
         
         // User confirms: generate new job (OK = true)
         if (window.confirm(messages[job.status])) {
-          return handleGenerate(inputs, true)
+          return await handleGenerate(inputs, true)
         }
         
         // User cancels: use existing job (Cancel = false)
