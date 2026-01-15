@@ -467,3 +467,45 @@ def list_articles(
     except PyMongoError as e:
         logger.error("Failed to list articles", extra={"error": str(e)})
         return [], 0
+
+
+def delete_article(article_id: str) -> bool:
+    """Soft delete article by setting status='deleted'.
+    
+    Soft delete preserves data for potential recovery and audit trail.
+    Article remains in database but is marked as deleted.
+    
+    Args:
+        article_id: Article ID to delete
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    client = get_mongodb_client()
+    if not client:
+        return False
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[COLLECTION_NAME]
+        
+        # Soft delete: set status='deleted'
+        result = collection.update_one(
+            {'_id': article_id},
+            {
+                '$set': {
+                    'status': 'deleted',
+                    'updated_at': datetime.now(timezone.utc)
+                }
+            }
+        )
+        
+        if result.matched_count == 0:
+            logger.warning("Article not found for deletion", extra={"articleId": article_id})
+            return False
+        
+        logger.info("Article soft deleted", extra={"articleId": article_id})
+        return True
+    except PyMongoError as e:
+        logger.error("Failed to delete article", extra={"articleId": article_id, "error": str(e)})
+        return False
