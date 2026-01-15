@@ -44,7 +44,10 @@ export default function Home() {
     loadLatestArticle()
   }, []) // Only run on mount
 
-  const loadContent = (showLoading = true) => {
+  const loadContent = (showLoading = true, articleId?: string | null) => {
+    // Use provided articleId or fall back to currentArticleId
+    const targetArticleId = articleId !== undefined ? articleId : currentArticleId
+    
     // Cancel any pending fetch request to prevent race conditions
     if (fetchAbortControllerRef.current) {
       fetchAbortControllerRef.current.abort()
@@ -56,7 +59,7 @@ export default function Home() {
     }
     
     // If no article_id, show message
-    if (!currentArticleId) {
+    if (!targetArticleId) {
       const errorMessage = '# No article selected\n\nClick "Generate New Article" to create one.'
       setContent(prev => prev !== errorMessage ? errorMessage : prev)
       if (showLoading) {
@@ -72,7 +75,7 @@ export default function Home() {
     // Add timestamp to bypass cache
     const timestamp = new Date().getTime()
     // Call FastAPI through web API route
-    fetch(`/api/article?article_id=${currentArticleId}&t=${timestamp}`, {
+    fetch(`/api/article?article_id=${targetArticleId}&t=${timestamp}`, {
       signal: abortController.signal
     })
       .then(res => {
@@ -120,7 +123,10 @@ export default function Home() {
   useEffect(() => {
     // Always call loadContent on mount or when currentArticleId changes
     // loadContent handles the case when currentArticleId is null (shows message)
-    loadContent(true)
+    // Only load if not currently generating (to prevent flicker when cancelling duplicate)
+    if (!generating && currentArticleId) {
+      loadContent(true)
+    }
     
     // Cleanup: cancel any pending fetch when article_id changes or component unmounts
     return () => {
@@ -268,8 +274,14 @@ export default function Home() {
         
         // User cancels: use existing job (Cancel = false)
         if (job.status === 'succeeded' && data.article_id) {
-          setCurrentArticleId(data.article_id)
-          // loadContent will be triggered by useEffect when currentArticleId changes
+          // Load content directly without showing loading state to prevent flicker
+          if (currentArticleId !== data.article_id) {
+            // Load content first (generating is still true, so useEffect won't trigger)
+            loadContent(false, data.article_id)
+            // Then update state and set generating to false
+            // useEffect will see generating=false but content is already loaded
+            setCurrentArticleId(data.article_id)
+          }
           setGenerating(false)
         } else if (job.status === 'running' || job.status === 'queued') {
           setCurrentJobId(job.id)
