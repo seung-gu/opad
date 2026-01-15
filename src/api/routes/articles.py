@@ -34,8 +34,7 @@ from utils.mongodb import (
     get_latest_article,
     find_duplicate_article,
     list_articles,
-    delete_article,
-    get_database_stats
+    delete_article
 )
 
 logger = logging.getLogger(__name__)
@@ -295,22 +294,6 @@ async def get_latest_article_endpoint():
     
     logger.info("Retrieved latest article", extra={"articleId": article.get('_id')})
     return _build_article_response(article)
-
-
-@router.get("/stats")
-async def get_database_stats_endpoint():
-    """Get MongoDB database statistics.
-    
-    Returns information about collection size, index size, document counts, etc.
-    Useful for debugging disk space issues.
-    """
-    _check_mongodb_connection()
-    
-    stats = get_database_stats()
-    if not stats:
-        raise HTTPException(status_code=503, detail="Failed to retrieve database statistics")
-    
-    return stats
 
 
 @router.post("/generate", response_model=GenerateResponse)
