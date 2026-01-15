@@ -125,9 +125,10 @@ def save_article(article_id: str, content: str) -> bool:
         # Only update content and status, not metadata
         # Metadata (language, level, length, topic) was set during article creation
         # and should remain immutable
+        # Note: Use 'succeeded' status to match ArticleStatus type definition
         update_data = {
             'content': content,
-            'status': 'completed',
+            'status': 'succeeded',
             'updated_at': datetime.now(timezone.utc)
         }
         

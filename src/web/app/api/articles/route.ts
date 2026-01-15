@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     // Build query string
     const queryParams = new URLSearchParams()
     if (skip > 0) queryParams.set('skip', skip.toString())
-    if (limit !== 20) queryParams.set('limit', limit.toString())
+    queryParams.set('limit', limit.toString()) // Always include limit
     if (status) queryParams.set('status', status)
     if (language) queryParams.set('language', language)
     if (level) queryParams.set('level', level)

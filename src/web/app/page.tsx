@@ -31,6 +31,8 @@ export default function Home() {
           // No articles exist yet - this is normal for first-time users
           console.log('No articles found - showing welcome message')
           setLoading(false)
+          // currentArticleId remains null, which will trigger the second useEffect
+          // to call loadContent() and show the welcome message
         } else {
           console.error('Failed to load latest article:', response.statusText)
           setLoading(false)
@@ -121,11 +123,12 @@ export default function Home() {
   }, [currentArticleId])
 
   useEffect(() => {
-    // Always call loadContent on mount or when currentArticleId changes
-    // loadContent handles the case when currentArticleId is null (shows message)
+    // Call loadContent when currentArticleId changes or when generating becomes false
+    // loadContent handles the case when currentArticleId is null (shows "No article selected" message)
     // Only load if not currently generating (to prevent flicker when cancelling duplicate)
     // When generating becomes false, reload content to ensure it's up to date
-    if (!generating && currentArticleId) {
+    // Note: We call loadContent even when currentArticleId is null to show welcome message
+    if (!generating) {
       loadContent(true)
     }
     
@@ -217,7 +220,7 @@ export default function Home() {
         statusPollIntervalRef.current = null
       }
     }
-  }, [generating, currentJobId])
+  }, [generating, currentJobId, loadContent])
   
   // No need to poll content - status polling will trigger loadContent when completed
 
