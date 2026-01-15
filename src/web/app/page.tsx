@@ -26,6 +26,7 @@ export default function Home() {
           const article = await response.json()
           setCurrentArticleId(article.id)
           console.log('Loaded latest article:', article.id)
+          setLoading(false)
         } else if (response.status === 404) {
           // No articles exist yet - this is normal for first-time users
           console.log('No articles found - showing welcome message')
@@ -43,7 +44,10 @@ export default function Home() {
     loadLatestArticle()
   }, []) // Only run on mount
 
-  const loadContent = (showLoading = true) => {
+  const loadContent = (showLoading = true, articleId?: string | null) => {
+    // Use provided articleId or fall back to currentArticleId
+    const targetArticleId = articleId !== undefined ? articleId : currentArticleId
+    
     // Cancel any pending fetch request to prevent race conditions
     if (fetchAbortControllerRef.current) {
       fetchAbortControllerRef.current.abort()
@@ -55,7 +59,7 @@ export default function Home() {
     }
     
     // If no article_id, show message
-    if (!currentArticleId) {
+    if (!targetArticleId) {
       const errorMessage = '# No article selected\n\nClick "Generate New Article" to create one.'
       setContent(prev => prev !== errorMessage ? errorMessage : prev)
       if (showLoading) {
@@ -71,7 +75,7 @@ export default function Home() {
     // Add timestamp to bypass cache
     const timestamp = new Date().getTime()
     // Call FastAPI through web API route
-    fetch(`/api/article?article_id=${currentArticleId}&t=${timestamp}`, {
+    fetch(`/api/article?article_id=${targetArticleId}&t=${timestamp}`, {
       signal: abortController.signal
     })
       .then(res => {
@@ -87,7 +91,11 @@ export default function Home() {
           if (showLoading) {
             setLoading(false)
           }
-          fetchAbortControllerRef.current = null
+          // Only clear ref if it still points to this controller
+          // This prevents race conditions when multiple fetches are triggered
+          if (fetchAbortControllerRef.current === abortController) {
+            fetchAbortControllerRef.current = null
+          }
         }
       })
       .catch((error) => {
@@ -102,7 +110,11 @@ export default function Home() {
           if (showLoading) {
             setLoading(false)
           }
-          fetchAbortControllerRef.current = null
+          // Only clear ref if it still points to this controller
+          // This prevents race conditions when multiple fetches are triggered
+          if (fetchAbortControllerRef.current === abortController) {
+            fetchAbortControllerRef.current = null
+          }
           console.error('Failed to load article:', error)
         }
       })
@@ -111,7 +123,10 @@ export default function Home() {
   useEffect(() => {
     // Always call loadContent on mount or when currentArticleId changes
     // loadContent handles the case when currentArticleId is null (shows message)
-    loadContent(true)
+    // Only load if not currently generating (to prevent flicker when cancelling duplicate)
+    if (!generating && currentArticleId) {
+      loadContent(true)
+    }
     
     // Cleanup: cancel any pending fetch when article_id changes or component unmounts
     return () => {
@@ -211,7 +226,7 @@ export default function Home() {
     level: string
     length: string
     topic: string
-  }) => {
+  }, force: boolean = false) => {
     setGenerating(true)
     try {
       const response = await fetch('/api/generate', {
@@ -219,11 +234,69 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(inputs),
+        body: JSON.stringify({ ...inputs, force }),
       })
 
       const data = await response.json()
 
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to generate article')
+      }
+
+      // Handle duplicate job - ask user to generate new or use existing
+      if (data.duplicate) {
+        // If existing_job is null, job status data couldn't be retrieved
+        if (!data.existing_job) {
+          // Still show message and allow regeneration
+          const shouldRegenerate = window.confirm(
+            'A duplicate job was detected, but its status could not be retrieved. Do you want to generate a new article anyway?'
+          )
+          if (shouldRegenerate) {
+            return await handleGenerate(inputs, true)
+          }
+          // User cancelled: clear generating state
+          setGenerating(false)
+          return
+        }
+        
+        const job = data.existing_job
+        const messages: Record<string, string> = {
+          succeeded: 'A completed job exists within the last 24 hours. Do you want to generate new?',
+          running: `A running job exists (${job.progress}%). Do you want to generate new?`,
+          failed: `Previous job failed: ${job.error || 'Unknown error'}. Do you want to generate new?`,
+          queued: 'A queued job already exists. Do you want to generate new?'
+        }
+        
+        // User confirms: generate new job (OK = true)
+        if (window.confirm(messages[job.status])) {
+          return await handleGenerate(inputs, true)
+        }
+        
+        // User cancels: use existing job (Cancel = false)
+        if (job.status === 'succeeded' && data.article_id) {
+          // Load content directly without showing loading state to prevent flicker
+          if (currentArticleId !== data.article_id) {
+            // Load content first (generating is still true, so useEffect won't trigger)
+            loadContent(false, data.article_id)
+            // Then update state and set generating to false
+            // useEffect will see generating=false but content is already loaded
+            setCurrentArticleId(data.article_id)
+          }
+          setGenerating(false)
+        } else if (job.status === 'running' || job.status === 'queued') {
+          // Set both jobId and articleId so content can be loaded when job completes
+          setCurrentJobId(job.id)
+          if (data.article_id) {
+            setCurrentArticleId(data.article_id)
+          }
+          setGenerating(true)
+        } else {
+          setGenerating(false)
+        }
+        return
+      }
+
+      // Handle other non-2xx errors (409 duplicate is already handled above)
       if (!response.ok) {
         throw new Error(data.error || 'Failed to generate article')
       }

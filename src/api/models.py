@@ -5,14 +5,6 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-class ArticleCreate(BaseModel):
-    """Request model for creating an article."""
-    language: str = Field(..., description="Target language")
-    level: str = Field(..., description="Language level (A1-C2)")
-    length: str = Field(..., description="Target word count")
-    topic: str = Field(..., description="Article topic")
-
-
 class ArticleResponse(BaseModel):
     """Response model for article."""
     id: str = Field(..., description="Article ID")
@@ -22,6 +14,8 @@ class ArticleResponse(BaseModel):
     topic: str
     status: str = Field(..., description="Article status")
     created_at: datetime
+    owner_id: Optional[str] = Field(None, description="Owner ID for multi-user support")
+    inputs: Optional[dict] = Field(None, description="Structured input parameters")
 
 
 class GenerateRequest(BaseModel):
@@ -46,7 +40,7 @@ class JobResponse(BaseModel):
 
 
 class GenerateResponse(BaseModel):
-    """Response model for generate endpoint."""
+    """Response model for generate endpoint (only returned when generation actually starts)."""
     job_id: str = Field(..., description="Job ID for tracking")
     article_id: str = Field(..., description="Article ID")
     message: str = Field(..., description="Status message")

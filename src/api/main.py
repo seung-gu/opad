@@ -15,6 +15,7 @@ sys.path.insert(0, str(_src_path))
 
 from api.routes import articles, jobs, health
 from utils.logging import setup_structured_logging
+from utils.mongodb import ensure_indexes
 
 # Set up structured JSON logging
 setup_structured_logging()
@@ -48,6 +49,16 @@ app.add_middleware(
 app.include_router(articles.router)
 app.include_router(jobs.router)
 app.include_router(health.router)
+
+
+@app.on_event("startup")
+async def startup():
+    """Initialize application on startup."""
+    # Ensure MongoDB indexes exist
+    if ensure_indexes():
+        logger.info("MongoDB indexes verified/created successfully")
+    else:
+        logger.warning("Failed to create MongoDB indexes (MongoDB may be unavailable)")
 
 
 @app.get("/")

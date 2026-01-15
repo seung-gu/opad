@@ -16,8 +16,8 @@ Architecture:
 import json
 import logging
 import os
-from typing import Optional
-from datetime import datetime
+from typing import Optional, Tuple
+from datetime import datetime, timezone
 import redis
 from redis.exceptions import RedisError
 
@@ -139,7 +139,7 @@ def enqueue_job(job_id: str, article_id: str, inputs: dict) -> bool:
         'job_id': job_id,
         'article_id': article_id,
         'inputs': inputs,
-        'created_at': datetime.now().isoformat()
+        'created_at': datetime.now(timezone.utc).isoformat()
     }
     
     try:
@@ -305,7 +305,7 @@ def update_job_status(
     # Rule 2: created_at - preserve existing, or set new for 'queued' status
     final_created_at = existing_created_at
     if final_created_at is None and status == 'queued':
-        final_created_at = datetime.now().isoformat()
+        final_created_at = datetime.now(timezone.utc).isoformat()
     
     # Rule 3: progress - preserve existing if new is 0 and existing is higher
     # This prevents error handlers from resetting progress (e.g., 95% -> 0%)
@@ -320,7 +320,7 @@ def update_job_status(
         'progress': final_progress,
         'message': message or '',
         'error': error,
-        'updated_at': datetime.now().isoformat()
+        'updated_at': datetime.now(timezone.utc).isoformat()
     }
     
     # Add optional fields if available

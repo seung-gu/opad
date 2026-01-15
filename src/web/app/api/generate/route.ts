@@ -5,14 +5,18 @@ export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
 
 /**
- * 변경 사항:
- * - Python spawn 제거 ✅
- * - FastAPI 호출로 변경 ✅
+ * Generate article endpoint (Next.js API route)
  * 
- * 새로운 흐름:
- * 1. Article 생성 (POST /articles)
- * 2. Job enqueue (POST /articles/:id/generate)
- * 3. jobId 반환 → 클라이언트가 폴링
+ * Changes:
+ * - Removed Python spawn ✅
+ * - Changed to FastAPI calls ✅
+ * - Uses unified endpoint (duplicate check → article creation → job enqueue) ✅
+ * 
+ * Flow:
+ * 1. POST /articles/generate (unified endpoint)
+ *    - Check for duplicates first
+ *    - If no duplicate, create article + enqueue job
+ * 2. Return jobId → client polls for status
  */
 export async function POST(request: NextRequest) {
   try {
@@ -37,8 +41,10 @@ export async function POST(request: NextRequest) {
       message: `Calling FastAPI at ${apiBaseUrl}`
     }))
 
-    // Step 1: Create article
-    const createArticleResponse = await fetch(`${apiBaseUrl}/articles`, {
+    // Call unified endpoint: duplicate check + article creation + job enqueue
+    const force = body.force === true
+    const generateUrl = `${apiBaseUrl}/articles/generate${force ? '?force=true' : ''}`
+    const generateResponse = await fetch(generateUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -51,47 +57,55 @@ export async function POST(request: NextRequest) {
       }),
     })
 
-    if (!createArticleResponse.ok) {
-      const errorData = await createArticleResponse.json().catch(() => ({}))
-      throw new Error(
-        errorData.detail || `Failed to create article: ${createArticleResponse.statusText}`
-      )
+    // Handle duplicate job (409 Conflict)
+    if (generateResponse.status === 409) {
+      const errorData = await generateResponse.json().catch(() => ({}))
+      // FastAPI returns HTTPException detail directly in response body, not nested under "detail"
+      const detail = errorData.detail || errorData
+      
+      console.log(JSON.stringify({
+        source: 'web',
+        level: 'info',
+        endpoint: '/api/generate',
+        message: `Duplicate job detected: ${detail.existing_job?.id}`
+      }))
+      
+      // Return in same format as before for frontend compatibility
+      return NextResponse.json({
+        success: false,
+        duplicate: true,
+        existing_job: detail.existing_job || null,
+        article_id: detail.article_id || null,
+        message: detail.message || 'A job with identical parameters was created within the last 24 hours.'
+      })
     }
-
-    const article = await createArticleResponse.json()
-    const articleId = article.id
-
-    console.log(JSON.stringify({
-      source: 'web',
-      level: 'info',
-      endpoint: '/api/generate',
-      message: `Article created: ${articleId}`
-    }))
-
-    // Step 2: Enqueue generation job
-    const generateResponse = await fetch(`${apiBaseUrl}/articles/${articleId}/generate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        language,
-        level,
-        length,
-        topic,
-      }),
-    })
-
+    
+    // Handle other non-2xx errors (409 is already handled above)
     if (!generateResponse.ok) {
       const errorData = await generateResponse.json().catch(() => ({}))
       throw new Error(
-        errorData.detail || `Failed to enqueue job: ${generateResponse.statusText}`
+        errorData.detail || `Failed to generate: ${generateResponse.statusText}`
       )
     }
 
     const generateData = await generateResponse.json()
     const jobId = generateData.job_id
-
+    const articleId = generateData.article_id
+    
+    if (!jobId || !articleId) {
+      // job_id and article_id should always be present for successful generation
+      console.error(JSON.stringify({
+        source: 'web',
+        level: 'error',
+        endpoint: '/api/generate',
+        message: `Missing job_id or article_id in generate response`
+      }))
+      return NextResponse.json(
+        { success: false, error: 'Failed to generate: missing job_id or article_id' },
+        { status: 500 }
+      )
+    }
+    
     console.log(JSON.stringify({
       source: 'web',
       level: 'info',
@@ -99,7 +113,6 @@ export async function POST(request: NextRequest) {
       message: `Job enqueued: ${jobId} for article ${articleId}`
     }))
 
-    // Return jobId and articleId for client to poll
     return NextResponse.json({
       success: true,
       job_id: jobId,

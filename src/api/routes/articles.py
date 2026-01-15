@@ -13,7 +13,8 @@ Flow:
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Optional
 from fastapi import APIRouter, HTTPException
 import sys
 from pathlib import Path
@@ -24,218 +25,194 @@ from pathlib import Path
 _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.models import ArticleCreate, ArticleResponse, GenerateRequest, GenerateResponse
-from api.queue import enqueue_job, update_job_status
-from utils.mongodb import save_article_metadata, get_article, get_mongodb_client, get_latest_article
+from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse
+from api.queue import enqueue_job, update_job_status, get_job_status
+from utils.mongodb import (
+    save_article_metadata, 
+    get_article, 
+    get_mongodb_client, 
+    get_latest_article,
+    find_duplicate_article
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/articles", tags=["articles"])
 
 
-@router.get("/latest")
-async def get_latest_article_endpoint():
-    """Get the most recently created article.
+def _check_mongodb_connection() -> None:
+    """Check MongoDB connection and raise if unavailable."""
+    if not get_mongodb_client():
+        raise HTTPException(status_code=503, detail="Database service unavailable")
+
+
+def _validate_article(article_id: str) -> None:
+    """Validate article exists in MongoDB."""
+    _check_mongodb_connection()
+    if not get_article(article_id):
+        raise HTTPException(status_code=404, detail="Article not found")
+
+
+def _parse_created_at(article: dict) -> datetime:
+    """Parse created_at from article document.
     
-    This endpoint is used by the frontend on page load to restore
-    the last article the user was viewing.
+    Handles both string (ISO format) and datetime objects.
+    MongoDB may store as string, so we need to parse it.
     
     Returns:
-        Article metadata and content if available, or 404 if no articles exist
+        datetime: Always returns a datetime object. If created_at is missing or invalid,
+                  returns current UTC time.
     """
-    # Check MongoDB connection first
-    client = get_mongodb_client()
-    if not client:
+    created_at = article.get('created_at')
+    
+    # Handle string (ISO format)
+    if created_at and isinstance(created_at, str):
+        # Replace 'Z' with '+00:00' for ISO format compatibility
+        return datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+    
+    # Handle datetime object
+    if created_at and isinstance(created_at, datetime):
+        return created_at
+    
+    # Missing or invalid type: return current UTC time
+    return datetime.now(timezone.utc)
+
+
+def _build_article_response(article: dict) -> dict:
+    """Build article response dict from MongoDB document.
+    
+    Extracts required fields from nested 'inputs' dict.
+    Validates presence of required fields before accessing them.
+    """
+    # Validate required fields defensively
+    inputs = article.get('inputs')
+    if not inputs:
+        article_id = article.get('_id', 'unknown')
         raise HTTPException(
-            status_code=503,
-            detail="Database service unavailable"
+            status_code=500,
+            detail=f"Article data is incomplete: missing 'inputs' field (article_id: {article_id})"
         )
     
-    article = get_latest_article()
+    created_at = _parse_created_at(article)
+    # _parse_created_at always returns datetime, so we can safely format it
     
-    if not article:
-        raise HTTPException(
-            status_code=404,
-            detail="No articles found"
-        )
-    
-    article_id = article.get('_id')
-    logger.info("Retrieved latest article", extra={"articleId": article_id})
+    # Format timestamp: timezone-aware datetimes already include timezone info in isoformat()
+    if created_at.tzinfo is not None:
+        # Timezone-aware: isoformat() returns '2025-01-13T12:34:56+00:00', don't add 'Z'
+        formatted_time = created_at.isoformat()
+    else:
+        # Timezone-naive: isoformat() returns '2025-01-13T12:34:56', add 'Z' to indicate UTC
+        formatted_time = created_at.isoformat() + 'Z'
     
     return {
         'id': article.get('_id'),
-        'language': article.get('language'),
-        'level': article.get('level'),
-        'length': article.get('length'),
-        'topic': article.get('topic'),
+        'language': inputs['language'],
+        'level': inputs['level'],
+        'length': inputs['length'],
+        'topic': inputs['topic'],
         'status': article.get('status', 'pending'),
-        'created_at': article.get('created_at', datetime.utcnow()).isoformat() + 'Z'
+        'created_at': formatted_time,
+        'owner_id': article.get('owner_id'),
+        'inputs': inputs
     }
 
 
-@router.post("", response_model=ArticleResponse, status_code=201)
-async def create_article(article: ArticleCreate):
-    """Create a new article record.
-    
-    This creates a metadata record for the article. The actual content
-    is generated later by the worker when /generate is called.
-    
-    Flow:
-        1. Generate unique article_id (UUID)
-        2. Store article metadata (language, level, length, topic)
-        3. Return article_id to client
-        4. Client then calls POST /articles/:id/generate to start generation
-    
-    Storage:
-        - MongoDB: Article metadata stored persistently
-    
-    Args:
-        article: Article creation request (language, level, length, topic)
-        
-    Returns:
-        ArticleResponse with article_id and metadata
-    """
-    article_id = str(uuid.uuid4())
-    
-    # Generate created_at timestamp locally BEFORE saving
-    # This eliminates the race condition window between save and fetch operations
-    created_at = datetime.utcnow()
-    
-    # Save metadata to MongoDB with pre-generated timestamp
-    success = save_article_metadata(
-        article_id=article_id,
-        language=article.language,
-        level=article.level,
-        length=article.length,
-        topic=article.topic,
-        status='pending',
-        created_at=created_at
-    )
-    
-    if not success:
-        raise HTTPException(
-            status_code=503,
-            detail="Failed to save article. Database service unavailable."
-        )
-    
-    logger.info("Created article", extra={"articleId": article_id})
-    
-    # Return response using local timestamp - no need to fetch from DB
-    # This eliminates the race condition and prevents orphaned records
-    return ArticleResponse(
-        id=article_id,
-        language=article.language,
-        level=article.level,
-        length=article.length,
-        topic=article.topic,
-        status='pending',
-        created_at=created_at
-    )
-
-
-@router.post("/{article_id}/generate", response_model=GenerateResponse)
-async def generate_article(article_id: str, request: GenerateRequest):
-    """Start article generation by enqueueing a job.
-    
-    Key concept: Asynchronous processing
-        - This endpoint returns immediately with a job_id
-        - Actual generation happens in the background (worker)
-        - Client polls GET /jobs/:job_id to track progress
-    
-    Why async?
-        - CrewAI takes 2-5 minutes to generate an article
-        - HTTP requests would timeout if we waited
-        - Job queue pattern allows long-running tasks
-    
-    Flow:
-        1. Validate article exists
-        2. Generate unique job_id
-        3. Enqueue job to Redis (RPUSH to queue)
-        4. Initialize job status in Redis (SET status key)
-        5. Return job_id to client immediately
-        6. Worker picks up job (BLPOP from queue)
-        7. Worker executes CrewAI and updates status
-        8. Client polls status until completion
-    
-    Critical operations:
-        - Both enqueue_job() and update_job_status() must succeed
-        - If enqueue succeeds but status init fails, client will poll forever
-        - If either fails, return 503 (service unavailable)
-    
-    Args:
-        article_id: Article ID (must exist in MongoDB)
-        request: Generation parameters (language, level, length, topic)
-        
-    Returns:
-        GenerateResponse with job_id for status tracking
-        
-    Raises:
-        404: Article not found
-        503: Redis unavailable (queue or status update failed)
-    """
-    # Validate article exists in MongoDB
-    # Check MongoDB connection first to distinguish connection failure from "not found"
-    if not get_mongodb_client():
-        raise HTTPException(
-            status_code=503,
-            detail="Database service unavailable. Cannot validate article."
-        )
-    
-    article_doc = get_article(article_id)
-    if not article_doc:
-        raise HTTPException(status_code=404, detail="Article not found")
-    
-    # Generate unique job ID
-    job_id = str(uuid.uuid4())
-    
-    # Prepare job input data for CrewAI
-    inputs = {
+def _prepare_inputs(request: GenerateRequest) -> dict:
+    """Prepare job input data for CrewAI."""
+    return {
         'language': request.language,
         'level': request.level,
         'length': request.length,
         'topic': request.topic
     }
+
+
+def _check_duplicate(inputs: dict, force: bool = False, owner_id: Optional[str] = None) -> None:
+    """Check for duplicate articles and raise 409 if found (unless force=true).
     
-    # Step 1: Initialize job status in Redis FIRST
-    # Critical: Must create status before enqueuing to prevent orphaned jobs
-    # If status creation fails, we haven't queued the job yet, so no orphan
-    # If enqueue fails after this, status will show 'queued' but worker never picks it up
-    # This is safer than the reverse (orphaned processing job with no status)
-    status_updated = update_job_status(
-        job_id=job_id,
-        status='queued',
-        progress=0,
-        message='Job queued, waiting for worker...',
-        article_id=article_id
-    )
-    if not status_updated:
+    MongoDB-based duplicate detection: searches for articles with identical inputs
+    created within the last 24 hours.
+    
+    This function performs duplicate detection BEFORE article creation to prevent
+    empty articles from accumulating in MongoDB.
+    
+    Args:
+        inputs: Job input parameters (language, level, length, topic)
+        force: If True, skip duplicate check
+        owner_id: Owner ID for user-specific duplicate check
+        
+    Raises:
+        HTTPException(409): If duplicate article exists and force=False
+    """
+    if force:
+        logger.info("Force generation requested, skipping duplicate check", extra={"ownerId": owner_id})
+        return
+    
+    # MongoDB-based duplicate check
+    existing_article = find_duplicate_article(inputs, owner_id, hours=24)
+    
+    if not existing_article:
+        return
+    
+    existing_article_id = existing_article.get('_id')
+    existing_job_id = existing_article.get('job_id')
+    
+    logger.info("Duplicate article detected", extra={
+        "existingArticleId": existing_article_id,
+        "existingJobId": existing_job_id,
+        "ownerId": owner_id
+    })
+    
+    # Get job status from Redis if job_id exists
+    existing_job = None
+    existing_job_data = None
+    if existing_job_id:
+        existing_job_data = get_job_status(existing_job_id)
+        if existing_job_data:
+            try:
+                existing_job = JobResponse(**existing_job_data)
+            except Exception as e:
+                logger.warning("Failed to parse existing job status", extra={
+                    "existingJobId": existing_job_id,
+                    "error": str(e)
+                })
+    
+    detail = {
+        "error": "Duplicate article detected",
+        "message": "An article with identical parameters was created within the last 24 hours.",
+        "existing_job": existing_job.model_dump(mode='json') if existing_job else None,
+        "article_id": existing_article_id
+    }
+    
+    raise HTTPException(status_code=409, detail=detail)
+
+
+def _create_and_enqueue_job(article_id: str, inputs: dict, job_id: str, owner_id: Optional[str] = None) -> GenerateResponse:
+    """Create new job and enqueue it.
+    
+    Args:
+        article_id: Article ID
+        inputs: Job input parameters
+        job_id: Job ID (generated by caller)
+        owner_id: Owner ID for logging
+    
+    Critical: Status must be created BEFORE enqueueing to prevent orphaned jobs.
+    If status creation fails, we haven't queued the job yet (no orphan).
+    If enqueue fails after status creation, status shows 'queued' but worker never picks it up
+    (visible failure state, better than orphaned processing job with no status).
+    """
+    # Step 1: Initialize job status FIRST (before enqueueing)
+    if not update_job_status(job_id, 'queued', 0, 'Job queued, waiting for worker...', article_id=article_id):
         logger.error("Failed to initialize job status", extra={"jobId": job_id, "articleId": article_id})
-        raise HTTPException(
-            status_code=503,
-            detail="Failed to initialize job status. Queue service unavailable."
-        )
+        raise HTTPException(status_code=503, detail="Failed to initialize job status")
     
     # Step 2: Enqueue job to Redis queue
-    # Now that status exists, enqueue the job for worker to pick up
     # If this fails, status exists but job won't be processed (visible failure state)
-    success = enqueue_job(job_id, article_id, inputs)
-    if not success:
-        # Update status to 'failed' since we couldn't enqueue
-        update_job_status(
-            job_id=job_id,
-            status='failed',
-            progress=0,
-            message='Failed to enqueue job',
-            error='Queue service unavailable',
-            article_id=article_id
-        )
-        raise HTTPException(
-            status_code=503,
-            detail="Failed to enqueue job. Queue service unavailable."
-        )
+    if not enqueue_job(job_id, article_id, inputs):
+        update_job_status(job_id, 'failed', 0, 'Failed to enqueue job', 'Queue service unavailable', article_id=article_id)
+        raise HTTPException(status_code=503, detail="Failed to enqueue job")
     
-    logger.info("Job enqueued", extra={"jobId": job_id, "articleId": article_id})
-    
+    logger.info("Job enqueued", extra={"jobId": job_id, "articleId": article_id, "ownerId": owner_id})
     return GenerateResponse(
         job_id=job_id,
         article_id=article_id,
@@ -243,83 +220,99 @@ async def generate_article(article_id: str, request: GenerateRequest):
     )
 
 
-@router.get("/{article_id}", response_model=ArticleResponse)
-async def get_article_endpoint(article_id: str):
-    """Get article metadata by ID.
+@router.get("/latest")
+async def get_latest_article_endpoint():
+    """Get the most recently created article."""
+    _check_mongodb_connection()
     
-    Returns article metadata (language, level, length, topic, status).
-    Does NOT return generated content (use GET /articles/:id/content for that).
+    article = get_latest_article()
+    if not article:
+        raise HTTPException(status_code=404, detail="No articles found")
+    
+    logger.info("Retrieved latest article", extra={"articleId": article.get('_id')})
+    return _build_article_response(article)
+
+
+@router.post("/generate", response_model=GenerateResponse)
+async def generate_article(request: GenerateRequest, force: bool = False):
+    """Create article and start generation (unified endpoint).
+    
+    This endpoint combines article creation and job enqueueing to prevent
+    creating empty articles when duplicates are detected.
     
     Args:
-        article_id: Article ID
-        
-    Returns:
-        ArticleResponse with metadata
-        
-    Raises:
-        404: Article not found
-        503: Database service unavailable
+        force: If True, skip duplicate check and create new article + job
+    
+    Returns 409 Conflict if duplicate job exists (with existing_job info for user decision).
+    
+    Note: owner_id is currently set to None. When authentication is implemented,
+    extract owner_id from JWT token in Authorization header.
     """
-    # Check MongoDB connection first to distinguish connection failure from "not found"
-    if not get_mongodb_client():
-        raise HTTPException(
-            status_code=503,
-            detail="Database service unavailable. Cannot retrieve article."
-        )
+    _check_mongodb_connection()
+    inputs = _prepare_inputs(request)
+    
+    # TODO: Extract owner_id from JWT token when authentication is implemented
+    # from fastapi import Header
+    # authorization: str = Header(None)
+    # owner_id = extract_user_id_from_jwt(authorization)
+    owner_id = None  # Currently no authentication
+    
+    # Step 1: Check for duplicate BEFORE creating article (user-specific)
+    _check_duplicate(inputs, force, owner_id)  # Raises HTTPException(409) if duplicate
+    
+    # Step 2: No duplicate (or force=true) → generate IDs
+    article_id = str(uuid.uuid4())
+    job_id = str(uuid.uuid4())
+    created_at = datetime.now(timezone.utc)
+    
+    # Step 3: Create article with job_id
+    if not save_article_metadata(
+        article_id=article_id,
+        language=request.language,
+        level=request.level,
+        length=request.length,
+        topic=request.topic,
+        status='pending',
+        created_at=created_at,
+        owner_id=owner_id,
+        job_id=job_id
+    ):
+        raise HTTPException(status_code=503, detail="Failed to save article")
+    
+    logger.info("Created article", extra={"articleId": article_id, "jobId": job_id, "ownerId": owner_id})
+    
+    # Step 4: Enqueue job
+    return _create_and_enqueue_job(article_id, inputs, job_id, owner_id)
+
+
+@router.get("/{article_id}", response_model=ArticleResponse)
+async def get_article_endpoint(article_id: str):
+    """Get article metadata by ID."""
+    _validate_article(article_id)
     
     article_doc = get_article(article_id)
     if not article_doc:
+        # Race condition: article was deleted between validation and fetch
         raise HTTPException(status_code=404, detail="Article not found")
     
-    return ArticleResponse(
-        id=article_doc['_id'],
-        language=article_doc['language'],
-        level=article_doc['level'],
-        length=article_doc['length'],
-        topic=article_doc['topic'],
-        status=article_doc.get('status', 'pending'),
-        created_at=article_doc.get('created_at', datetime.utcnow())
-    )
+    response_data = _build_article_response(article_doc)
+    return ArticleResponse(**response_data)
 
 
 @router.get("/{article_id}/content")
 async def get_article_content(article_id: str):
-    """Get article content (markdown) from MongoDB.
-    
-    This endpoint returns the generated article content as markdown text.
-    Used by the web service to display the article.
-    
-    Args:
-        article_id: Article ID
-        
-    Returns:
-        Markdown content as plain text
-        
-    Raises:
-        404: Article not found or content not available
-        503: Database service unavailable
-    """
+    """Get article content (markdown) from MongoDB."""
     from fastapi.responses import Response
     
-    # Check MongoDB connection first to distinguish connection failure from "not found"
-    if not get_mongodb_client():
-        raise HTTPException(
-            status_code=503,
-            detail="Database service unavailable. Cannot retrieve article content."
-        )
+    _validate_article(article_id)
     
     article_doc = get_article(article_id)
     if not article_doc:
+        # Race condition: article was deleted between validation and fetch
         raise HTTPException(status_code=404, detail="Article not found")
     
     content = article_doc.get('content')
     if not content:
-        raise HTTPException(
-            status_code=404, 
-            detail="Article content not found. Article may not be generated yet."
-        )
+        raise HTTPException(status_code=404, detail="Article content not found")
     
-    return Response(
-        content=content,
-        media_type='text/markdown'
-    )
+    return Response(content=content, media_type='text/markdown')

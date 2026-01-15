@@ -1,7 +1,7 @@
 """Health check endpoint."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 import sys
@@ -35,7 +35,7 @@ async def health():
     """
     health_status = {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         "services": {}
     }
     
