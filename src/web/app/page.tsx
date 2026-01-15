@@ -284,7 +284,11 @@ export default function Home() {
           }
           setGenerating(false)
         } else if (job.status === 'running' || job.status === 'queued') {
+          // Set both jobId and articleId so content can be loaded when job completes
           setCurrentJobId(job.id)
+          if (data.article_id) {
+            setCurrentArticleId(data.article_id)
+          }
           setGenerating(true)
         } else {
           setGenerating(false)
