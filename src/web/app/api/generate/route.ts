@@ -13,7 +13,7 @@ export const fetchCache = 'force-no-store'
  *    - If no duplicate, create article + enqueue job
  * 2. Return jobId → client polls for status
  * 
- * See docs/flow_diagrams.md for detailed sequence diagrams.
+ * See 참고문서.md for detailed sequence diagrams.
  */
 export async function POST(request: NextRequest) {
   try {
