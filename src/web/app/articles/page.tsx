@@ -21,6 +21,8 @@ export default function ArticlesPage() {
   const [error, setError] = useState<string | null>(null)
   const [total, setTotal] = useState(0)
   const [selectedStatus, setSelectedStatus] = useState<ArticleStatus | undefined>()
+  const [skip, setSkip] = useState(0)
+  const limit = 10 // Articles per page
 
   const fetchArticles = useCallback(async () => {
     try {
@@ -31,7 +33,8 @@ export default function ArticlesPage() {
       if (selectedStatus) {
         params.set('status', selectedStatus)
       }
-      params.set('limit', '50') // Show more articles by default
+      params.set('skip', skip.toString())
+      params.set('limit', limit.toString())
 
       const response = await fetch(`/api/articles?${params.toString()}`)
       
@@ -49,6 +52,10 @@ export default function ArticlesPage() {
     } finally {
       setLoading(false)
     }
+  }, [selectedStatus, skip, limit])
+
+  useEffect(() => {
+    setSkip(0) // Reset to first page when filter changes
   }, [selectedStatus])
 
   useEffect(() => {
@@ -57,6 +64,23 @@ export default function ArticlesPage() {
 
   const handleStatusChange = (status: ArticleStatus | undefined) => {
     setSelectedStatus(status)
+  }
+
+  const currentPage = Math.floor(skip / limit) + 1
+  const totalPages = Math.ceil(total / limit)
+  const hasNextPage = skip + limit < total
+  const hasPrevPage = skip > 0
+
+  const handleNextPage = () => {
+    if (hasNextPage) {
+      setSkip(skip + limit)
+    }
+  }
+
+  const handlePrevPage = () => {
+    if (hasPrevPage) {
+      setSkip(Math.max(0, skip - limit))
+    }
   }
 
   return (
@@ -101,6 +125,42 @@ export default function ArticlesPage() {
               : 'No articles found. Generate your first article to get started!'
           }
         />
+
+        {/* Pagination */}
+        {total > 0 && (
+          <div className="mt-6 flex items-center justify-between border-t border-gray-200 pt-6">
+            <div className="text-sm text-gray-700">
+              Showing {skip + 1} to {skip + articles.length} of {total} articles
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handlePrevPage}
+                disabled={!hasPrevPage || loading}
+                className={`px-4 py-2 rounded-md text-sm font-medium ${
+                  hasPrevPage && !loading
+                    ? 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                Previous
+              </button>
+              <div className="px-4 py-2 text-sm text-gray-700">
+                Page {currentPage} of {totalPages}
+              </div>
+              <button
+                onClick={handleNextPage}
+                disabled={!hasNextPage || loading}
+                className={`px-4 py-2 rounded-md text-sm font-medium ${
+                  hasNextPage && !loading
+                    ? 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

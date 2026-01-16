@@ -290,6 +290,17 @@ export default function Home() {
             setCurrentArticleId(data.article_id)
           }
           setGenerating(true)
+        } else if (job.status === 'failed') {
+          // Failed job: show error message to user
+          const errorMessage = `# ❌ Generation Failed\n\n**Error:** ${job.error || 'Unknown error occurred'}\n\nPlease try generating a new article.`
+          setContent(errorMessage)
+          setProgress(prev => ({
+            ...prev,
+            error: job.error || 'Generation failed',
+            message: 'Previous generation failed',
+            progress: 0
+          }))
+          setGenerating(false)
         } else {
           setGenerating(false)
         }
