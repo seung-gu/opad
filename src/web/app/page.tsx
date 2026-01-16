@@ -389,7 +389,7 @@ export default function Home() {
         </div>
       )}
 
-      <MarkdownViewer content={content} />
+      <MarkdownViewer content={content} dark={true} />
     </main>
   )
 }

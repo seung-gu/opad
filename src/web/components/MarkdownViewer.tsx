@@ -4,7 +4,12 @@ import { useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-export default function MarkdownViewer({ content }: { content: string }) {
+interface MarkdownViewerProps {
+  content: string
+  dark?: boolean // If true, use dark mode styles (for dark backgrounds)
+}
+
+export default function MarkdownViewer({ content, dark = false }: MarkdownViewerProps) {
   const [definitions, setDefinitions] = useState<Record<string, boolean>>({})
   const containerRef = useRef<HTMLDivElement>(null)
   const wordsMapRef = useRef<Map<string, string>>(new Map())
@@ -114,8 +119,12 @@ export default function MarkdownViewer({ content }: { content: string }) {
     })
   }, [definitions])
 
+  const className = dark
+    ? "prose prose-invert max-w-none text-slate-100 prose-headings:text-white prose-p:text-slate-100 prose-strong:text-white prose-li:text-slate-100 prose-ul:text-slate-100 prose-ol:text-slate-100 prose-a:text-emerald-400 prose-a:no-underline hover:prose-a:text-emerald-300 prose-code:text-emerald-300 prose-pre:bg-slate-800 prose-blockquote:text-slate-200 prose-blockquote:border-slate-600"
+    : "prose max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900 prose-li:text-gray-700 prose-ul:text-gray-700 prose-ol:text-gray-700 prose-a:text-blue-600 prose-a:no-underline hover:prose-a:text-blue-800 prose-code:text-emerald-700 prose-pre:bg-gray-100 prose-blockquote:text-gray-600 prose-blockquote:border-gray-300"
+
   return (
-    <div className="prose prose-invert max-w-none text-slate-100 prose-headings:text-white prose-p:text-slate-100 prose-strong:text-white prose-li:text-slate-100 prose-ul:text-slate-100 prose-ol:text-slate-100 prose-a:text-emerald-400 prose-a:no-underline hover:prose-a:text-emerald-300 prose-code:text-emerald-300 prose-pre:bg-slate-800 prose-blockquote:text-slate-200 prose-blockquote:border-slate-600" style={{ color: '#f1f5f9' }} ref={containerRef}>
+    <div className={className} style={dark ? { color: '#f1f5f9' } : undefined} ref={containerRef}>
       <ReactMarkdown remarkPlugins={[remarkGfm]}>
         {content}
       </ReactMarkdown>
