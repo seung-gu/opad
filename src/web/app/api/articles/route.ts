@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     const owner_id = searchParams.get('owner_id') || undefined
 
     // FastAPI base URL
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8000'
+    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
 
     // Build query string
     const queryParams = new URLSearchParams()

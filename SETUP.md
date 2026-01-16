@@ -85,7 +85,7 @@ pip install -e .
 ### 4. API 서비스 실행 (터미널 1)
 ```bash
 cd /Users/seung-gu/projects/opad
-PYTHONPATH=src uvicorn api.main:app --reload --port 8000
+PYTHONPATH=src uvicorn api.main:app --reload --port 8001
 ```
 
 ### 5. Worker 서비스 실행 (터미널 2)
@@ -98,7 +98,7 @@ PYTHONPATH=src python -m worker.main
 ```bash
 cd /Users/seung-gu/projects/opad/src/web
 npm install
-API_BASE_URL=http://localhost:8000 npm run dev
+API_BASE_URL=http://localhost:8001 npm run dev
 ```
 
 ---

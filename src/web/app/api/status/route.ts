@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     }
 
     // FastAPI base URL
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8000'
+    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
 
     // FastAPI에서 job 상태 조회
     const response = await fetch(`${apiBaseUrl}/jobs/${jobId}`, {

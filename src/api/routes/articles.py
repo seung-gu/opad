@@ -321,7 +321,7 @@ async def generate_article(request: GenerateRequest, force: bool = False):
     owner_id = None  # Currently no authentication
     
     # Step 1: Check for duplicate BEFORE creating article (user-specific)
-    _check_duplicate(inputs, force, owner_id)  # Raises HTTPException(409) if duplicate
+    _check_duplicate(inputs, force, owner_id)  # Raises HTTPException(409) if duplicate - ceased here
     
     # Step 2: No duplicate (or force=true) → generate IDs
     article_id = str(uuid.uuid4())
