@@ -7,16 +7,13 @@ export const fetchCache = 'force-no-store'
 /**
  * Generate article endpoint (Next.js API route)
  * 
- * Changes:
- * - Removed Python spawn ✅
- * - Changed to FastAPI calls ✅
- * - Uses unified endpoint (duplicate check → article creation → job enqueue) ✅
- * 
  * Flow:
  * 1. POST /articles/generate (unified endpoint)
  *    - Check for duplicates first
  *    - If no duplicate, create article + enqueue job
  * 2. Return jobId → client polls for status
+ * 
+ * See docs/flow_diagrams.md for detailed sequence diagrams.
  */
 export async function POST(request: NextRequest) {
   try {

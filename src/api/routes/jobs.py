@@ -12,7 +12,7 @@ _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
 from api.models import JobResponse
-from api.queue import get_job_status
+from api.job_queue import get_job_status
 
 logger = logging.getLogger(__name__)
 

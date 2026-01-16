@@ -143,7 +143,7 @@ class JobProgressListener(BaseEventListener):
                 info = self.task_progress[task_name]
                 
                 # Import here to avoid circular dependency
-                from api.queue import update_job_status
+                from api.job_queue import update_job_status
                 
                 update_job_status(
                     job_id=self.job_id,
@@ -184,7 +184,7 @@ class JobProgressListener(BaseEventListener):
             if task_name and task_name in self.task_progress:
                 info = self.task_progress[task_name]
                 
-                from api.queue import update_job_status
+                from api.job_queue import update_job_status
                 
                 update_job_status(
                     job_id=self.job_id,
@@ -232,7 +232,7 @@ class JobProgressListener(BaseEventListener):
             )
             
             # Update job status to failed
-            from api.queue import update_job_status
+            from api.job_queue import update_job_status
             
             # Get current progress if task is known
             current_progress = 0

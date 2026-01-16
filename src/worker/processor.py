@@ -25,7 +25,7 @@ sys.path.insert(0, str(_src_path))
 from crew.main import run as run_crew
 
 # Import from src
-from api.queue import update_job_status, dequeue_job
+from api.job_queue import update_job_status, dequeue_job
 from utils.mongodb import save_article
 
 logger = logging.getLogger(__name__)

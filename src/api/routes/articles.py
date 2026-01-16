@@ -26,7 +26,7 @@ _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
 from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse, ArticleListResponse
-from api.queue import enqueue_job, update_job_status, get_job_status
+from api.job_queue import enqueue_job, update_job_status, get_job_status
 from utils.mongodb import (
     save_article_metadata, 
     get_article, 
