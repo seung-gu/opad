@@ -11,7 +11,7 @@ from pathlib import Path
 _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.queue import get_redis_client
+from api.job_queue import get_redis_client
 from utils.mongodb import get_mongodb_client
 
 logger = logging.getLogger(__name__)

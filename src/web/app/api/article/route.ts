@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     }
 
     // FastAPI base URL
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8000'
+    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
 
     // Call FastAPI to get article content from MongoDB
     const response = await fetch(`${apiBaseUrl}/articles/${articleId}/content`, {

@@ -12,15 +12,15 @@ from datetime import datetime
 # src is at /app/src, so we go up 3 levels
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from api.queue import enqueue_job, get_job_status, update_job_status, get_redis_client
+from api.job_queue import enqueue_job, get_job_status, update_job_status, get_redis_client
 from worker.processor import process_job
-import api.queue as queue_module
+import api.job_queue as queue_module
 
 
 class TestQueueBasics(unittest.TestCase):
     """Basic queue operation tests."""
     
-    @patch('api.queue.get_redis_client')
+    @patch('api.job_queue.get_redis_client')
     def test_job_lifecycle(self, mock_get_redis):
         """Test complete job lifecycle: enqueue -> process -> status update."""
         # Mock Redis client
@@ -57,7 +57,7 @@ class TestQueueBasics(unittest.TestCase):
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('worker.processor.upload_to_cloud')
-    @patch('api.queue.get_redis_client')
+    @patch('api.job_queue.get_redis_client')
     def test_end_to_end_job_processing(self, mock_get_redis,
                                         mock_upload, mock_run_crew, mock_update_status):
         """Test end-to-end job processing flow."""
@@ -82,12 +82,12 @@ class TestQueueBasics(unittest.TestCase):
         
         # Verify
         self.assertTrue(result)
-        # Should update status multiple times: running -> succeeded
+        # Should update status multiple times: running -> completed
         self.assertGreaterEqual(mock_update_status.call_count, 2)
         
         # Check final status update
         final_call = mock_update_status.call_args_list[-1]
-        self.assertEqual(final_call[1]['status'], 'succeeded')
+        self.assertEqual(final_call[1]['status'], 'completed')
         self.assertEqual(final_call[1]['progress'], 100)
 
 
@@ -100,7 +100,7 @@ class TestRedisReconnection(unittest.TestCase):
         queue_module._redis_connection_attempted = False
         queue_module._redis_connection_failed = False
     
-    @patch('api.queue.REDIS_URL', 'redis://localhost:6379')
+    @patch('api.job_queue.REDIS_URL', 'redis://localhost:6379')
     @patch('redis.from_url')
     def test_reconnection_after_cached_client_failure(self, mock_from_url):
         """Test that reconnection is attempted after cached client fails ping."""
@@ -130,7 +130,7 @@ class TestRedisReconnection(unittest.TestCase):
         # Should have attempted reconnection (not blocked by _redis_connection_attempted)
         self.assertEqual(mock_from_url.call_count, 2)
     
-    @patch('api.queue.REDIS_URL', 'redis://localhost:6379')
+    @patch('api.job_queue.REDIS_URL', 'redis://localhost:6379')
     @patch('redis.from_url')
     def test_no_reconnection_after_initial_failure(self, mock_from_url):
         """Test that initial connection failure prevents retries."""
@@ -152,7 +152,7 @@ class TestRedisReconnection(unittest.TestCase):
         # Should not have attempted another connection (only one attempt)
         self.assertEqual(mock_from_url.call_count, 1)
     
-    @patch('api.queue.REDIS_URL', 'redis://localhost:6379')
+    @patch('api.job_queue.REDIS_URL', 'redis://localhost:6379')
     @patch('redis.from_url')
     def test_first_connection_logs_successfully(self, mock_from_url):
         """Test that first connection logs 'Connected successfully'."""
@@ -161,7 +161,7 @@ class TestRedisReconnection(unittest.TestCase):
         mock_client.ping.return_value = True
         mock_from_url.return_value = mock_client
         
-        with self.assertLogs('api.queue', level='INFO') as log_context:
+        with self.assertLogs('api.job_queue', level='INFO') as log_context:
             client = get_redis_client()
             self.assertIsNotNone(client)
             
@@ -171,7 +171,7 @@ class TestRedisReconnection(unittest.TestCase):
                 "First connection should log 'Connected successfully'"
             )
     
-    @patch('api.queue.REDIS_URL', 'redis://localhost:6379')
+    @patch('api.job_queue.REDIS_URL', 'redis://localhost:6379')
     @patch('redis.from_url')
     def test_reconnection_does_not_log_as_first_connection(self, mock_from_url):
         """Test that reconnection does NOT log 'Connected successfully'."""
@@ -180,7 +180,7 @@ class TestRedisReconnection(unittest.TestCase):
         mock_client1.ping.return_value = True
         mock_from_url.return_value = mock_client1
         
-        with self.assertLogs('api.queue', level='DEBUG') as log_context1:
+        with self.assertLogs('api.job_queue', level='DEBUG') as log_context1:
             client1 = get_redis_client()
             self.assertIsNotNone(client1)
             
@@ -198,7 +198,7 @@ class TestRedisReconnection(unittest.TestCase):
         mock_client2.ping.return_value = True
         mock_from_url.return_value = mock_client2
         
-        with self.assertLogs('api.queue', level='DEBUG') as log_context2:
+        with self.assertLogs('api.job_queue', level='DEBUG') as log_context2:
             client2 = get_redis_client()
             self.assertIsNotNone(client2)
             
@@ -218,7 +218,7 @@ class TestRedisReconnection(unittest.TestCase):
 class TestJobStatusFields(unittest.TestCase):
     """Test job status field storage and preservation."""
     
-    @patch('api.queue.get_redis_client')
+    @patch('api.job_queue.get_redis_client')
     def test_article_id_storage(self, mock_get_redis):
         """Test that article_id is stored in status data."""
         mock_redis = MagicMock()
@@ -243,7 +243,7 @@ class TestJobStatusFields(unittest.TestCase):
         self.assertEqual(stored_data['article_id'], article_id)
         self.assertEqual(stored_data['id'], job_id)
     
-    @patch('api.queue.get_redis_client')
+    @patch('api.job_queue.get_redis_client')
     def test_article_id_preservation(self, mock_get_redis):
         """Test that article_id is preserved if not provided."""
         mock_redis = MagicMock()
@@ -273,7 +273,7 @@ class TestJobStatusFields(unittest.TestCase):
         
         self.assertEqual(stored_data['article_id'], existing_article_id)
     
-    @patch('api.queue.get_redis_client')
+    @patch('api.job_queue.get_redis_client')
     def test_created_at_preservation(self, mock_get_redis):
         """Test that created_at is preserved across status transitions."""
         mock_redis = MagicMock()

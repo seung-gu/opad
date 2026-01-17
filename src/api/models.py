@@ -15,6 +15,7 @@ class ArticleResponse(BaseModel):
     status: str = Field(..., description="Article status")
     created_at: datetime
     owner_id: Optional[str] = Field(None, description="Owner ID for multi-user support")
+    job_id: Optional[str] = Field(None, description="Job ID for progress tracking")
     inputs: Optional[dict] = Field(None, description="Structured input parameters")
 
 
@@ -30,7 +31,7 @@ class JobResponse(BaseModel):
     """Response model for job status."""
     id: str = Field(..., description="Job ID")
     article_id: Optional[str] = Field(None, description="Associated article ID")
-    status: str = Field(..., description="Job status: queued, running, succeeded, failed")
+    status: str = Field(..., description="Job status: queued, running, completed, failed")
     progress: int = Field(0, ge=0, le=100, description="Progress percentage")
     message: Optional[str] = Field(None, description="Status message")
     created_at: Optional[datetime] = Field(None, description="Job creation timestamp")

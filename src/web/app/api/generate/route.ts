@@ -7,16 +7,13 @@ export const fetchCache = 'force-no-store'
 /**
  * Generate article endpoint (Next.js API route)
  * 
- * Changes:
- * - Removed Python spawn ✅
- * - Changed to FastAPI calls ✅
- * - Uses unified endpoint (duplicate check → article creation → job enqueue) ✅
- * 
  * Flow:
  * 1. POST /articles/generate (unified endpoint)
  *    - Check for duplicates first
  *    - If no duplicate, create article + enqueue job
  * 2. Return jobId → client polls for status
+ * 
+ * See 참고문서.md for detailed sequence diagrams.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -31,8 +28,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // FastAPI base URL (환경변수 또는 기본값)
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8000'
+    // FastAPI base URL (Environment variable or default value)
+    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
 
     console.log(JSON.stringify({
       source: 'web',
@@ -71,13 +68,14 @@ export async function POST(request: NextRequest) {
       }))
       
       // Return in same format as before for frontend compatibility
+      // Note: Return with 409 status code so frontend can detect it via response.status
       return NextResponse.json({
         success: false,
         duplicate: true,
         existing_job: detail.existing_job || null,
         article_id: detail.article_id || null,
         message: detail.message || 'A job with identical parameters was created within the last 24 hours.'
-      })
+      }, { status: 409 })
     }
     
     // Handle other non-2xx errors (409 is already handled above)

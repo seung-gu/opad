@@ -26,7 +26,7 @@ _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
 from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse, ArticleListResponse
-from api.queue import enqueue_job, update_job_status, get_job_status
+from api.job_queue import enqueue_job, update_job_status, get_job_status
 from utils.mongodb import (
     save_article_metadata, 
     get_article, 
@@ -34,7 +34,8 @@ from utils.mongodb import (
     get_latest_article,
     find_duplicate_article,
     list_articles,
-    delete_article
+    delete_article,
+    update_article_status
 )
 
 logger = logging.getLogger(__name__)
@@ -112,9 +113,10 @@ def _build_article_response(article: dict) -> dict:
         'level': inputs['level'],
         'length': inputs['length'],
         'topic': inputs['topic'],
-        'status': article.get('status', 'pending'),
+        'status': article.get('status'),
         'created_at': formatted_time,
         'owner_id': article.get('owner_id'),
+        'job_id': article.get('job_id'),  # Include job_id for progress tracking
         'inputs': inputs
     }
 
@@ -212,6 +214,8 @@ def _create_and_enqueue_job(article_id: str, inputs: dict, job_id: str, owner_id
     # If this fails, status exists but job won't be processed (visible failure state)
     if not enqueue_job(job_id, article_id, inputs):
         update_job_status(job_id, 'failed', 0, 'Failed to enqueue job', 'Queue service unavailable', article_id=article_id)
+        # Update MongoDB Article status to 'failed'
+        update_article_status(article_id, 'failed')
         raise HTTPException(status_code=503, detail="Failed to enqueue job")
     
     logger.info("Job enqueued", extra={"jobId": job_id, "articleId": article_id, "ownerId": owner_id})
@@ -321,7 +325,7 @@ async def generate_article(request: GenerateRequest, force: bool = False):
     owner_id = None  # Currently no authentication
     
     # Step 1: Check for duplicate BEFORE creating article (user-specific)
-    _check_duplicate(inputs, force, owner_id)  # Raises HTTPException(409) if duplicate
+    _check_duplicate(inputs, force, owner_id)  # Raises HTTPException(409) if duplicate - ceased here
     
     # Step 2: No duplicate (or force=true) → generate IDs
     article_id = str(uuid.uuid4())
@@ -335,7 +339,7 @@ async def generate_article(request: GenerateRequest, force: bool = False):
         level=request.level,
         length=request.length,
         topic=request.topic,
-        status='pending',
+        status='running',
         created_at=created_at,
         owner_id=owner_id,
         job_id=job_id

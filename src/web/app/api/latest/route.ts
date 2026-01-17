@@ -14,7 +14,7 @@ export const fetchCache = 'force-no-store'
 export async function GET() {
   try {
     // FastAPI base URL
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8000'
+    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
 
     // Call FastAPI to get latest article from MongoDB
     const response = await fetch(`${apiBaseUrl}/articles/latest`, {

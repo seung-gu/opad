@@ -85,7 +85,7 @@ pip install -e .
 ### 4. API 서비스 실행 (터미널 1)
 ```bash
 cd /Users/seung-gu/projects/opad
-PYTHONPATH=src uvicorn api.main:app --reload --port 8000
+PYTHONPATH=src uvicorn api.main:app --reload --port 8001
 ```
 
 ### 5. Worker 서비스 실행 (터미널 2)
@@ -98,7 +98,7 @@ PYTHONPATH=src python -m worker.main
 ```bash
 cd /Users/seung-gu/projects/opad/src/web
 npm install
-API_BASE_URL=http://localhost:8000 npm run dev
+API_BASE_URL=http://localhost:8001 npm run dev
 ```
 
 ---
@@ -257,7 +257,7 @@ curl http://localhost:8000/jobs/{job_id}
 ```json
 {
   "id": "uuid",
-  "status": "queued|running|succeeded|failed",
+  "status": "queued|running|completed|failed",
   "progress": 0-100,
   "message": "Status message",
   "error": "Error message (if failed)",
@@ -265,6 +265,23 @@ curl http://localhost:8000/jobs/{job_id}
 }
 ```
 
-**Status Flow:**
-- `queued` → `running` → `succeeded` / `failed`
+**Job Status Flow (Redis, 24h TTL):**
+- `queued` → `running` → `completed` / `failed`
 - `progress`: 0 → 25 → 50 → 75 → 100
+
+### Article Status (MongoDB)
+
+**Article Status** (MongoDB, 영구 저장):
+- `running`: Article 생성 시 초기 상태 (처리 중)
+- `completed`: Article 생성 완료
+- `failed`: Article 생성 실패
+- `deleted`: Article 삭제 (soft delete)
+
+**Article Status Flow:**
+- 생성 시: `running`
+- 완료 시: `completed`
+- 실패 시: `failed`
+
+**Note**: Article Status와 Job Status는 별도로 관리됩니다:
+- **Article Status (MongoDB)**: Article의 최종 상태 (영구 저장)
+- **Job Status (Redis)**: Job 처리의 실시간 상태 (24시간 후 자동 삭제)

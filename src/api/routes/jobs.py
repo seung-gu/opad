@@ -12,7 +12,7 @@ _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
 from api.models import JobResponse
-from api.queue import get_job_status
+from api.job_queue import get_job_status
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ async def get_job_status_endpoint(job_id: str):
     상태 흐름:
     - queued: 큐에 대기 중
     - running: Worker가 처리 중
-    - succeeded: 완료
+    - completed: 완료
     - failed: 실패
     """
     status_data = get_job_status(job_id)
