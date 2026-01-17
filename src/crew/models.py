@@ -1,7 +1,7 @@
 """Pydantic models for CrewAI task outputs."""
 
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import Optional
 
 
 class NewsArticle(BaseModel):
@@ -16,7 +16,7 @@ class NewsArticle(BaseModel):
 
 class NewsArticleList(BaseModel):
     """A list of news articles"""
-    articles: List[NewsArticle] = Field(description="List of 2-3 news articles")
+    articles: list[NewsArticle] = Field(description="List of 2-3 news articles")
 
 
 class SelectedArticle(BaseModel):

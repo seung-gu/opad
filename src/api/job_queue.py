@@ -16,7 +16,7 @@ Architecture:
 import json
 import logging
 import os
-from typing import Optional, Tuple
+from typing import Optional
 from datetime import datetime, timezone
 import redis
 from redis.exceptions import RedisError
@@ -344,3 +344,70 @@ def update_job_status(
         # Don't log every update failure (called frequently during job execution)
         # Initial connection errors already logged in get_redis_client
         return False
+
+
+def get_job_stats() -> Optional[dict]:
+    """Get job statistics from Redis.
+    
+    Scans all job status keys and counts jobs by status.
+    Similar structure to get_database_stats() for consistency.
+    
+    Returns:
+        Dictionary with job statistics:
+        {
+            'queued': 0,
+            'running': 0,
+            'completed': 0,
+            'failed': 0,
+            'total': 0
+        }
+        Returns None if Redis connection fails.
+    """
+    client = get_redis_client()
+    if not client:
+        return None
+    
+    stats = {
+        'queued': 0,
+        'running': 0,
+        'completed': 0,
+        'failed': 0,
+        'total': 0
+    }
+    
+    try:
+        # Scan all job status keys (pattern: opad:job:*)
+        cursor = 0
+        pattern = 'opad:job:*'
+        
+        while True:
+            cursor, keys = client.scan(cursor, match=pattern, count=100)
+            
+            for key in keys:
+                try:
+                    status_data = client.get(key)
+                    if status_data:
+                        job_data = json.loads(status_data)
+                        status = job_data.get('status', 'unknown')
+                        if status in stats:
+                            stats[status] += 1
+                        stats['total'] += 1
+                except (json.JSONDecodeError, KeyError):
+                    # Skip invalid job data
+                    continue
+            
+            if cursor == 0:
+                break
+                
+        logger.info("Job statistics retrieved", extra={
+            "totalJobs": stats['total'],
+            "queued": stats['queued'],
+            "running": stats['running'],
+            "completed": stats['completed'],
+            "failed": stats['failed']
+        })
+        
+        return stats
+    except RedisError as e:
+        logger.error("Failed to get job stats", extra={"error": str(e)})
+        return None

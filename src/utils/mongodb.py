@@ -262,7 +262,7 @@ def ensure_indexes() -> bool:
     - compound index: owner_id + inputs.* + created_at (for duplicate detection)
     
     This function is idempotent - safe to call multiple times.
-    MongoDB will skip index creation if the index already exists.
+    Handles index name conflicts by removing old indexes with different names.
     
     Returns:
         True if indexes were created/verified successfully, False otherwise
@@ -275,27 +275,69 @@ def ensure_indexes() -> bool:
         db = client[DATABASE_NAME]
         collection = db[COLLECTION_NAME]
         
+        # Helper function to ensure index with conflict handling
+        def _ensure_index(keys, name, **kwargs):
+            """Create index, removing conflicting indexes if needed."""
+            try:
+                # Try to create index with the desired name
+                collection.create_index(keys, name=name, **kwargs)
+                logger.info(f"Created/verified index: {name}")
+            except PyMongoError as e:
+                error_str = str(e)
+                # Check if error is due to index name conflict
+                if 'Index already exists with a different name' in error_str or 'IndexOptionsConflict' in error_str:
+                    # Find and drop conflicting index
+                    # Get all existing indexes
+                    existing_indexes = list(collection.list_indexes())
+                    keys_dict = dict(keys)  # Convert list of tuples to dict for comparison
+                    
+                    for idx in existing_indexes:
+                        idx_name = idx.get('name')
+                        idx_keys = idx.get('key', {})
+                        
+                        # Skip _id index and the target index name
+                        if idx_name == '_id_' or idx_name == name:
+                            continue
+                        
+                        # Compare keys: convert both to dict and compare
+                        # Note: MongoDB preserves key order, so we compare as dict
+                        if isinstance(idx_keys, dict) and keys_dict == idx_keys:
+                            logger.warning(f"Dropping conflicting index: {idx_name} (replacing with {name})")
+                            try:
+                                collection.drop_index(idx_name)
+                                # Retry creating index with desired name
+                                collection.create_index(keys, name=name, **kwargs)
+                                logger.info(f"Created index: {name} (replaced {idx_name})")
+                                return
+                            except PyMongoError as drop_error:
+                                logger.error(f"Failed to drop conflicting index {idx_name}", extra={"error": str(drop_error)})
+                                raise
+                    
+                    # If we get here, couldn't resolve conflict
+                    logger.error(f"Failed to resolve index conflict for {name}", extra={"error": error_str})
+                    raise
+                else:
+                    # Other error, re-raise
+                    raise
+        
         # Create index on created_at (descending) for latest article queries
-        collection.create_index([('created_at', -1)])
-        logger.info("Created index on created_at (descending)")
+        _ensure_index([('created_at', -1)], 'idx_created_at_desc')
         
         # Create sparse index on owner_id (for future multi-user support)
         # Sparse index only includes documents that have the owner_id field
-        collection.create_index([('owner_id', 1)], sparse=True)
-        logger.info("Created sparse index on owner_id")
+        _ensure_index([('owner_id', 1)], 'idx_owner_id', sparse=True)
         
         # Create compound index for duplicate detection
         # This enables efficient queries on: owner_id + inputs.* + created_at
         # Used by find_duplicate_article() for O(log N) duplicate detection
-        collection.create_index([
+        _ensure_index([
             ('owner_id', 1),
             ('inputs.language', 1),
             ('inputs.level', 1),
             ('inputs.length', 1),
             ('inputs.topic', 1),
             ('created_at', -1)
-        ])
-        logger.info("Created compound index for duplicate detection (owner_id + inputs + created_at)")
+        ], 'idx_duplicate_detection')
         
         return True
     except PyMongoError as e:
@@ -578,60 +620,48 @@ def get_database_stats() -> Optional[dict]:
         collection = db[COLLECTION_NAME]
         
         # Get collection stats
-        stats = db.command("collStats", COLLECTION_NAME)
+        coll_stats = db.command("collStats", COLLECTION_NAME)
         
         # Get document count by status
         total_count = collection.count_documents({})
         deleted_count = collection.count_documents({'status': 'deleted'})
+        running_count = collection.count_documents({'status': 'running'})
+        failed_count = collection.count_documents({'status': 'failed'})
+        completed_count = collection.count_documents({'status': 'completed'})
         active_count = total_count - deleted_count
         
         # Format sizes in MB
-        # 'size': Uncompressed document data size (bytes)
-        # 'storageSize': Allocated disk space for collection (bytes)
+        # 'size': Uncompressed document data size in memory (bytes) - includes padding
+        # 'storageSize': Allocated disk space for collection data (bytes) - compressed, includes free space
         # 'totalIndexSize': Total size of all indexes (bytes)
-        data_size_bytes = stats.get('size', 0)
-        index_size_bytes = stats.get('totalIndexSize', 0)
-        storage_size_bytes = stats.get('storageSize', 0)
+        # 'totalSize': storageSize + totalIndexSize (actual disk usage)
+        data_size_bytes = coll_stats.get('size', 0)
+        index_size_bytes = coll_stats.get('totalIndexSize', 0)
+        storage_size_bytes = coll_stats.get('storageSize', 0)
+        total_size_bytes = coll_stats.get('totalSize', storage_size_bytes + index_size_bytes)
         
         data_size_mb = data_size_bytes / (1024 * 1024)
         index_size_mb = index_size_bytes / (1024 * 1024)
         storage_size_mb = storage_size_bytes / (1024 * 1024)
-        total_size_mb = data_size_mb + index_size_mb
+        total_size_mb = total_size_bytes / (1024 * 1024)
         
         result = {
-            'collection': COLLECTION_NAME,
             'total_documents': total_count,
             'active_documents': active_count,
             'deleted_documents': deleted_count,
+            'running_documents': running_count,
+            'failed_documents': failed_count,
+            'completed_documents': completed_count,
             'data_size_mb': round(data_size_mb, 2),
-            'data_size_bytes': data_size_bytes,  # Raw bytes for verification
+            'data_size_bytes': data_size_bytes,
             'index_size_mb': round(index_size_mb, 2),
-            'index_size_bytes': index_size_bytes,  # Raw bytes for verification
+            'index_size_bytes': index_size_bytes,
             'storage_size_mb': round(storage_size_mb, 2),
-            'storage_size_bytes': storage_size_bytes,  # Raw bytes for verification
+            'storage_size_bytes': storage_size_bytes,
             'total_size_mb': round(total_size_mb, 2),
-            'avg_document_size_bytes': round(stats.get('avgObjSize', 0), 2),
-            'indexes': stats.get('nindexes', 0),
-            'index_details': [],
-            # Debug: Include raw MongoDB stats for verification
-            'raw_stats': {
-                'size': stats.get('size'),
-                'storageSize': stats.get('storageSize'),
-                'totalIndexSize': stats.get('totalIndexSize'),
-                'avgObjSize': stats.get('avgObjSize'),
-                'count': stats.get('count'),
-            }
+            'total_size_bytes': total_size_bytes,
+            'avg_document_size_bytes': round(coll_stats.get('avgObjSize', 0), 2),
         }
-        
-        # Get index details
-        indexes = collection.list_indexes()
-        for idx in indexes:
-            idx_name = idx.get('name', 'unknown')
-            idx_keys = idx.get('key', {})
-            result['index_details'].append({
-                'name': idx_name,
-                'keys': idx_keys
-            })
         
         logger.info("Database statistics retrieved", extra={
             "totalDocuments": total_count,
