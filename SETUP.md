@@ -17,11 +17,17 @@ REDIS_URL=redis://localhost:6379
 # 또는 Railway Redis add-on
 REDIS_URL=${{Redis.REDIS_URL}}
 
-# R2 설정 (결과 저장용)
-R2_BUCKET_NAME=your-bucket
-R2_ACCOUNT_ID=your-account-id
-R2_ACCESS_KEY_ID=your-key-id
-R2_SECRET_ACCESS_KEY=your-secret-key
+# MongoDB 연결 (Railway MongoDB add-on)
+MONGO_URL=mongodb://localhost:27017/  # 로컬 개발
+# Railway: MONGO_URL is automatically provided by MongoDB add-on
+# Optional: MongoDB database name (default: 'opad')
+MONGODB_DATABASE=opad
+
+# R2 설정 (결과 저장용) - 이제 사용하지 않음 (MongoDB로 마이그레이션)
+# R2_BUCKET_NAME=your-bucket
+# R2_ACCOUNT_ID=your-account-id
+# R2_ACCESS_KEY_ID=your-key-id
+# R2_SECRET_ACCESS_KEY=your-secret-key
 
 # OpenAI (CrewAI에서 사용)
 OPENAI_API_KEY=your-key
@@ -33,11 +39,16 @@ SERPER_API_KEY=your-key
 # Redis 연결 (API와 동일)
 REDIS_URL=redis://localhost:6379
 
-# R2 설정
-R2_BUCKET_NAME=your-bucket
-R2_ACCOUNT_ID=your-account-id
-R2_ACCESS_KEY_ID=your-key-id
-R2_SECRET_ACCESS_KEY=your-secret-key
+# MongoDB 연결 (API와 동일)
+MONGO_URL=mongodb://localhost:27017/  # 로컬 개발
+# Railway: MONGO_URL is automatically provided by MongoDB add-on
+MONGODB_DATABASE=opad  # Optional
+
+# R2 설정 - 이제 사용하지 않음 (MongoDB로 마이그레이션)
+# R2_BUCKET_NAME=your-bucket
+# R2_ACCOUNT_ID=your-account-id
+# R2_ACCESS_KEY_ID=your-key-id
+# R2_SECRET_ACCESS_KEY=your-secret-key
 
 # OpenAI
 OPENAI_API_KEY=your-key
@@ -74,7 +85,7 @@ pip install -e .
 ### 4. API 서비스 실행 (터미널 1)
 ```bash
 cd /Users/seung-gu/projects/opad
-PYTHONPATH=src uvicorn api.main:app --reload --port 8000
+PYTHONPATH=src uvicorn api.main:app --reload --port 8001
 ```
 
 ### 5. Worker 서비스 실행 (터미널 2)
@@ -87,7 +98,7 @@ PYTHONPATH=src python -m worker.main
 ```bash
 cd /Users/seung-gu/projects/opad/src/web
 npm install
-API_BASE_URL=http://localhost:8000 npm run dev
+API_BASE_URL=http://localhost:8001 npm run dev
 ```
 
 ---
@@ -112,9 +123,13 @@ For each service: Settings → Build → Dockerfile Path:
 - `api`: `Dockerfile.api`
 - `worker`: `Dockerfile.worker`
 
-### 3. Add Redis Add-on
-- Add Redis Add-on to API service
-- Worker service references API's Redis variables
+### 3. Add Database Add-ons
+- **Add MongoDB Add-on** to API service (or any service - Railway shares variables)
+  - Railway automatically provides `MONGO_URL` environment variable
+  - MongoDB is pre-configured with `--setParameter diagnosticDataCollectionEnabled=false`
+  - Note: WiredTiger checkpoint logs may still appear (this is normal MongoDB behavior)
+- **Add Redis Add-on** to API service
+  - Worker service references API's Redis variables
 
 ### 4. Environment Variables
 
@@ -124,15 +139,26 @@ API_BASE_URL=https://${{ api.RAILWAY_PUBLIC_DOMAIN }}
 ```
 
 #### API Service
-- Redis Add-on automatically provides `REDIS_URL` (no configuration needed)
+- **MongoDB Add-on** automatically provides `MONGO_URL` (no configuration needed)
+- **Redis Add-on** automatically provides `REDIS_URL` (no configuration needed)
+- Optional: `MONGODB_DATABASE=opad` (default is 'opad')
 
 #### Worker Service
 ```
+# Redis (from API service)
 REDIS_URL=${{ api.REDIS_URL }}
-R2_BUCKET_NAME=your-bucket
-R2_ACCOUNT_ID=your-account-id
-R2_ACCESS_KEY_ID=your-key-id
-R2_SECRET_ACCESS_KEY=your-secret-key
+
+# MongoDB (from API service or add-on directly)
+MONGO_URL=${{ api.MONGO_URL }}  # or use MongoDB add-on variable
+MONGODB_DATABASE=opad  # Optional (default: 'opad')
+
+# R2 설정 - 더 이상 사용하지 않음 (MongoDB로 마이그레이션됨)
+# R2_BUCKET_NAME=your-bucket
+# R2_ACCOUNT_ID=your-account-id
+# R2_ACCESS_KEY_ID=your-key-id
+# R2_SECRET_ACCESS_KEY=your-secret-key
+
+# OpenAI (CrewAI에서 사용)
 OPENAI_API_KEY=your-key
 SERPER_API_KEY=your-key
 ```
@@ -231,7 +257,7 @@ curl http://localhost:8000/jobs/{job_id}
 ```json
 {
   "id": "uuid",
-  "status": "queued|running|succeeded|failed",
+  "status": "queued|running|completed|failed",
   "progress": 0-100,
   "message": "Status message",
   "error": "Error message (if failed)",
@@ -239,6 +265,23 @@ curl http://localhost:8000/jobs/{job_id}
 }
 ```
 
-**Status Flow:**
-- `queued` → `running` → `succeeded` / `failed`
+**Job Status Flow (Redis, 24h TTL):**
+- `queued` → `running` → `completed` / `failed`
 - `progress`: 0 → 25 → 50 → 75 → 100
+
+### Article Status (MongoDB)
+
+**Article Status** (MongoDB, 영구 저장):
+- `running`: Article 생성 시 초기 상태 (처리 중)
+- `completed`: Article 생성 완료
+- `failed`: Article 생성 실패
+- `deleted`: Article 삭제 (soft delete)
+
+**Article Status Flow:**
+- 생성 시: `running`
+- 완료 시: `completed`
+- 실패 시: `failed`
+
+**Note**: Article Status와 Job Status는 별도로 관리됩니다:
+- **Article Status (MongoDB)**: Article의 최종 상태 (영구 저장)
+- **Job Status (Redis)**: Job 처리의 실시간 상태 (24시간 후 자동 삭제)

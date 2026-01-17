@@ -11,31 +11,20 @@ dependencies = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "redis>=5.0.0",
-    "pydantic>=2.0.0"
+    "pydantic>=2.0.0",
+    "pymongo>=4.6.0"
 ]
-
-[tool.setuptools]
-# Include all packages in src/ directory
-# opad: CrewAI crew implementation
-# api: FastAPI service for HTTP endpoints
-# worker: Background job processor
-# utils: Shared utilities (cloudflare, progress tracking)
-packages = ["opad", "api", "api.routes", "api.tests", "worker", "worker.tests", "utils"]
-
-[tool.setuptools.package-dir]
-"" = "src"
-
-[project.scripts]
-opad = "opad.main:run"
-run_crew = "opad.main:run"
-train = "opad.main:train"
-replay = "opad.main:replay"
-test = "opad.main:test"
-run_with_trigger = "opad.main:run_with_trigger"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/crew", "src/api", "src/worker", "src/utils"]
+
 [tool.crewai]
 type = "crew"
+
+[project.scripts]
+opad = "crew.main:run"
+run_crew = "crew.main:run"

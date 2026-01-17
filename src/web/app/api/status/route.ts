@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     }
 
     // FastAPI base URL
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8000'
+    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
 
     // FastAPI에서 job 상태 조회
     const response = await fetch(`${apiBaseUrl}/jobs/${jobId}`, {
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     const jobData = await response.json()
 
     // 기존 status.json 형식과 호환되도록 변환
-    // page.tsx가 기대하는 형식: { current_task, progress, status, message }
+    // page.tsx가 기대하는 형식: { current_task, progress, status, message, error }
     // Status mapping:
     // - queued: Job is waiting in queue (not yet picked up by worker)
     // - running: Job is actively being processed by worker
@@ -64,11 +64,10 @@ export async function GET(request: NextRequest) {
       current_task: jobData.status === 'running' ? 'processing' : 
                    jobData.status === 'queued' ? 'queued' : '',
       progress: jobData.progress || 0,
-      status: jobData.status === 'succeeded' ? 'completed' : 
-             jobData.status === 'failed' ? 'error' : 
-             jobData.status === 'running' ? 'running' :
-             jobData.status === 'queued' ? 'queued' : 'idle',
+      status: jobData.status === 'failed' ? 'error' : 
+             jobData.status || 'idle',
       message: jobData.message || '',
+      error: jobData.error || null,  // Include error message for failed jobs
       updated_at: jobData.updated_at || new Date().toISOString()
     })
   } catch (error: any) {

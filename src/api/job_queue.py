@@ -16,8 +16,8 @@ Architecture:
 import json
 import logging
 import os
-from typing import Optional
-from datetime import datetime
+from typing import Optional, Tuple
+from datetime import datetime, timezone
 import redis
 from redis.exceptions import RedisError
 
@@ -139,7 +139,7 @@ def enqueue_job(job_id: str, article_id: str, inputs: dict) -> bool:
         'job_id': job_id,
         'article_id': article_id,
         'inputs': inputs,
-        'created_at': datetime.now().isoformat()
+        'created_at': datetime.now(timezone.utc).isoformat()
     }
     
     try:
@@ -147,10 +147,10 @@ def enqueue_job(job_id: str, article_id: str, inputs: dict) -> bool:
         # Combined with BLPOP (pop from left), this ensures FIFO order
         # Example: RPUSH "opad:jobs" '{"job_id": "123", ...}'
         client.rpush(QUEUE_NAME, json.dumps(job_data))
-        logger.info(f"Job {job_id} enqueued successfully")
+        logger.info("Job enqueued successfully", extra={"jobId": job_id, "articleId": article_id})
         return True
     except RedisError as e:
-        logger.error(f"Failed to enqueue job {job_id}: {e}")
+        logger.error("Failed to enqueue job", extra={"jobId": job_id, "articleId": article_id, "error": str(e)})
         return False
 
 
@@ -204,7 +204,7 @@ def get_job_status(job_id: str) -> Optional[dict]:
         {
             'id': 'job-uuid',
             'article_id': 'article-uuid',
-            'status': 'queued' | 'running' | 'succeeded' | 'failed',
+            'status': 'queued' | 'running' | 'completed' | 'failed',
             'progress': 0-100,
             'message': 'Current task description',
             'error': 'Error message if failed',
@@ -213,7 +213,7 @@ def get_job_status(job_id: str) -> Optional[dict]:
         }
     
     Status lifecycle:
-        queued → running → succeeded/failed
+        queued → running → completed/failed
         
     TTL: 24 hours (auto-deleted after)
     
@@ -261,13 +261,13 @@ def update_job_status(
         - Prevents data loss from partial updates
     
     Status lifecycle:
-        queued (API) → running (Worker) → succeeded/failed (Worker)
+        queued (API) → running (Worker) → completed/failed (Worker)
                                       ↑
                                    progress updates (progress.py)
     
     Args:
         job_id: Job identifier (UUID)
-        status: Job status ('queued', 'running', 'succeeded', 'failed')
+        status: Job status ('queued', 'running', 'completed', 'failed')
         progress: Progress percentage (0-100)
         message: User-facing status message
         error: Error message if status='failed'
@@ -305,7 +305,7 @@ def update_job_status(
     # Rule 2: created_at - preserve existing, or set new for 'queued' status
     final_created_at = existing_created_at
     if final_created_at is None and status == 'queued':
-        final_created_at = datetime.now().isoformat()
+        final_created_at = datetime.now(timezone.utc).isoformat()
     
     # Rule 3: progress - preserve existing if new is 0 and existing is higher
     # This prevents error handlers from resetting progress (e.g., 95% -> 0%)
@@ -320,7 +320,7 @@ def update_job_status(
         'progress': final_progress,
         'message': message or '',
         'error': error,
-        'updated_at': datetime.now().isoformat()
+        'updated_at': datetime.now(timezone.utc).isoformat()
     }
     
     # Add optional fields if available
@@ -335,7 +335,10 @@ def update_job_status(
         # Auto-cleanup prevents Redis from filling up with old jobs
         # Example: SETEX "opad:job:123" 86400 '{"status": "running", ...}'
         client.setex(status_key, 86400, json.dumps(status_data))
-        logger.debug(f"Updated job {job_id} status: {status} - {final_progress}%")
+        extra_data = {"jobId": job_id, "status": status, "progress": final_progress}
+        if article_id or existing_article_id:
+            extra_data["articleId"] = article_id or existing_article_id
+        logger.debug("Updated job status", extra=extra_data)
         return True
     except RedisError as e:
         # Don't log every update failure (called frequently during job execution)

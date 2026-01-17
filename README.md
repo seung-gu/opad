@@ -1,162 +1,123 @@
 # OPAD (One Paragraph A Day)
 
-OPAD is an AI-powered system that automatically creates educational reading materials from news articles for language learners. Using [crewAI](https://crewai.com), it finds relevant news articles, selects the most appropriate one, and adapts it to match the learner's proficiency level.
+OPAD is an AI-powered system that **transforms** current news articles into personalized educational reading materials for language learners using [crewAI](https://crewai.com).
 
-## Project Overview
-
-OPAD transforms current news articles into personalized reading materials by:
-1. **Finding** recent news articles on a specified topic
-2. **Selecting** the best article based on topic relevance, difficulty, and educational value
-3. **Adapting** the selected article to match the target language level and length
+**How it works:**
+- 🔍 **Finding** - Searches for recent news articles on a specified topic
+- 📰 **Selecting** - Chooses the best article based on topic relevance, difficulty, and educational value
+- ✏️ **Transforming** - Adapts and transforms the selected article to match the target language level and length
 
 ## Purpose
 
-The goal of OPAD is to provide language learners with:
+OPAD provides language learners with:
 - **Current, relevant content**: Real news articles instead of outdated textbook materials
 - **Appropriate difficulty**: Content adapted to the learner's proficiency level
-- **Complete source attribution**: Original source information preserved for reference
+- **Complete source attribution**: Original source information preserved
 - **Personalized learning**: Materials tailored to specific topics, languages, and levels
 
-This enables learners to practice reading with engaging, up-to-date content while maintaining appropriate difficulty levels for effective language acquisition.
+## Overview
 
-## Installation
+OPAD uses a **3-service architecture** (Web/API/Worker) with asynchronous job processing:
+
+- **Web (Next.js)**: User interface for generating and viewing articles
+- **API (FastAPI)**: REST API for article CRUD operations and job queue management
+- **Worker (Python)**: Background job processor that runs CrewAI to generate articles
+
+**Data Storage:**
+- **MongoDB**: Article metadata and content storage
+- **Redis**: Job queue and status tracking
+
+For detailed architecture documentation, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+
+## Installation & Deployment
 
 ### Prerequisites
+
 - Python >=3.10 <3.14
-- Node.js >= 18
-- Docker (for deployment)
+- Node.js >=18
+- Docker (for containerized deployment)
+- MongoDB and Redis (provided by Railway add-ons or local Docker)
 
-### Local Development
+### Local Development (Docker)
 
-1. Install Python dependencies:
-```bash
-pip install uv
-crewai install
-```
+1. **Start dependencies** (MongoDB and Redis):
+   ```bash
+   docker-compose -f docker-compose.local.yml up -d
+   ```
 
-2. Install Node.js dependencies:
-```bash
-cd web
-npm install
-```
+2. **Install dependencies**:
+   ```bash
+   # Python
+   pip install uv
+   uv pip install -e .
+   
+   # Node.js
+   cd src/web
+   npm install
+   ```
 
-3. Set up environment variables:
-Create a `.env` file in the project root:
-```bash
-crewai install
-```
+3. **Set environment variables**:
+   ```bash
+   export REDIS_URL=redis://localhost:6379
+   export MONGO_URL=mongodb://localhost:27017/
+   export OPENAI_API_KEY=your-key
+   export SERPER_API_KEY=your-key
+   ```
 
-### Running Locally
+4. **Run services** (in separate terminals):
+   ```bash
+   # API (Terminal 1)
+   PYTHONPATH=src uvicorn api.main:app --reload --port 8001
+   
+   # Worker (Terminal 2)
+   PYTHONPATH=src python -m worker.main
+   
+   # Web (Terminal 3)
+   cd src/web
+   API_BASE_URL=http://localhost:8001 npm run dev
+   ```
 
-1. Run the Python script to generate reading materials:
-```bash
-python src/opad/main.py
-```
+5. **Access**: Open [http://localhost:8000](http://localhost:8000)
 
-2. Start the Next.js development server:
-```bash
-cd web
-npm run dev
-```
+For detailed local setup instructions, see [SETUP.md](./SETUP.md).
 
-Open [http://localhost:3000](http://localhost:3000) to view the web interface.
+### Railway Deployment
 
-## Deployment (Railway + R2)
+1. **Create Railway project** with 3 services:
+   - `web` (Next.js) - Use `Dockerfile.web`
+   - `api` (FastAPI) - Use `Dockerfile.api`
+   - `worker` (Python) - Use `Dockerfile.worker`
 
-### 1. Set up Cloudflare R2
-- Create an R2 bucket in Cloudflare dashboard
-- Generate API credentials (Account ID, Access Key ID, Secret Access Key)
+2. **Add add-ons**:
+   - MongoDB add-on (provides `MONGO_URL`)
+   - Redis add-on (provides `REDIS_URL`)
 
-### 2. Deploy to Railway
-- Create a new project in Railway
-- Connect your repository or deploy from local
-- Set the following environment variables in Railway:
-  - `OPENAI_API_KEY`
-  - `SERPER_API_KEY`
-  - `R2_ACCOUNT_ID`
-  - `R2_ACCESS_KEY_ID`
-  - `R2_SECRET_ACCESS_KEY`
-  - `R2_BUCKET_NAME`
-- Railway will automatically build and deploy using the Dockerfile
+3. **Configure environment variables**:
+   
+   **Web service:**
+   ```
+   API_BASE_URL=https://${{ api.RAILWAY_PUBLIC_DOMAIN }}
+   ```
+   
+   **Worker service:**
+   ```
+   REDIS_URL=${{ api.REDIS_URL }}
+   MONGO_URL=${{ api.MONGO_URL }}
+   OPENAI_API_KEY=your-key
+   SERPER_API_KEY=your-key
+   ```
 
-### 3. Generate articles via web interface
-- Visit your deployed Railway URL
-- Click "Generate New Article"
-- Fill in the form (language, level, length, topic)
-- The article will be generated in the background and automatically uploaded to R2
-- The page will automatically refresh when the article is ready
+4. **Deploy**: Railway automatically builds and deploys from your repository
 
-## Customizing
+For detailed Railway deployment instructions, see [SETUP.md](./SETUP.md).
 
-- Modify `src/opad/config/agents.yaml` to define your agents
-- Modify `src/opad/config/tasks.yaml` to define your tasks
-- Modify `src/opad/crew.py` to add your own logic, tools and specific args
-- Modify `src/opad/main.py` to add custom inputs for your agents and tasks
+## Documentation
 
-## Architecture
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)**: Detailed system architecture and design
+- **[SETUP.md](./SETUP.md)**: Comprehensive setup and deployment guide
+- **[DEVLOG.md](./DEVLOG.md)**: Development log and milestones
+- **[REFERENCE.md](./REFERENCE.md)**: API flow diagrams and reference documentation
 
-### Backend (Python + CrewAI)
-- **Agents**: Three specialized AI agents work together:
-  - `paragraph_finder`: Searches for news articles using SerperDev
-  - `article_picker`: Selects the best article based on criteria
-  - `paragraph_writer`: Adapts the article for language learners and extracts vocabulary
-- **Storage**: Generated articles are uploaded to Cloudflare R2 for persistence
+## License
 
-### Frontend (Next.js)
-- **Web Interface**: React-based UI for viewing and generating articles
-- **API Routes**:
-  - `/api/article`: Fetches the latest article from R2
-  - `/api/generate`: Triggers Python script to generate new articles
-- **Real-time Updates**: Auto-polling to detect when new articles are ready
-
-### Infrastructure
-- **Docker**: Multi-stage build for optimized image size
-- **Railway**: PaaS deployment with automatic builds
-- **Cloudflare R2**: S3-compatible object storage for markdown files
-
-## Changelog
-
-### Version 0.2.1 (2026-01-06)
-**Bug Fixes & Code Cleanup**
-- Fixed duplicate polling intervals causing unnecessary refreshes
-- Improved polling logic to only trigger when content actually changes
-- Removed GitHub Actions (no longer needed with Railway deployment)
-- Removed unused files and dependencies
-- Cleaned up R2 utility functions
-- Updated Dockerfile for dynamic PORT binding
-- Enhanced README with clearer deployment instructions
-
-### Version 0.2.0 (2026-01-06)
-**Major Architecture Change: Railway + R2**
-- **Railway Deployment**: Added Docker-based deployment on Railway
-- **R2 Storage Integration**: Integrated Cloudflare R2 for markdown file storage
-  - Upload generated articles directly to R2
-  - Fetch articles from R2 in web viewer
-  - No more Git-based file updates
-- **Dynamic API Routes**: Configured Next.js API routes with `force-dynamic` for runtime environment variable access
-- **Background Processing**: Python CrewAI script runs in background via API trigger
-- **Logging Improvements**: Replaced print statements with Python logging module
-- **Docker Optimization**: Multi-stage Docker build for reduced image size
-- **Web UI Enhancements**: 
-  - Added input form for generating new articles
-  - Automatic polling for article updates (10 seconds)
-  - Refresh button for manual reload
-
-### Version 0.1.0
-**Initial Release**
-- Improved JSON output format validation
-- Added source URL and author verification
-- Enhanced level-based vocabulary filtering
-- Improved markdown section structure
-- Added Next.js web viewer for reading materials
-- Implemented interactive vocabulary click feature
-
-## Support
-
-For support, questions, or feedback regarding the Opad Crew or crewAI.
-- Visit our [documentation](https://docs.crewai.com)
-- Reach out to us through our [GitHub repository](https://github.com/joaomdmoura/crewai)
-- [Join our Discord](https://discord.com/invite/X4JWnZnxPb)
-- [Chat with our docs](https://chatg.pt/DWjSBZn)
-
-Let's create wonders together with the power and simplicity of crewAI.
+This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.

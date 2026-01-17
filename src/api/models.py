@@ -5,14 +5,6 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-class ArticleCreate(BaseModel):
-    """Request model for creating an article."""
-    language: str = Field(..., description="Target language")
-    level: str = Field(..., description="Language level (A1-C2)")
-    length: str = Field(..., description="Target word count")
-    topic: str = Field(..., description="Article topic")
-
-
 class ArticleResponse(BaseModel):
     """Response model for article."""
     id: str = Field(..., description="Article ID")
@@ -22,6 +14,9 @@ class ArticleResponse(BaseModel):
     topic: str
     status: str = Field(..., description="Article status")
     created_at: datetime
+    owner_id: Optional[str] = Field(None, description="Owner ID for multi-user support")
+    job_id: Optional[str] = Field(None, description="Job ID for progress tracking")
+    inputs: Optional[dict] = Field(None, description="Structured input parameters")
 
 
 class GenerateRequest(BaseModel):
@@ -36,7 +31,7 @@ class JobResponse(BaseModel):
     """Response model for job status."""
     id: str = Field(..., description="Job ID")
     article_id: Optional[str] = Field(None, description="Associated article ID")
-    status: str = Field(..., description="Job status: queued, running, succeeded, failed")
+    status: str = Field(..., description="Job status: queued, running, completed, failed")
     progress: int = Field(0, ge=0, le=100, description="Progress percentage")
     message: Optional[str] = Field(None, description="Status message")
     created_at: Optional[datetime] = Field(None, description="Job creation timestamp")
@@ -46,7 +41,15 @@ class JobResponse(BaseModel):
 
 
 class GenerateResponse(BaseModel):
-    """Response model for generate endpoint."""
+    """Response model for generate endpoint (only returned when generation actually starts)."""
     job_id: str = Field(..., description="Job ID for tracking")
     article_id: str = Field(..., description="Article ID")
     message: str = Field(..., description="Status message")
+
+
+class ArticleListResponse(BaseModel):
+    """Response model for article list with pagination."""
+    articles: list[ArticleResponse]
+    total: int = Field(..., description="Total number of articles matching filters")
+    skip: int = Field(..., description="Number of articles skipped")
+    limit: int = Field(..., description="Maximum number of articles returned")
