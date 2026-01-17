@@ -9,7 +9,6 @@ interface ArticleFilterProps {
 
 const STATUS_OPTIONS: { value: ArticleStatus | ''; label: string }[] = [
   { value: '', label: 'All Statuses' },
-  { value: 'pending', label: 'Pending' },
   { value: 'running', label: 'Running' },
   { value: 'completed', label: 'Completed' },
   { value: 'failed', label: 'Failed' }

@@ -11,7 +11,6 @@ interface ArticleStatusBadgeProps {
  * Reusable badge component for displaying article status.
  * 
  * Provides consistent styling and color coding for different statuses:
- * - pending: yellow/orange
  * - running: blue
  * - completed: green
  * - failed: red
@@ -19,10 +18,6 @@ interface ArticleStatusBadgeProps {
  */
 export default function ArticleStatusBadge({ status, className = '' }: ArticleStatusBadgeProps) {
   const statusConfig = {
-    pending: {
-      label: 'Pending',
-      colorClass: 'bg-yellow-100 text-yellow-800 border-yellow-200'
-    },
     running: {
       label: 'Running',
       colorClass: 'bg-blue-100 text-blue-800 border-blue-200'
@@ -41,7 +36,7 @@ export default function ArticleStatusBadge({ status, className = '' }: ArticleSt
     }
   }
 
-  const config = statusConfig[status] || statusConfig.pending
+  const config = statusConfig[status] || statusConfig.running
 
   return (
     <span

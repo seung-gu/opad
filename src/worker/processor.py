@@ -26,7 +26,7 @@ from crew.main import run as run_crew
 
 # Import from src
 from api.job_queue import update_job_status, dequeue_job
-from utils.mongodb import save_article
+from utils.mongodb import save_article, update_article_status
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +119,10 @@ def process_job(job_data: dict) -> bool:
                     "Job had task failures but CrewAI didn't raise exception. Job status already set to 'failed' by event handler.",
                     extra={"jobId": job_id}
                 )
+                # Update MongoDB Article status to 'failed'
+                # Note: Job status is already 'failed' from event handler
+                if article_id:
+                    update_article_status(article_id, 'failed')
                 return False
         # ✅ Event handlers are automatically cleared here (scoped_handlers exit)
         
@@ -141,7 +145,7 @@ def process_job(job_data: dict) -> bool:
             logger.info("Successfully saved article to MongoDB", extra={"jobId": job_id, "articleId": article_id})
         except Exception as save_error:
             logger.error("MongoDB save failed", extra={"jobId": job_id, "articleId": article_id, "error": str(save_error)})
-            # Save failure means content is lost - mark job as failed
+            # Save failure means content is lost - mark job and article as failed
             update_job_status(
                 job_id=job_id,
                 status='failed',
@@ -150,6 +154,9 @@ def process_job(job_data: dict) -> bool:
                 error=f'MongoDB save error: {str(save_error)[:200]}',
                 article_id=article_id
             )
+            # Update MongoDB Article status to 'failed'
+            if article_id:
+                update_article_status(article_id, 'failed')
             return False
         
         # ✅ Update final status to 'completed'
@@ -185,7 +192,7 @@ def process_job(job_data: dict) -> bool:
             user_message = f"Job failed: {error_type}"
             logger.error("Job failed", extra={"jobId": job_id, "articleId": article_id, "error": error_msg, "errorType": error_type})
         
-        # Update status to 'failed'
+        # Update job status to 'failed'
         # Note: progress=0 is passed, but update_job_status will preserve existing progress
         # if it's higher (e.g., 95% from R2 upload failure won't be reset to 0%)
         update_job_status(
@@ -196,6 +203,10 @@ def process_job(job_data: dict) -> bool:
             error=f"{error_type}: {error_msg[:200]}",  # Truncate long errors
             article_id=article_id
         )
+        
+        # Update MongoDB Article status to 'failed'
+        if article_id:
+            update_article_status(article_id, 'failed')
         
         return False
 

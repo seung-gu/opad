@@ -189,12 +189,45 @@ Queue: opad:jobs (List)
 - **장점**: 부하 분산, 재시도 가능, 우선순위 설정 가능
 
 ### 4. **데이터 저장소**
-- **MongoDB**: Article metadata 및 content 저장
+
+#### MongoDB: Article Storage
+- **Article metadata 및 content 저장**
   - 중복 체크 (24시간 내 동일 입력 파라미터)
   - Article 조회 및 리스트
-- **Redis**: Job Queue 및 Job Status
-  - Queue: `opad:jobs` (List)
-  - Status: `opad:job:{job_id}` (String, 24h TTL)
+  
+**Article Status** (MongoDB, 영구 저장):
+- `running`: Article 생성 시 초기 상태 (처리 중)
+- `completed`: Article 생성 완료
+- `failed`: Article 생성 실패
+- `deleted`: Article 삭제 (soft delete)
+
+**Status Flow:**
+```
+생성 시: running
+   ↓
+완료: completed
+실패: failed
+```
+
+#### Redis: Job Queue & Status
+- **Queue**: `opad:jobs` (List) - Worker가 처리할 job들을 FIFO 순서로 저장
+- **Status**: `opad:job:{job_id}` (String, 24h TTL) - Job의 실시간 상태 추적
+
+**Job Status** (Redis, 24시간 TTL):
+- `queued`: Job이 큐에 추가됨 (Worker가 아직 처리하지 않음)
+- `running`: Worker가 Job을 처리 중
+- `completed`: Job 처리 완료
+- `failed`: Job 처리 실패
+
+**Status Flow:**
+```
+queued → running → completed / failed
+```
+
+**Article Status vs Job Status:**
+- **Article Status (MongoDB)**: Article의 최종 상태 (영구 저장)
+- **Job Status (Redis)**: Job 처리의 실시간 상태 (24시간 후 자동 삭제)
+- Article은 `running` 상태로 생성되고, Job이 완료되면 `completed` 또는 `failed`로 업데이트됨
 
 ---
 

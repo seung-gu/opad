@@ -4,7 +4,7 @@
  * These types match the FastAPI ArticleResponse and ArticleListResponse models.
  */
 
-export type ArticleStatus = 'pending' | 'running' | 'completed' | 'failed' | 'deleted'
+export type ArticleStatus = 'running' | 'completed' | 'failed' | 'deleted'
 
 export interface Article {
   id: string

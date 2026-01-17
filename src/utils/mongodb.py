@@ -179,7 +179,7 @@ def get_article(article_id: str) -> Optional[dict]:
 
 
 def save_article_metadata(article_id: str, language: str, level: str, 
-                          length: str, topic: str, status: str = 'pending',
+                          length: str, topic: str, status: str = 'running',
                           created_at: Optional[datetime] = None,
                           owner_id: Optional[str] = None,
                           job_id: Optional[str] = None) -> bool:
@@ -193,7 +193,7 @@ def save_article_metadata(article_id: str, language: str, level: str,
         level: Language level (A1-C2)
         length: Target word count
         topic: Article topic
-        status: Article status (default: 'pending')
+        status: Article status (default: 'running')
         created_at: Optional timestamp for created_at field. If None, uses current UTC time.
                     This allows the caller to control the timestamp and avoid race conditions.
                     By passing created_at from the caller, we eliminate the need to fetch
@@ -413,7 +413,7 @@ def list_articles(
     Args:
         skip: Number of articles to skip (for pagination)
         limit: Maximum number of articles to return
-        status: Filter by status (e.g., 'pending', 'completed', 'deleted')
+        status: Filter by status (e.g., 'running', 'completed', 'deleted')
         language: Filter by language
         level: Filter by level
         owner_id: Filter by owner_id
@@ -468,6 +468,50 @@ def list_articles(
     except PyMongoError as e:
         logger.error("Failed to list articles", extra={"error": str(e)})
         return [], 0
+
+
+def update_article_status(article_id: str, status: str) -> bool:
+    """Update article status in MongoDB.
+    
+    Used to update article status during job processing:
+    - 'running' → 'completed' (when job completes successfully)
+    - 'running' → 'failed' (when job fails)
+    - 'running' → 'deleted' (when article is soft deleted)
+    
+    Args:
+        article_id: Article ID to update
+        status: New status ('running', 'completed', 'failed', 'deleted')
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    client = get_mongodb_client()
+    if not client:
+        return False
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[COLLECTION_NAME]
+        
+        result = collection.update_one(
+            {'_id': article_id},
+            {
+                '$set': {
+                    'status': status,
+                    'updated_at': datetime.now(timezone.utc)
+                }
+            }
+        )
+        
+        if result.matched_count == 0:
+            logger.warning("Article not found for status update", extra={"articleId": article_id, "status": status})
+            return False
+        
+        logger.debug("Article status updated", extra={"articleId": article_id, "status": status})
+        return True
+    except PyMongoError as e:
+        logger.error("Failed to update article status", extra={"articleId": article_id, "status": status, "error": str(e)})
+        return False
 
 
 def delete_article(article_id: str) -> bool:

@@ -34,7 +34,8 @@ from utils.mongodb import (
     get_latest_article,
     find_duplicate_article,
     list_articles,
-    delete_article
+    delete_article,
+    update_article_status
 )
 
 logger = logging.getLogger(__name__)
@@ -212,6 +213,8 @@ def _create_and_enqueue_job(article_id: str, inputs: dict, job_id: str, owner_id
     # If this fails, status exists but job won't be processed (visible failure state)
     if not enqueue_job(job_id, article_id, inputs):
         update_job_status(job_id, 'failed', 0, 'Failed to enqueue job', 'Queue service unavailable', article_id=article_id)
+        # Update MongoDB Article status to 'failed'
+        update_article_status(article_id, 'failed')
         raise HTTPException(status_code=503, detail="Failed to enqueue job")
     
     logger.info("Job enqueued", extra={"jobId": job_id, "articleId": article_id, "ownerId": owner_id})
@@ -335,7 +338,7 @@ async def generate_article(request: GenerateRequest, force: bool = False):
         level=request.level,
         length=request.length,
         topic=request.topic,
-        status='pending',
+        status='running',
         created_at=created_at,
         owner_id=owner_id,
         job_id=job_id

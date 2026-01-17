@@ -158,7 +158,7 @@ export default function ArticleDetailPage() {
           ) : (
             <div className="text-center py-12">
               <p className="text-gray-500">
-                {article.status === 'pending' || article.status === 'running'
+                {article.status === 'running'
                   ? 'Article is being generated. Please check back later.'
                   : 'Article content is not available.'}
               </p>
