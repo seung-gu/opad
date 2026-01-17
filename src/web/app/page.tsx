@@ -211,7 +211,7 @@ export default function Home() {
     loadStatus()
     
     // Set up polling interval
-    const interval = setInterval(loadStatus, 2000) // Poll every 2 seconds
+    const interval = setInterval(loadStatus, 5000) // Poll every 5 seconds
     statusPollIntervalRef.current = interval
     
     return () => {

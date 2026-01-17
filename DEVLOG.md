@@ -29,9 +29,10 @@
 
 ### Completed Issues
 - ✅ [#16](https://github.com/seung-gu/opad/issues/16) - FE: /articles list page *(Check issue for closed date)*
-- ✅ [#17](https://github.com/seung-gu/opad/issues/17) - FE: /articles/[id] detail page *(Check issue for closed date)*
+
 
 ### In Progress / Planned
+- [#17](https://github.com/seung-gu/opad/issues/17) - FE: /articles/[id] detail page *(Check issue for closed date)*
 - [#18](https://github.com/seung-gu/opad/issues/18) - FE: /jobs/[jobId] page (polling + redirect)
 - [#19](https://github.com/seung-gu/opad/issues/19) - Web -> API integration (stop Next spawning python)
 
