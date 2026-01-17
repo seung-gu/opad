@@ -47,17 +47,56 @@ export async function GET(request: NextRequest) {
     const queryString = queryParams.toString()
     const url = `${apiBaseUrl}/articles${queryString ? `?${queryString}` : ''}`
 
-    // Call FastAPI to get article list
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
+    console.log(JSON.stringify({
+      source: 'web',
+      level: 'info',
+      endpoint: '/api/articles',
+      message: `Calling FastAPI at ${url}`,
+      apiBaseUrl
+    }))
+
+    // Call FastAPI to get article list with timeout
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+    
+    let response: Response
+    try {
+      response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+      })
+      clearTimeout(timeoutId)
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId)
+      const isTimeout = fetchError.name === 'AbortError'
+      console.error(JSON.stringify({
+        source: 'web',
+        level: 'error',
+        endpoint: '/api/articles',
+        message: isTimeout ? 'Fetch timeout after 30s' : `Fetch error: ${fetchError.message}`,
+        errorType: fetchError.name,
+        url,
+        apiBaseUrl
+      }))
+      throw new Error(isTimeout 
+        ? `Connection timeout: API server at ${apiBaseUrl} did not respond within 30 seconds`
+        : `Failed to connect to API server at ${apiBaseUrl}: ${fetchError.message}`)
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
-      throw new Error(errorData.detail || `Failed to fetch articles: ${response.statusText}`)
+      console.error(JSON.stringify({
+        source: 'web',
+        level: 'error',
+        endpoint: '/api/articles',
+        message: `API returned error: ${response.status} ${response.statusText}`,
+        errorData,
+        url
+      }))
+      throw new Error(errorData.detail || `Failed to fetch articles: ${response.status} ${response.statusText}`)
     }
 
     const data = await response.json()
