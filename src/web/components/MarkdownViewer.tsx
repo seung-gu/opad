@@ -120,11 +120,11 @@ export default function MarkdownViewer({ content, dark = false }: MarkdownViewer
   }, [definitions])
 
   const className = dark
-    ? "prose prose-invert max-w-none text-slate-100 prose-headings:text-white prose-p:text-slate-100 prose-strong:text-white prose-li:text-slate-100 prose-ul:text-slate-100 prose-ol:text-slate-100 prose-a:text-emerald-400 prose-a:no-underline hover:prose-a:text-emerald-300 prose-code:text-emerald-300 prose-pre:bg-slate-800 prose-blockquote:text-slate-200 prose-blockquote:border-slate-600"
+    ? "prose prose-invert max-w-none text-white prose-headings:text-white prose-p:text-white prose-strong:text-white prose-li:text-white prose-ul:text-white prose-ol:text-white prose-a:text-emerald-400 prose-a:no-underline hover:prose-a:text-emerald-300 prose-code:text-emerald-300 prose-pre:bg-slate-800 prose-blockquote:text-white prose-blockquote:border-slate-600"
     : "prose max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900 prose-li:text-gray-700 prose-ul:text-gray-700 prose-ol:text-gray-700 prose-a:text-blue-600 prose-a:no-underline hover:prose-a:text-blue-800 prose-code:text-emerald-700 prose-pre:bg-gray-100 prose-blockquote:text-gray-600 prose-blockquote:border-gray-300"
 
   return (
-    <div className={className} style={dark ? { color: '#f1f5f9' } : undefined} ref={containerRef}>
+    <div className={className} style={dark ? { color: '#ffffff' } : undefined} ref={containerRef}>
       <ReactMarkdown remarkPlugins={[remarkGfm]}>
         {content}
       </ReactMarkdown>

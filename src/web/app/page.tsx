@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import MarkdownViewer from '@/components/MarkdownViewer'
 import InputForm from '@/components/InputForm'
 
 export default function Home() {
+  const router = useRouter()
   const [content, setContent] = useState<string>('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [progress, setProgress] = useState({ current_task: '', progress: 0, message: '', error: null as string | null })
@@ -14,37 +16,6 @@ export default function Home() {
   const [currentArticleId, setCurrentArticleId] = useState<string | null>(null)
   const statusPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const fetchAbortControllerRef = useRef<AbortController | null>(null)
-
-  // Load latest article on mount
-  useEffect(() => {
-    const loadLatestArticle = async () => {
-      try {
-        // Call through Next.js API route to avoid CORS issues
-        const response = await fetch('/api/latest')
-        
-        if (response.ok) {
-          const article = await response.json()
-          setCurrentArticleId(article.id)
-          console.log('Loaded latest article:', article.id)
-          setLoading(false)
-        } else if (response.status === 404) {
-          // No articles exist yet - this is normal for first-time users
-          console.log('No articles found - showing welcome message')
-          setLoading(false)
-          // currentArticleId remains null, which will trigger the second useEffect
-          // to call loadContent() and show the welcome message
-        } else {
-          console.error('Failed to load latest article:', response.statusText)
-          setLoading(false)
-        }
-      } catch (error) {
-        console.error('Error loading latest article:', error)
-        setLoading(false)
-      }
-    }
-    
-    loadLatestArticle()
-  }, []) // Only run on mount
 
   const loadContent = useCallback((showLoading = true, articleId?: string | null) => {
     // Use provided articleId or fall back to currentArticleId
@@ -60,10 +31,42 @@ export default function Home() {
       setLoading(true)
     }
     
-    // If no article_id, show message
+    // If no article_id, show welcome message
     if (!targetArticleId) {
-      const errorMessage = '# No article selected\n\nClick "Generate New Article" to create one.'
-      setContent(prev => prev !== errorMessage ? errorMessage : prev)
+      const welcomeMessage = `# 👋 Welcome to OPAD
+
+**OPAD** (One Paragraph A Day) is an AI-powered tool that creates personalized reading materials for language learners using real, current news content.
+
+🌍 **OPAD supports all languages** — choose any language you want to learn and get customized reading materials at your proficiency level.
+
+---
+
+## ✨ How It Works
+
+Generate an article by choosing your topic, language, and proficiency level:
+
+**1. 🔍 Search**  
+OPAD searches the web for recent news articles on your topic.
+
+**2. 📚 Collect**  
+It gathers relevant articles from various sources.
+
+**3. 🎨 Transform**  
+The content is adapted to match your language level.
+
+**4. 📖 Deliver**  
+You receive a customized study resource ready to use.
+
+Instead of outdated textbooks, get **real, current news content** tailored to your learning needs. 🚀
+
+---
+
+## 🎯 Get Started
+
+Click **"Generate New Article"** above to create your first reading material, or click **"Articles"** to view and manage all your generated articles.
+
+Choose a topic you're interested in and start learning with content that matches your level! 💪`
+      setContent(prev => prev !== welcomeMessage ? welcomeMessage : prev)
       if (showLoading) {
         setLoading(false)
       }
@@ -341,23 +344,20 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen p-8 max-w-4xl mx-auto bg-slate-900 rounded-lg shadow-2xl my-8">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-white">OPAD Reading Materials</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={() => loadContent(true)}
-            className="bg-slate-700 text-white px-4 py-2 rounded-md hover:bg-slate-600 transition-colors"
-          >
-            Refresh
-          </button>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="bg-emerald-600 text-white px-4 py-2 rounded-md hover:bg-emerald-500 transition-colors"
-          >
-            {showForm ? 'Hide Form' : 'Generate New Article'}
-          </button>
-        </div>
+    <main className="min-h-screen p-8 max-w-4xl mx-auto bg-white rounded-lg shadow-2xl my-8">
+      <div className="flex justify-end items-center mb-8 gap-3">
+        <button
+          onClick={() => router.push('/articles')}
+          className="bg-gray-700 text-white px-6 py-2.5 rounded-lg hover:bg-gray-600 transition-colors font-medium"
+        >
+          Articles
+        </button>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="bg-emerald-600 text-white px-6 py-2.5 rounded-lg hover:bg-emerald-500 transition-colors font-medium"
+        >
+          {showForm ? 'Hide Form' : 'Generate New Article'}
+        </button>
       </div>
 
       {showForm && (
@@ -389,7 +389,7 @@ export default function Home() {
         </div>
       )}
 
-      <MarkdownViewer content={content} dark={true} />
+      <MarkdownViewer content={content} dark={false} />
     </main>
   )
 }

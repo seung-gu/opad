@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { Article, ArticleListResponse, ArticleStatus } from '@/types/article'
 import ArticleList from '@/components/ArticleList'
 import ArticleFilter from '@/components/ArticleFilter'
@@ -88,7 +89,16 @@ export default function ArticlesPage() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Articles</h1>
+          <div className="flex items-center justify-between mb-2">
+            <h1 className="text-3xl font-bold text-gray-900">Articles</h1>
+            <Link
+              href="/"
+              className="text-xl font-medium text-gray-700 hover:text-gray-900 transition-colors"
+              title="Go to Home"
+            >
+              ◀ Home
+            </Link>
+          </div>
           <p className="text-gray-600">
             {loading ? 'Loading...' : `${total} article${total !== 1 ? 's' : ''} found`}
           </p>
