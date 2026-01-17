@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import MarkdownViewer from '@/components/MarkdownViewer'
@@ -14,6 +14,7 @@ import { Article } from '@/types/article'
  * - Article metadata
  * - Article content (markdown)
  * - Status badge
+ * - Progress bar (when status is 'running')
  * - Back to list link
  */
 export default function ArticleDetailPage() {
@@ -25,7 +26,11 @@ export default function ArticleDetailPage() {
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState({ current_task: '', progress: 0, message: '', error: null as string | null })
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null)
+  const statusPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
+  // Load article metadata and content
   useEffect(() => {
     const fetchArticle = async () => {
       try {
@@ -37,6 +42,10 @@ export default function ArticleDetailPage() {
         if (metadataResponse.ok) {
           const articleData: Article = await metadataResponse.json()
           setArticle(articleData)
+          // Set job_id for polling (same as main page)
+          if (articleData.job_id) {
+            setCurrentJobId(articleData.job_id)
+          }
         } else if (metadataResponse.status === 404) {
           throw new Error('Article not found')
         }
@@ -66,6 +75,113 @@ export default function ArticleDetailPage() {
       fetchArticle()
     }
   }, [articleId])
+
+  // Poll status when article is running (same logic as main page)
+  useEffect(() => {
+    // Only poll if article is running
+    if (!article || article.status !== 'running') {
+      // Clear interval when not running
+      if (statusPollIntervalRef.current) {
+        clearInterval(statusPollIntervalRef.current)
+        statusPollIntervalRef.current = null
+      }
+      return
+    }
+
+    const loadStatus = () => {
+      // If no jobId, don't poll
+      if (!currentJobId) {
+        return
+      }
+      
+      fetch(`/api/status?job_id=${currentJobId}`)
+        .then(res => res.json())
+        .then(data => {
+          // Only update progress if it actually changed
+          setProgress(prev => {
+            const newProgress = {
+              current_task: data.current_task || '',
+              progress: data.progress || 0,
+              message: data.message || '',
+              error: data.error || null
+            }
+            // Only update if something actually changed
+            if (prev.current_task !== newProgress.current_task || 
+                prev.progress !== newProgress.progress || 
+                prev.message !== newProgress.message ||
+                prev.error !== newProgress.error) {
+              return newProgress
+            }
+            return prev
+          })
+          
+          if (data.status === 'completed') {
+            setCurrentJobId(null) // Clear jobId (same as main page)
+            // Reload article metadata and content
+            const fetchArticle = async () => {
+              try {
+                const metadataResponse = await fetch(`/api/articles/${articleId}`)
+                if (metadataResponse.ok) {
+                  const articleData: Article = await metadataResponse.json()
+                  setArticle(articleData)
+                }
+
+                const contentResponse = await fetch(`/api/article?article_id=${articleId}`)
+                if (contentResponse.ok) {
+                  const contentText = await contentResponse.text()
+                  setContent(contentText)
+                }
+              } catch (err) {
+                console.error('Error reloading article:', err)
+              }
+            }
+            fetchArticle()
+            // Clear interval immediately
+            if (statusPollIntervalRef.current) {
+              clearInterval(statusPollIntervalRef.current)
+              statusPollIntervalRef.current = null
+            }
+          } else if (data.status === 'error') {
+            setCurrentJobId(null) // Clear jobId (same as main page)
+            // Reload article metadata to reflect failed status
+            const fetchArticle = async () => {
+              try {
+                const metadataResponse = await fetch(`/api/articles/${articleId}`)
+                if (metadataResponse.ok) {
+                  const articleData: Article = await metadataResponse.json()
+                  setArticle(articleData)
+                }
+              } catch (err) {
+                console.error('Error reloading article:', err)
+              }
+            }
+            fetchArticle()
+            // Clear interval on error
+            if (statusPollIntervalRef.current) {
+              clearInterval(statusPollIntervalRef.current)
+              statusPollIntervalRef.current = null
+            }
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to fetch status:', err)
+        })
+    }
+    
+    // Load immediately
+    loadStatus()
+    
+    // Set up polling interval
+    const interval = setInterval(loadStatus, 5000) // Poll every 5 seconds
+    statusPollIntervalRef.current = interval
+    
+    return () => {
+      if (statusPollIntervalRef.current) {
+        clearInterval(statusPollIntervalRef.current)
+        statusPollIntervalRef.current = null
+      }
+    }
+  }, [article, currentJobId, articleId])
 
   if (loading) {
     return (
@@ -150,6 +266,30 @@ export default function ArticleDetailPage() {
             <ArticleStatusBadge status={article.status} />
           </div>
         </div>
+
+        {/* Progress Bar (only when running) */}
+        {article.status === 'running' && currentJobId && (
+          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
+            <div className="mb-2">
+              <p className="text-gray-800 font-medium mb-2">
+                ⏳ {progress.message || 'Generating article...'}
+              </p>
+              {progress.error && (
+                <div className="mb-2 p-3 bg-red-50 border border-red-200 rounded-md">
+                  <p className="text-red-800 text-sm font-medium">Error:</p>
+                  <p className="text-red-700 text-sm">{progress.error}</p>
+                </div>
+              )}
+              <div className="w-full bg-gray-200 rounded-full h-3">
+                <div
+                  className="bg-blue-600 h-3 rounded-full transition-all duration-300"
+                  style={{ width: `${progress.progress}%` }}
+                ></div>
+              </div>
+              <p className="text-sm text-blue-700 mt-2">{progress.progress}%</p>
+            </div>
+          </div>
+        )}
 
         {/* Content */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">

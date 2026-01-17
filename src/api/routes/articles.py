@@ -116,6 +116,7 @@ def _build_article_response(article: dict) -> dict:
         'status': article.get('status'),
         'created_at': formatted_time,
         'owner_id': article.get('owner_id'),
+        'job_id': article.get('job_id'),  # Include job_id for progress tracking
         'inputs': inputs
     }
 

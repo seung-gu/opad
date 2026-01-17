@@ -8,7 +8,7 @@ interface ArticleFilterProps {
 }
 
 const STATUS_OPTIONS: { value: ArticleStatus | ''; label: string }[] = [
-  { value: '', label: 'All Statuses' },
+  { value: '', label: 'All' },
   { value: 'running', label: 'Running' },
   { value: 'completed', label: 'Completed' },
   { value: 'failed', label: 'Failed' }
@@ -34,7 +34,7 @@ export default function ArticleFilter({ selectedStatus, onStatusChange }: Articl
         id="status-filter"
         value={selectedStatus || ''}
         onChange={handleChange}
-        className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
       >
         {STATUS_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
