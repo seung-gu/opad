@@ -17,7 +17,7 @@
 
 ### Completed Issues
 - ✅ [#11](https://github.com/seung-gu/opad/issues/11) - [M1] DB schema: articles + jobs (user optional) *(2026-01-15)*
-- ✅ [#12](https://github.com/seung-gu/opad/issues/12) - Article CRUD Operations *(Check issue for closed date)*
+- ✅ [#12](https://github.com/seung-gu/opad/issues/12) - Article CRUD Operations *(2026-01-17)*
 
 ### In Progress / Planned
 - [#14](https://github.com/seung-gu/opad/issues/14) - Remove input.json shared file (pass inputs per job)
@@ -28,11 +28,10 @@
 ## Milestone M2
 
 ### Completed Issues
-- ✅ [#16](https://github.com/seung-gu/opad/issues/16) - FE: /articles list page *(Check issue for closed date)*
-
+- ✅ [#16](https://github.com/seung-gu/opad/issues/16) - FE: /articles list page *(2026-01-17)*
+- [#17](https://github.com/seung-gu/opad/issues/17) - FE: /articles/[id] detail page *(2026-01-17)*
 
 ### In Progress / Planned
-- [#17](https://github.com/seung-gu/opad/issues/17) - FE: /articles/[id] detail page *(Check issue for closed date)*
 - [#18](https://github.com/seung-gu/opad/issues/18) - FE: /jobs/[jobId] page (polling + redirect)
 - [#19](https://github.com/seung-gu/opad/issues/19) - Web -> API integration (stop Next spawning python)
 
