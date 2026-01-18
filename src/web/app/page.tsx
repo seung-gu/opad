@@ -33,11 +33,11 @@ export default function Home() {
     
     // If no article_id, show welcome message
     if (!targetArticleId) {
-      const welcomeMessage = `# 👋 Welcome to OPAD
+      const welcomeMessage = `# 👋 Welcome to One Story A Day
 
-**OPAD** (One Paragraph A Day) is an AI-powered tool that creates personalized reading materials for language learners using real, current news content.
+**One Story A Day** is an AI-powered tool that creates personalized reading materials for language learners using real, current news content.
 
-🌍 **OPAD supports all languages** — choose any language you want to learn and get customized reading materials at your proficiency level.
+🌍 **One Story A Day supports all languages** — choose any language you want to learn and get customized reading materials at your proficiency level.
 
 ---
 
@@ -46,7 +46,7 @@ export default function Home() {
 Generate an article by choosing your topic, language, and proficiency level:
 
 **1. 🔍 Search**  
-OPAD searches the web for recent news articles on your topic.
+One Story A Day searches the web for recent news articles, stories, and other content on your topic.
 
 **2. 📚 Collect**  
 It gathers relevant articles from various sources.
@@ -57,7 +57,7 @@ The content is adapted to match your language level.
 **4. 📖 Deliver**  
 You receive a customized study resource ready to use.
 
-Instead of outdated textbooks, get **real, current news content** tailored to your learning needs. 🚀
+Instead of outdated textbooks, get **real, current news content, stories, and other content** tailored to your learning needs. 🚀
 
 ---
 
