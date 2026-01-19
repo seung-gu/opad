@@ -53,7 +53,7 @@ graph TB
     
     Web -->|HTTP<br/>Dictionary| NextAPI[Next.js<br/>API Route]
     NextAPI -->|HTTP<br/>Proxy| API
-    API -->|HTTP<br/>API Call| OpenAI[(OpenAI<br/>API)]
+    API -->|HTTP<br/>API Call| OpenAI[OpenAI<br/>API]
     
     API -.->|SET/GET| Redis
     Worker -.->|SET| Redis
@@ -103,35 +103,6 @@ sequenceDiagram
     
     Worker->>MongoDB: Save article content
     Worker->>Redis: Update status (completed)
-```
-
-### Dictionary API 흐름
-
-```mermaid
-sequenceDiagram
-    participant Frontend as Frontend<br/>(MarkdownViewer)
-    participant NextAPI as Next.js API<br/>(/api/openai)
-    participant FastAPI as FastAPI<br/>(/dictionary/define)
-    participant Prompts as utils/prompts.py
-    participant LLM as utils/llm.py
-    participant OpenAI as OpenAI API
-    
-    Frontend->>NextAPI: POST /api/openai<br/>{word, sentence, language}
-    NextAPI->>FastAPI: POST /dictionary/define<br/>{word, sentence, language}
-    
-    FastAPI->>Prompts: build_word_definition_prompt()
-    Prompts-->>FastAPI: prompt string
-    
-    FastAPI->>LLM: call_openai_chat(prompt)
-    LLM->>OpenAI: POST /v1/chat/completions
-    OpenAI-->>LLM: {lemma, definition}
-    LLM-->>FastAPI: content string
-    
-    FastAPI->>LLM: parse_json_from_content()
-    LLM-->>FastAPI: {lemma, definition}
-    
-    FastAPI-->>NextAPI: DefineResponse<br/>{lemma, definition}
-    NextAPI-->>Frontend: {lemma, definition}
 ```
 
 **특징:**
@@ -412,23 +383,20 @@ sequenceDiagram
     participant Frontend as Frontend<br/>(MarkdownViewer)
     participant NextAPI as Next.js API<br/>(/api/openai)
     participant FastAPI as FastAPI<br/>(/dictionary/define)
-    participant Prompts as utils/prompts.py
-    participant LLM as utils/llm.py
+    participant Utils as Utils<br/>(prompts.py + llm.py)
     participant OpenAI as OpenAI API
     
     Frontend->>NextAPI: POST /api/openai<br/>{word, sentence, language}
     NextAPI->>FastAPI: POST /dictionary/define<br/>{word, sentence, language}
     
-    FastAPI->>Prompts: build_word_definition_prompt()
-    Prompts-->>FastAPI: prompt string
+    FastAPI->>Utils: build_word_definition_prompt()
+    Utils-->>FastAPI: prompt string
     
-    FastAPI->>LLM: call_openai_chat(prompt)
-    LLM->>OpenAI: POST /v1/chat/completions
-    OpenAI-->>LLM: {lemma, definition}
-    LLM-->>FastAPI: content string
-    
-    FastAPI->>LLM: parse_json_from_content()
-    LLM-->>FastAPI: {lemma, definition}
+    FastAPI->>Utils: call_openai_chat(prompt)
+    Utils->>OpenAI: POST /v1/chat/completions
+    OpenAI-->>Utils: {lemma, definition}
+    Utils->>Utils: parse_json_from_content()
+    Utils-->>FastAPI: {lemma, definition}
     
     FastAPI-->>NextAPI: DefineResponse<br/>{lemma, definition}
     NextAPI-->>Frontend: {lemma, definition}
