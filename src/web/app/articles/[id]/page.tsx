@@ -294,7 +294,7 @@ export default function ArticleDetailPage() {
         {/* Content */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           {content ? (
-            <MarkdownViewer content={content} />
+            <MarkdownViewer content={content} language={article?.language} />
           ) : (
             <div className="text-center py-12">
               <p className="text-gray-500">

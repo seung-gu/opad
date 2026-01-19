@@ -1,0 +1,60 @@
+import { NextRequest, NextResponse } from 'next/server'
+
+// Prevent static optimization
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+
+/**
+ * Proxy to FastAPI dictionary endpoint
+ * 
+ * Forwards word definition requests to FastAPI backend
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { sentence, word, language } = body
+
+    if (!sentence || !word) {
+      return NextResponse.json(
+        { error: 'Missing sentence or word' },
+        { status: 400 }
+      )
+    }
+
+    // Get FastAPI URL from environment
+    // Try multiple env var names for compatibility
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 
+                   process.env.API_BASE_URL || 
+                   'http://localhost:8001'
+    
+    // Forward request to FastAPI
+    const response = await fetch(`${apiUrl}/dictionary/define`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        word: word,
+        sentence: sentence,
+        language: language
+      })
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      return NextResponse.json(
+        errorData,
+        { status: response.status }
+      )
+    }
+
+    const data = await response.json()
+    return NextResponse.json(data)
+  } catch (error: any) {
+    console.error('[Dictionary Proxy] Error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error', message: error?.message || String(error) },
+      { status: 500 }
+    )
+  }
+}

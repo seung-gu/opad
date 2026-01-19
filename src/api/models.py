@@ -53,3 +53,16 @@ class ArticleListResponse(BaseModel):
     total: int = Field(..., description="Total number of articles matching filters")
     skip: int = Field(..., description="Number of articles skipped")
     limit: int = Field(..., description="Maximum number of articles returned")
+
+
+class DefineRequest(BaseModel):
+    """Request model for word definition."""
+    word: str
+    sentence: str
+    language: str
+
+
+class DefineResponse(BaseModel):
+    """Response model for word definition."""
+    lemma: str
+    definition: str

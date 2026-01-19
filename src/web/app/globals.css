@@ -9,14 +9,36 @@
 }
 
 .vocab-word {
-  @apply text-emerald-400 cursor-pointer hover:text-emerald-300 transition-colors;
+  cursor: pointer;
+  transition-property: color, text-decoration-color;
+  transition-duration: 200ms;
   text-decoration: underline;
-  text-decoration-color: rgba(52, 211, 153, 0.3);
   text-underline-offset: 2px;
 }
 
-.vocab-word:hover {
-  text-decoration-color: rgba(52, 211, 153, 0.6);
+/* Agent-provided words: emerald color with solid underline */
+.vocab-word.agent-provided {
+  color: rgb(5, 150, 105);
+  text-decoration-style: solid;
+  text-decoration-color: rgba(5, 150, 105, 0.4);
+  font-weight: 500;
+}
+
+.vocab-word.agent-provided:hover {
+  color: rgb(16, 185, 129);
+  text-decoration-color: rgba(5, 150, 105, 0.6);
+}
+
+/* User-clickable words: no color change, subtle dotted underline */
+.vocab-word.user-clickable {
+  color: inherit !important;
+  text-decoration-style: dotted;
+  text-decoration-color: rgba(107, 114, 128, 0.3);
+  font-weight: normal;
+}
+
+.vocab-word.user-clickable:hover {
+  text-decoration-color: rgba(107, 114, 128, 0.5);
 }
 
 .word-definition {

@@ -51,20 +51,31 @@ graph TB
     Worker -->|Execute| CrewAI[CrewAI]
     Worker -->|Save| MongoDB[(MongoDB<br/>Article Storage)]
     
+    Web -->|HTTP<br/>Dictionary| NextAPI[Next.js<br/>API Route]
+    NextAPI -->|HTTP<br/>Proxy| API
+    API -->|HTTP<br/>API Call| OpenAI[(OpenAI<br/>API)]
+    
     API -.->|SET/GET| Redis
     Worker -.->|SET| Redis
     
+    API -.->|utils/llm.py<br/>utils/prompts.py| OpenAI
+    
     style Web fill:#2196F3
+    style NextAPI fill:#2196F3
     style API fill:#2196F3
     style Worker fill:#2196F3
     style CrewAI fill:#2196F3
     style Redis fill:#dc382d
     style MongoDB fill:#13aa52
+    style OpenAI fill:#10a37f
     
+    linkStyle 0 stroke:#4a90e2,stroke-width:2px,color:#4a90e2
     linkStyle 1 stroke:#4a90e2,stroke-width:2px,color:#4a90e2
     linkStyle 2 stroke:#4a90e2,stroke-width:2px,color:#4a90e2
     linkStyle 5 stroke:#ff9500,stroke-width:2px,color:#ff9500
     linkStyle 6 stroke:#13aa52,stroke-width:2px,color:#13aa52
+    linkStyle 7 stroke:#9c27b0,stroke-width:2px,color:#9c27b0
+    linkStyle 8 stroke:#9c27b0,stroke-width:2px,color:#9c27b0
 ```
 
 ### Article Generation 흐름
@@ -94,14 +105,52 @@ sequenceDiagram
     Worker->>Redis: Update status (completed)
 ```
 
+### Dictionary API 흐름
+
+```mermaid
+sequenceDiagram
+    participant Frontend as Frontend<br/>(MarkdownViewer)
+    participant NextAPI as Next.js API<br/>(/api/openai)
+    participant FastAPI as FastAPI<br/>(/dictionary/define)
+    participant Prompts as utils/prompts.py
+    participant LLM as utils/llm.py
+    participant OpenAI as OpenAI API
+    
+    Frontend->>NextAPI: POST /api/openai<br/>{word, sentence, language}
+    NextAPI->>FastAPI: POST /dictionary/define<br/>{word, sentence, language}
+    
+    FastAPI->>Prompts: build_word_definition_prompt()
+    Prompts-->>FastAPI: prompt string
+    
+    FastAPI->>LLM: call_openai_chat(prompt)
+    LLM->>OpenAI: POST /v1/chat/completions
+    OpenAI-->>LLM: {lemma, definition}
+    LLM-->>FastAPI: content string
+    
+    FastAPI->>LLM: parse_json_from_content()
+    LLM-->>FastAPI: {lemma, definition}
+    
+    FastAPI-->>NextAPI: DefineResponse<br/>{lemma, definition}
+    NextAPI-->>Frontend: {lemma, definition}
+```
+
+**특징:**
+- **실시간 응답**: 사용자가 단어를 클릭하면 즉시 정의 반환 (비동기 큐 사용 안 함)
+- **프록시 패턴**: Next.js API route가 FastAPI로 요청을 프록시
+- **공통 유틸 사용**: `utils/llm.py`와 `utils/prompts.py`로 재사용 가능한 구조
+- **에러 처리**: `get_llm_error_response()`로 일관된 에러 응답
+
 ### 서비스 간 통신
 
 | From | To | Method | Purpose |
 |------|-----|--------|---------|
 | **Web** | **API** | HTTP | Article 생성, Job enqueue |
+| **Web** | **Next.js API** | HTTP | Dictionary API 요청 (프록시) |
+| **Next.js API** | **API** | HTTP | Dictionary API 프록시 요청 |
 | **API** | **MongoDB** | (via utils.mongodb) | 중복 체크, Article metadata 저장/조회 |
 | **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
 | **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.job_queue` 사용) |
+| **API** | **OpenAI** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 |
 | **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
 | **Worker** | **Redis** | `SET` | Job 상태 업데이트 (공통 모듈 `api.job_queue` 사용) |
 | **Worker** | **CrewAI** | Function Call | Article 생성 |
@@ -245,7 +294,8 @@ opad/
 │   │   │   ├── jobs.py
 │   │   │   ├── health.py
 │   │   │   ├── endpoints.py
-│   │   │   └── stats.py
+│   │   │   ├── stats.py
+│   │   │   └── dictionary.py  # Dictionary API (word definition)
 │   │   └── job_queue.py  # Redis 큐 관리
 │   │
 │   ├── worker/           # Worker 서비스 (Python)
@@ -266,7 +316,9 @@ opad/
 │   │
 │   └── utils/            # 공통 유틸리티 (공유)
 │       ├── mongodb.py    # MongoDB 연결 및 작업
-│       └── logging.py    # Structured logging 설정
+│       ├── logging.py    # Structured logging 설정
+│       ├── llm.py        # OpenAI API 공통 함수
+│       └── prompts.py    # LLM 프롬프트 템플릿
 │
 └── Dockerfile.*          # 서비스별 Dockerfile (이슈 #9)
 ```
@@ -274,8 +326,110 @@ opad/
 ### 서비스 구분
 | 폴더 | 역할 | 런타임 | 포트 |
 |------|------|--------|------|
-| `src/api/` | CRUD + Job enqueue | Python (FastAPI) | 8001 (default) |
+| `src/api/` | CRUD + Job enqueue + Dictionary API | Python (FastAPI) | 8001 (default) |
 | `src/worker/` | CrewAI 실행 | Python | - |
 | `src/web/` | UI | Node.js (Next.js) | 3000 |
 | `src/opad/` | CrewAI 로직 (공유) | - | - |
 | `src/utils/` | 공통 유틸 (공유) | - | - |
+
+---
+
+## 🔑 공통 유틸리티 모듈
+
+### LLM 유틸리티 (`utils/llm.py`)
+OpenAI API 호출을 위한 공통 함수들:
+
+- **`get_openai_api_key()`**: 환경변수에서 OpenAI API 키 로딩
+- **`call_openai_chat()`**: OpenAI Chat Completions API 호출 (범용 함수)
+- **`parse_json_from_content()`**: LLM 응답에서 JSON 파싱 (다양한 형식 지원)
+- **`get_llm_error_response()`**: LLM 관련 예외를 HTTP 상태 코드로 변환
+
+**사용 예시:**
+```python
+from utils.llm import call_openai_chat, parse_json_from_content
+
+content = await call_openai_chat(
+    prompt="...",
+    model="gpt-4.1-mini",
+    max_tokens=200
+)
+result = parse_json_from_content(content)
+```
+
+### 프롬프트 템플릿 (`utils/prompts.py`)
+재사용 가능한 LLM 프롬프트 빌더 함수들:
+
+- **`build_word_definition_prompt()`**: Dictionary API용 프롬프트 생성 (lemma 및 definition 추출)
+
+**사용 예시:**
+```python
+from utils.prompts import build_word_definition_prompt
+
+prompt = build_word_definition_prompt(
+    language="German",
+    sentence="Diese große Spanne hängt von mehreren Faktoren ab.",
+    word="hängt"
+)
+```
+
+---
+
+## 📡 Dictionary API
+
+### Word Definition Endpoint
+
+**Endpoint**: `POST /dictionary/define`
+
+**목적**: 문장 컨텍스트에서 단어의 lemma 및 정의를 추출
+
+**요청:**
+```json
+{
+  "word": "hängt",
+  "sentence": "Diese große Spanne hängt von mehreren Faktoren ab.",
+  "language": "German"
+}
+```
+
+**응답:**
+```json
+{
+  "lemma": "abhängen",
+  "definition": "의존하다, ~에 달려있다"
+}
+```
+
+**특징:**
+- **분리동사 처리**: 독일어 등에서 동사가 분리된 경우 전체 lemma 반환 (예: `hängt ... ab` → `abhängen`)
+- **복합어 처리**: 단어가 복합어의 일부인 경우 전체 형태 반환
+- **공통 유틸 사용**: `utils/llm.py`의 `call_openai_chat()` 함수 활용
+- **프롬프트 분리**: `utils/prompts.py`의 `build_word_definition_prompt()` 사용
+
+**흐름:**
+
+```mermaid
+sequenceDiagram
+    participant Frontend as Frontend<br/>(MarkdownViewer)
+    participant NextAPI as Next.js API<br/>(/api/openai)
+    participant FastAPI as FastAPI<br/>(/dictionary/define)
+    participant Prompts as utils/prompts.py
+    participant LLM as utils/llm.py
+    participant OpenAI as OpenAI API
+    
+    Frontend->>NextAPI: POST /api/openai<br/>{word, sentence, language}
+    NextAPI->>FastAPI: POST /dictionary/define<br/>{word, sentence, language}
+    
+    FastAPI->>Prompts: build_word_definition_prompt()
+    Prompts-->>FastAPI: prompt string
+    
+    FastAPI->>LLM: call_openai_chat(prompt)
+    LLM->>OpenAI: POST /v1/chat/completions
+    OpenAI-->>LLM: {lemma, definition}
+    LLM-->>FastAPI: content string
+    
+    FastAPI->>LLM: parse_json_from_content()
+    LLM-->>FastAPI: {lemma, definition}
+    
+    FastAPI-->>NextAPI: DefineResponse<br/>{lemma, definition}
+    NextAPI-->>Frontend: {lemma, definition}
+```
