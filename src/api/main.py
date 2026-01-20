@@ -22,11 +22,14 @@ setup_structured_logging()
 
 logger = logging.getLogger(__name__)
 
+VERSION = "0.6.0"
+SERVICE_NAME = "One Story A Day API"
+
 # Create FastAPI app
 app = FastAPI(
-    title="One Story A Day API",
+    title=SERVICE_NAME,
     description="API service for One Story A Day - handles articles and job queue",
-    version="0.5.0"
+    version=VERSION
 )
 
 # CORS configuration for cross-origin requests from Next.js
@@ -68,8 +71,8 @@ async def startup():
 async def root():
     """Root endpoint."""
     return {
-        "service": "One Story A Day API",
-        "version": "0.5.0",
+        "service": SERVICE_NAME,
+        "version": VERSION,
         "status": "running"
     }
 

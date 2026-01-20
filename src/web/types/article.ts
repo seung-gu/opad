@@ -36,3 +36,15 @@ export interface ArticleListFilters {
   skip?: number
   limit?: number
 }
+
+export interface Vocabulary {
+  id: string
+  article_id: string
+  word: string
+  lemma: string
+  definition: string
+  sentence: string
+  language: string
+  related_words?: string[] // All words in sentence belonging to this lemma (e.g., for separable verbs)
+  created_at: string // ISO datetime string
+}

@@ -82,26 +82,5 @@ adapt_news_article:
     - pick_best_article
   output_file: output/adapted_reading_material.md
 
-add_vocabulary:
-  description: >
-    Extract vocabulary words from the adapted reading material that are appropriate for {level} level learners in {language}.
-    
-    Only include words at or above the {level} level. Exclude all words below {level}.
-    Exclude proper nouns and words that {level} learners already know.
-    Only include words that genuinely challenge {level} level learners.
-    
-    For each word, provide a concise definition in {language} (one sentence) and one example sentence.
-    
-    Replace each vocabulary word in the article text with [word:definition] format for clickable linking.
-    Organize the vocabulary section with clear markdown headings and structure for easy navigation.
-    
-    Work efficiently: Extract words, create definitions, and replace them in the text in one pass.
-  expected_output: >
-    Adapted reading material with vocabulary words replaced with [word:definition] format (Do not include examples in the definition).
-    Vocabulary section appended with {level}-appropriate words that match the difficulty level, each with definition and example.
-    No words below the target level should be included.
-  agent: paragraph_writer
-  context:
-    - adapt_news_article
-  output_file: output/adapted_reading_material.md
+
 

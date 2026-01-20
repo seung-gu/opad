@@ -3,45 +3,78 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { split } from 'sentence-splitter'
+import { Vocabulary } from '@/types/article'
 
 interface MarkdownViewerProps {
   content: string
   language?: string // Target language for dictionary API lookups
   dark?: boolean // If true, use dark mode styles (for dark backgrounds)
+  articleId?: string // Article ID for vocabulary
+  vocabularies?: Vocabulary[] // Current vocabularies
+  onAddVocabulary?: (vocab: Vocabulary) => void // Callback when vocabulary is added
+  clickable?: boolean // If false, words are not clickable (default: true)
 }
 
-export default function MarkdownViewer({ content, language, dark = false }: MarkdownViewerProps) {
+export default function MarkdownViewer({ 
+  content, 
+  language, 
+  dark = false,
+  articleId,
+  vocabularies = [],
+  onAddVocabulary,
+  clickable = true
+}: MarkdownViewerProps) {
   const [openSpanIds, setOpenSpanIds] = useState<Set<string>>(new Set()) // Track which specific spans are open
   const [wordDefinitions, setWordDefinitions] = useState<Record<string, string>>({}) // Cache API-fetched definitions
   const [loadingWords, setLoadingWords] = useState<Set<string>>(new Set())
   const containerRef = useRef<HTMLDivElement>(null)
-  const wordsMapRef = useRef<Map<string, string>>(new Map()) // Agent-provided [word:definition]
   const spanIdCounterRef = useRef<number>(0) // Counter for generating unique span IDs
-  const lemmaCacheRef = useRef<Map<string, string>>(new Map()) // Cache word lemmas from LLM: "language:word" -> "lemma|||definition"
+  const lemmaCacheRef = useRef<Map<string, string>>(new Map()) // Cache word lemmas from LLM: "language:word" -> JSON string of {lemma, definition, related_words}
   const wordToLemmaRef = useRef<Map<string, string>>(new Map()) // Word -> Lemma mapping: "word" -> "lemma" (for finding same lemma variants)
   const loadingWordsRef = useRef<Set<string>>(new Set()) // Synchronous loading state tracking
 
   // Extract sentence containing the clicked word
   const extractSentence = (wordSpan: HTMLElement): string => {
-    // Find the parent paragraph or closest text container
+    // If parent.innerText equals word, it's likely an inline element, go up one more level
     let parent = wordSpan.parentElement
-    while (parent && !['P', 'LI', 'DIV', 'ARTICLE'].includes(parent.tagName)) {
+    const word = wordSpan.textContent || ''
+    
+    if (parent && parent.innerText === word) {
       parent = parent.parentElement
     }
     
     if (!parent) {
-      // Fallback: get text from the entire container
       return containerRef.current?.textContent || ''
     }
     
-    // Get text content of the paragraph, removing extra whitespace
-    const text = parent.textContent || ''
-    // Clean up: remove extra spaces and newlines
-    return text.replace(/\s+/g, ' ').trim()
+    const text = (parent.textContent || '').replace(/\s+/g, ' ').trim()
+    
+    try {
+      // Use sentence-splitter to split text into sentences
+      const result = split(text)
+      const sentences = result
+        .filter(node => node.type === 'Sentence')
+        .map(node => node.raw.trim())
+        .filter(s => s)
+      
+      // Find sentence containing the clicked word
+      const found = sentences.find(s => 
+        new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(s)
+      )
+      
+      return found || text
+    } catch (error) {
+      // Fallback to simple split if sentence-splitter fails
+      console.warn('sentence-splitter failed, using fallback:', error)
+      const sentences = text.split(/([.!?]+\s+)/).filter(s => s.trim())
+      const found = sentences.find(s => new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(s))
+      return found ? found.trim() : text
+    }
   }
 
   // Get word definition and lemma from LLM using sentence context
-  const getWordDefinitionFromLLM = async (word: string, sentence: string): Promise<{ lemma: string, definition: string } | null> => {
+  const getWordDefinitionFromLLM = async (word: string, sentence: string): Promise<{ lemma: string, definition: string, related_words?: string[] } | null> => {
     if (!language) {
       return null
     }
@@ -51,9 +84,14 @@ export default function MarkdownViewer({ content, language, dark = false }: Mark
     if (lemmaCacheRef.current.has(wordCacheKey)) {
       const cached = lemmaCacheRef.current.get(wordCacheKey)
       if (cached) {
-        const [lemma, definition] = cached.split('|||')
-        console.log('[Dictionary] Using word-only cache for:', word)
-        return { lemma, definition }
+        try {
+          const { lemma, definition, related_words } = JSON.parse(cached)
+          console.log('[Dictionary] Using word-only cache for:', word)
+          return { lemma, definition, related_words }
+        } catch (e) {
+          console.warn('[Dictionary] Failed to parse cached value, clearing cache')
+          lemmaCacheRef.current.delete(wordCacheKey)
+        }
       }
     }
     
@@ -62,9 +100,14 @@ export default function MarkdownViewer({ content, language, dark = false }: Mark
     if (lemmaCacheRef.current.has(sentenceCacheKey)) {
       const cached = lemmaCacheRef.current.get(sentenceCacheKey)
       if (cached) {
-        const [lemma, definition] = cached.split('|||')
-        console.log('[Dictionary] Using sentence-specific cache for:', word)
-        return { lemma, definition }
+        try {
+          const { lemma, definition, related_words } = JSON.parse(cached)
+          console.log('[Dictionary] Using sentence-specific cache for:', word)
+          return { lemma, definition, related_words }
+        } catch (e) {
+          console.warn('[Dictionary] Failed to parse cached value, clearing cache')
+          lemmaCacheRef.current.delete(sentenceCacheKey)
+        }
       }
     }
     
@@ -95,18 +138,19 @@ export default function MarkdownViewer({ content, language, dark = false }: Mark
       
       const lemma = data.lemma?.trim() || word
       const definition = data.definition?.trim()
+      const related_words = data.related_words || undefined
       
       if (definition) {
         // Cache: store in both word-only cache and sentence-specific cache
         const wordCacheKey = `${language}:${word.toLowerCase()}`
         const sentenceCacheKey = `${language}:${word.toLowerCase()}:${sentence.substring(0, 50)}`
-        const cacheValue = `${lemma}|||${definition}`
+        const cacheValue = JSON.stringify({ lemma, definition, related_words })
         
         lemmaCacheRef.current.set(wordCacheKey, cacheValue) // Word-only cache (reusable across sentences)
         lemmaCacheRef.current.set(sentenceCacheKey, cacheValue) // Sentence-specific cache
         
-        console.log('[Dictionary] Cached definition for:', word, 'lemma:', lemma)
-        return { lemma, definition }
+        console.log('[Dictionary] Cached definition for:', word, 'lemma:', lemma, 'related_words:', related_words)
+        return { lemma, definition, related_words }
       }
       
       return null
@@ -116,7 +160,7 @@ export default function MarkdownViewer({ content, language, dark = false }: Mark
     }
   }
 
-  const handleWordClick = useCallback(async (spanId: string, word: string, meaning?: string) => {
+  const handleWordClick = useCallback(async (spanId: string, word: string) => {
     // Toggle this specific span
     const isOpening = !openSpanIds.has(spanId)
     setOpenSpanIds(prev => {
@@ -129,11 +173,6 @@ export default function MarkdownViewer({ content, language, dark = false }: Mark
       return next
     })
     
-    // If meaning is provided (agent-provided word), we're done
-    if (meaning) {
-      return
-    }
-    
     // If closing, no need to fetch
     if (!isOpening) {
       return
@@ -145,12 +184,17 @@ export default function MarkdownViewer({ content, language, dark = false }: Mark
     if (lemmaCacheRef.current.has(wordCacheKey)) {
       const cached = lemmaCacheRef.current.get(wordCacheKey)
       if (cached) {
-        const [lemma] = cached.split('|||')
-        cachedLemma = lemma
-        // Check if we already have definition for this lemma
-        if (wordDefinitions[lemma]) {
-          console.log('[Dictionary] Using cached definition for lemma:', lemma, 'from word:', word)
-          return
+        try {
+          const { lemma } = JSON.parse(cached)
+          cachedLemma = lemma
+          // Check if we already have definition for this lemma
+          if (wordDefinitions[lemma]) {
+            console.log('[Dictionary] Using cached definition for lemma:', lemma, 'from word:', word)
+            return
+          }
+        } catch (e) {
+          console.warn('[Dictionary] Failed to parse cached value, clearing cache')
+          lemmaCacheRef.current.delete(wordCacheKey)
         }
       }
     }
@@ -212,7 +256,19 @@ export default function MarkdownViewer({ content, language, dark = false }: Mark
       // Also store in lemmaCacheRef for backward compatibility
       if (lemma.toLowerCase() !== word.toLowerCase()) {
         const cacheKey = `${language}:${word.toLowerCase()}`
-        lemmaCacheRef.current.set(cacheKey, `${lemma}|||${result.definition}`)
+        const cacheValue = JSON.stringify({ 
+          lemma, 
+          definition: result.definition, 
+          related_words: result.related_words 
+        })
+        lemmaCacheRef.current.set(cacheKey, cacheValue)
+      }
+      
+      // Store related_words mapping for all related words
+      if (result.related_words && result.related_words.length > 0) {
+        result.related_words.forEach(relatedWord => {
+          wordToLemmaRef.current.set(relatedWord.toLowerCase(), lemma.toLowerCase())
+        })
       }
     } else {
       // Store error using word as key (since we don't have lemma)
@@ -223,11 +279,9 @@ export default function MarkdownViewer({ content, language, dark = false }: Mark
     }
   }, [language, openSpanIds, wordDefinitions, loadingWords])
 
-  // Convert [word:meaning] pattern to clickable elements AND make all other words clickable
+  // Make all words clickable (only if clickable prop is true)
   useEffect(() => {
-    if (!containerRef.current) return
-
-    wordsMapRef.current.clear()
+    if (!containerRef.current || !clickable) return
 
     const processNode = (node: Node) => {
       if (node.nodeType === Node.TEXT_NODE && node.textContent) {
@@ -238,57 +292,41 @@ export default function MarkdownViewer({ content, language, dark = false }: Mark
         if (!parent || parent.nodeName === 'CODE' || parent.nodeName === 'PRE') return
         if (parent instanceof HTMLElement && parent.classList.contains('vocab-word')) return
         
-        const regex = /\[([^\]]+):([^\]]+)\]/g
-        const matches = Array.from(text.matchAll(regex))
-        
         const fragment = document.createDocumentFragment()
-        let lastIndex = 0
-
-        // Process [word:definition] patterns
-        if (matches.length > 0) {
-          matches.forEach((match) => {
-            if (match.index === undefined) return
-
-            // Add previous text (make words clickable)
-            if (match.index > lastIndex) {
-              const prevText = text.substring(lastIndex, match.index)
-              appendClickableWords(prevText, fragment)
-            }
-
-            const word = match[1]
-            const meaning = match[2]
-            wordsMapRef.current.set(word, meaning)
-
-            // Create agent-provided word span
+        
+        // Helper: make words in text clickable (skip whitespace-only and punctuation-only)
+        const parts = text.split(/(\s+|[.,;:!?()[\]{}""''—–-]+)/)
+        
+        parts.forEach(part => {
+          if (!part) return
+          
+          // If it's whitespace or punctuation, just add as text
+          if (/^(\s+|[.,;:!?()[\]{}""''—–-]+)$/.test(part)) {
+            fragment.appendChild(document.createTextNode(part))
+            return
+          }
+          
+          // If it's a word (alphanumeric), make it clickable
+          if (/[a-zA-Z0-9]/.test(part)) {
             const spanId = `vocab-${spanIdCounterRef.current++}`
             const wordSpan = document.createElement('span')
-            wordSpan.className = 'vocab-word agent-provided'
-            wordSpan.textContent = word
-            wordSpan.setAttribute('data-word', word)
-            wordSpan.setAttribute('data-meaning', meaning)
+            wordSpan.className = 'vocab-word user-clickable'
+            wordSpan.textContent = part
+            wordSpan.setAttribute('data-word', part)
             wordSpan.setAttribute('data-span-id', spanId)
             wordSpan.onclick = (e) => {
               e.stopPropagation()
-              handleWordClick(spanId, word, meaning)
+              handleWordClick(spanId, part)
             }
             fragment.appendChild(wordSpan)
-
-            lastIndex = (match.index || 0) + match[0].length
-          })
-
-          // Add remaining text (make words clickable)
-          if (lastIndex < text.length) {
-            const remainingText = text.substring(lastIndex)
-            appendClickableWords(remainingText, fragment)
+          } else {
+            // Otherwise, just add as text
+            fragment.appendChild(document.createTextNode(part))
           }
-
+        })
+        
+        if (fragment.childNodes.length > 0) {
           parent.replaceChild(fragment, node)
-        } else {
-          // No [word:definition] patterns, make all words clickable
-          appendClickableWords(text, fragment)
-          if (fragment.childNodes.length > 0) {
-            parent.replaceChild(fragment, node)
-          }
         }
       } else {
         // Recursively process child nodes
@@ -301,42 +339,8 @@ export default function MarkdownViewer({ content, language, dark = false }: Mark
       }
     }
 
-    // Helper: make words in text clickable (skip whitespace-only and punctuation-only)
-    const appendClickableWords = (text: string, fragment: DocumentFragment) => {
-      // Split by whitespace and punctuation, but keep them in the output
-      const parts = text.split(/(\s+|[.,;:!?()[\]{}""''—–-]+)/)
-      
-      parts.forEach(part => {
-        if (!part) return
-        
-        // If it's whitespace or punctuation, just add as text
-        if (/^(\s+|[.,;:!?()[\]{}""''—–-]+)$/.test(part)) {
-          fragment.appendChild(document.createTextNode(part))
-          return
-        }
-        
-        // If it's a word (alphanumeric), make it clickable
-        if (/[a-zA-Z0-9]/.test(part)) {
-          const spanId = `vocab-${spanIdCounterRef.current++}`
-          const wordSpan = document.createElement('span')
-          wordSpan.className = 'vocab-word user-clickable'
-          wordSpan.textContent = part
-          wordSpan.setAttribute('data-word', part)
-          wordSpan.setAttribute('data-span-id', spanId)
-          wordSpan.onclick = (e) => {
-            e.stopPropagation()
-            handleWordClick(spanId, part) // No meaning provided (API fetch)
-          }
-          fragment.appendChild(wordSpan)
-        } else {
-          // Otherwise, just add as text
-          fragment.appendChild(document.createTextNode(part))
-        }
-      })
-    }
-
     processNode(containerRef.current)
-  }, [content, language])
+  }, [content, language, handleWordClick, clickable])
 
   // Update definition visibility when openSpanIds change
   useEffect(() => {
@@ -348,37 +352,51 @@ export default function MarkdownViewer({ content, language, dark = false }: Mark
       const spanId = span.getAttribute('data-span-id')
       if (!word || !spanId) return
       
-      const isAgentProvided = span.classList.contains('agent-provided')
       let meaning: string | null = null
       let displayLemma: string = word // Default to word if lemma not found
       
-      if (isAgentProvided) {
-        meaning = span.getAttribute('data-meaning')
-      } else {
-        // Try to find lemma from wordToLemmaRef first
-        if (wordToLemmaRef.current.has(word.toLowerCase())) {
-          const lemma = wordToLemmaRef.current.get(word.toLowerCase())
-          if (lemma) {
-            displayLemma = lemma
-            meaning = wordDefinitions[lemma] || null
-          }
+      // Try to find lemma from wordToLemmaRef first
+      if (wordToLemmaRef.current.has(word.toLowerCase())) {
+        const lemma = wordToLemmaRef.current.get(word.toLowerCase())
+        if (lemma) {
+          displayLemma = lemma
+          meaning = wordDefinitions[lemma] || null
         }
-        // Fallback: try lemmaCacheRef
-        if (!meaning) {
-          const wordCacheKey = language ? `${language}:${word.toLowerCase()}` : null
-          if (wordCacheKey && lemmaCacheRef.current.has(wordCacheKey)) {
-            const cached = lemmaCacheRef.current.get(wordCacheKey)
-            if (cached) {
-              const [lemma] = cached.split('|||')
+      }
+      // Fallback: try lemmaCacheRef
+      if (!meaning) {
+        const wordCacheKey = language ? `${language}:${word.toLowerCase()}` : null
+        if (wordCacheKey && lemmaCacheRef.current.has(wordCacheKey)) {
+          const cached = lemmaCacheRef.current.get(wordCacheKey)
+          if (cached) {
+            try {
+              const { lemma } = JSON.parse(cached)
               displayLemma = lemma
               meaning = wordDefinitions[lemma] || null
+            } catch (e) {
+              console.warn('[Dictionary] Failed to parse cached value')
             }
           }
         }
-        // Fallback: try word directly (for old cache format or errors)
-        if (!meaning) {
-          meaning = wordDefinitions[word] || null
-        }
+      }
+      // Fallback: try word directly (for old cache format or errors)
+      if (!meaning) {
+        meaning = wordDefinitions[word] || null
+      }
+      
+      // Check if word is in vocabulary and add/remove class
+      // Compare with lemma, original word, and related_words
+      const isInVocabulary = vocabularies.some(
+        v => v.lemma.toLowerCase() === displayLemma.toLowerCase() ||
+             v.lemma.toLowerCase() === word.toLowerCase() ||
+             v.word.toLowerCase() === word.toLowerCase() ||
+             (v.related_words && v.related_words.some(rw => rw.toLowerCase() === word.toLowerCase()))
+      )
+      
+      if (isInVocabulary) {
+        span.classList.add('vocab-saved')
+      } else {
+        span.classList.remove('vocab-saved')
       }
       
       const isVisible = openSpanIds.has(spanId)
@@ -407,7 +425,112 @@ export default function MarkdownViewer({ content, language, dark = false }: Mark
         if (isLoading) {
           defSpan.innerHTML = `<strong>${word}</strong>: <em>Loading...</em>`
         } else if (meaning) {
-          defSpan.innerHTML = `<strong>${displayLemma}</strong>: ${meaning}`
+          // Check if word is already in vocabulary
+          const isInVocabulary = vocabularies.some(v => v.lemma.toLowerCase() === displayLemma.toLowerCase())
+          const sentence = extractSentence(span as HTMLElement)
+          
+          // Get related_words from wordDefinitions (stored when word was clicked)
+          // We need to find the related_words for this lemma
+          let relatedWords: string[] | undefined = undefined
+          // Try to find related_words from wordToLemmaRef and lemmaCacheRef
+          const wordCacheKey = language ? `${language}:${word.toLowerCase()}` : null
+          if (wordCacheKey && lemmaCacheRef.current.has(wordCacheKey)) {
+            const cached = lemmaCacheRef.current.get(wordCacheKey)
+            if (cached) {
+              try {
+                const { related_words } = JSON.parse(cached)
+                relatedWords = related_words
+              } catch (e) {
+                // Ignore parse error
+              }
+            }
+          }
+          
+          // Create definition HTML with vocabulary button
+          let defHtml = `<strong>${displayLemma}</strong>: ${meaning}`
+          
+          if (articleId && onAddVocabulary) {
+            const relatedWordsStr = relatedWords ? JSON.stringify(relatedWords).replace(/"/g, '&quot;') : ''
+            if (isInVocabulary) {
+              defHtml += ` <button class="vocab-btn vocab-remove" data-word="${word}" data-lemma="${displayLemma}" data-definition="${meaning}" data-sentence="${sentence.replace(/"/g, '&quot;')}" data-related-words="${relatedWordsStr}" style="margin-left: 6px; padding: 1px 4px; font-size: 0.7rem; background: #ef4444; color: white; border: none; border-radius: 3px; cursor: pointer; min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;" title="Remove from vocabulary">−</button>`
+            } else {
+              defHtml += ` <button class="vocab-btn vocab-add" data-word="${word}" data-lemma="${displayLemma}" data-definition="${meaning}" data-sentence="${sentence.replace(/"/g, '&quot;')}" data-related-words="${relatedWordsStr}" style="margin-left: 6px; padding: 1px 4px; font-size: 0.7rem; background: #10b981; color: white; border: none; border-radius: 3px; cursor: pointer; min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;" title="Add to vocabulary">+</button>`
+            }
+          }
+          
+          defSpan.innerHTML = defHtml
+          
+          // Attach click handlers to vocabulary buttons
+          const addBtn = defSpan.querySelector('.vocab-add')
+          const removeBtn = defSpan.querySelector('.vocab-remove')
+          
+          if (addBtn) {
+            addBtn.addEventListener('click', async (e) => {
+              e.stopPropagation()
+              const btn = e.target as HTMLElement
+              const word = btn.getAttribute('data-word') || ''
+              const lemma = btn.getAttribute('data-lemma') || ''
+              const definition = btn.getAttribute('data-definition') || ''
+              const sentence = btn.getAttribute('data-sentence') || ''
+              const relatedWordsStr = btn.getAttribute('data-related-words') || ''
+              let relatedWords: string[] | undefined = undefined
+              if (relatedWordsStr) {
+                try {
+                  relatedWords = JSON.parse(relatedWordsStr.replace(/&quot;/g, '"'))
+                } catch (e) {
+                  // Ignore parse error
+                }
+              }
+              
+              try {
+                const response = await fetch('/api/vocabularies', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    article_id: articleId,
+                    word,
+                    lemma,
+                    definition,
+                    sentence,
+                    language,
+                    related_words: relatedWords
+                  })
+                })
+                
+                if (response.ok) {
+                  const newVocab = await response.json()
+                  onAddVocabulary?.(newVocab)
+                }
+              } catch (error) {
+                console.error('Failed to add vocabulary:', error)
+              }
+            })
+          }
+          
+          if (removeBtn) {
+            removeBtn.addEventListener('click', async (e) => {
+              e.stopPropagation()
+              const btn = e.target as HTMLElement
+              const lemma = btn.getAttribute('data-lemma') || ''
+              
+              const vocab = vocabularies.find(v => v.lemma.toLowerCase() === lemma.toLowerCase())
+              if (vocab) {
+                try {
+                  const response = await fetch(`/api/vocabularies/${vocab.id}`, {
+                    method: 'DELETE'
+                  })
+                  
+                  if (response.ok) {
+                    // Remove from vocabularies list (parent component will handle)
+                    // We'll trigger a re-render by updating state
+                    window.dispatchEvent(new CustomEvent('vocabulary-removed', { detail: vocab.id }))
+                  }
+                } catch (error) {
+                  console.error('Failed to remove vocabulary:', error)
+                }
+              }
+            })
+          }
         }
         
         // Insert definition after the word
@@ -419,7 +542,7 @@ export default function MarkdownViewer({ content, language, dark = false }: Mark
         }
       }
     })
-  }, [openSpanIds, wordDefinitions, loadingWords])
+  }, [openSpanIds, wordDefinitions, loadingWords, vocabularies, articleId, onAddVocabulary, language])
 
   const className = dark
     ? "prose prose-invert max-w-none text-white prose-headings:text-white prose-p:text-white prose-strong:text-white prose-li:text-white prose-ul:text-white prose-ol:text-white prose-a:text-emerald-400 prose-a:no-underline hover:prose-a:text-emerald-300 prose-code:text-emerald-300 prose-pre:bg-slate-800 prose-blockquote:text-white prose-blockquote:border-slate-600"

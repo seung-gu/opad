@@ -31,8 +31,11 @@ CRITICAL INSTRUCTIONS:
 
 Analyze the sentence structure carefully. Look for particles, prefixes, or other words that grammatically belong with "{word}".
 
+IMPORTANT: If the word is part of a separable verb or compound word, identify ALL words in the sentence that belong to the same lemma.
+
 Return ONLY valid JSON:
 {{
   "lemma": "complete dictionary form with all parts combined",
-  "definition": "meaning in this sentence context"
+  "definition": "meaning in this sentence context",
+  "related_words": ["list", "of", "all", "words", "in", "sentence", "belonging", "to", "this", "lemma"]
 }}"""

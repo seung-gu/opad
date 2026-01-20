@@ -5,7 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import MarkdownViewer from '@/components/MarkdownViewer'
 import ArticleStatusBadge from '@/components/ArticleStatusBadge'
-import { Article } from '@/types/article'
+import VocabularyList from '@/components/VocabularyList'
+import { Article, Vocabulary } from '@/types/article'
 
 /**
  * Article detail page.
@@ -28,6 +29,7 @@ export default function ArticleDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState({ current_task: '', progress: 0, message: '', error: null as string | null })
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
+  const [vocabularies, setVocabularies] = useState<Vocabulary[]>([])
   const statusPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // Load article metadata and content
@@ -63,6 +65,17 @@ export default function ArticleDetailPage() {
 
         const contentText = await contentResponse.text()
         setContent(contentText)
+        
+        // Load vocabularies for this article
+        try {
+          const vocabResponse = await fetch(`/api/vocabularies?article_id=${articleId}`)
+          if (vocabResponse.ok) {
+            const vocabData = await vocabResponse.json()
+            setVocabularies(vocabData)
+          }
+        } catch (vocabErr) {
+          console.error('Error fetching vocabularies:', vocabErr)
+        }
       } catch (err: any) {
         setError(err.message || 'Failed to load article')
         console.error('Error fetching article:', err)
@@ -75,6 +88,45 @@ export default function ArticleDetailPage() {
       fetchArticle()
     }
   }, [articleId])
+  
+  // Listen for vocabulary removal events
+  useEffect(() => {
+    const handleVocabularyRemoved = (event: CustomEvent) => {
+      const vocabId = event.detail
+      setVocabularies(prev => prev.filter(v => v.id !== vocabId))
+    }
+    
+    window.addEventListener('vocabulary-removed', handleVocabularyRemoved as EventListener)
+    return () => {
+      window.removeEventListener('vocabulary-removed', handleVocabularyRemoved as EventListener)
+    }
+  }, [])
+  
+  // Handle vocabulary addition
+  const handleAddVocabulary = (newVocab: Vocabulary) => {
+    setVocabularies(prev => {
+      // Check if already exists (avoid duplicates)
+      if (prev.some(v => v.id === newVocab.id || v.lemma.toLowerCase() === newVocab.lemma.toLowerCase())) {
+        return prev
+      }
+      return [...prev, newVocab]
+    })
+  }
+  
+  // Handle vocabulary deletion
+  const handleDeleteVocabulary = async (vocabId: string) => {
+    try {
+      const response = await fetch(`/api/vocabularies/${vocabId}`, {
+        method: 'DELETE'
+      })
+      
+      if (response.ok) {
+        setVocabularies(prev => prev.filter(v => v.id !== vocabId))
+      }
+    } catch (error) {
+      console.error('Failed to delete vocabulary:', error)
+    }
+  }
 
   // Poll status when article is running (same logic as main page)
   useEffect(() => {
@@ -294,7 +346,13 @@ export default function ArticleDetailPage() {
         {/* Content */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           {content ? (
-            <MarkdownViewer content={content} language={article?.language} />
+            <MarkdownViewer 
+              content={content} 
+              language={article?.language}
+              articleId={articleId}
+              vocabularies={vocabularies}
+              onAddVocabulary={handleAddVocabulary}
+            />
           ) : (
             <div className="text-center py-12">
               <p className="text-gray-500">
@@ -305,6 +363,12 @@ export default function ArticleDetailPage() {
             </div>
           )}
         </div>
+        
+        {/* Vocabulary List */}
+        <VocabularyList 
+          vocabularies={vocabularies}
+          onDelete={handleDeleteVocabulary}
+        />
       </div>
     </div>
   )

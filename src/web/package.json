@@ -17,7 +17,8 @@
     "react-dom": "^18.2.0",
     "react-markdown": "^9.1.0",
     "rehype-raw": "^7.0.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "sentence-splitter": "^5.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

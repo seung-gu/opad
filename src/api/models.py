@@ -66,3 +66,28 @@ class DefineResponse(BaseModel):
     """Response model for word definition."""
     lemma: str
     definition: str
+    related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma (e.g., for separable verbs)")
+
+
+class VocabularyRequest(BaseModel):
+    """Request model for adding vocabulary."""
+    article_id: str = Field(..., description="Article ID")
+    word: str = Field(..., description="Original word clicked")
+    lemma: str = Field(..., description="Dictionary form (lemma)")
+    definition: str = Field(..., description="Word definition")
+    sentence: str = Field(..., description="Sentence context")
+    language: str = Field(..., description="Language")
+    related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma")
+
+
+class VocabularyResponse(BaseModel):
+    """Response model for vocabulary."""
+    id: str = Field(..., description="Vocabulary ID")
+    article_id: str = Field(..., description="Article ID")
+    word: str = Field(..., description="Original word clicked")
+    lemma: str = Field(..., description="Dictionary form (lemma)")
+    definition: str = Field(..., description="Word definition")
+    sentence: str = Field(..., description="Sentence context")
+    language: str = Field(..., description="Language")
+    related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma")
+    created_at: datetime = Field(..., description="Creation timestamp")
