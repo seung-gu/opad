@@ -53,7 +53,7 @@ export default function ArticleDetailPage() {
         }
 
         // Fetch article content
-        const contentResponse = await fetch(`/api/article?article_id=${articleId}`)
+        const contentResponse = await fetch(`/api/articles/${articleId}/content`)
         
         if (!contentResponse.ok) {
           if (contentResponse.status === 404) {
@@ -68,7 +68,7 @@ export default function ArticleDetailPage() {
         
         // Load vocabularies for this article
         try {
-          const vocabResponse = await fetch(`/api/vocabularies?article_id=${articleId}`)
+          const vocabResponse = await fetch(`/api/dictionary/vocabularies?article_id=${articleId}`)
           if (vocabResponse.ok) {
             const vocabData = await vocabResponse.json()
             setVocabularies(vocabData)
@@ -116,7 +116,7 @@ export default function ArticleDetailPage() {
   // Handle vocabulary deletion
   const handleDeleteVocabulary = async (vocabId: string) => {
     try {
-      const response = await fetch(`/api/vocabularies/${vocabId}`, {
+      const response = await fetch(`/api/dictionary/vocabularies/${vocabId}`, {
         method: 'DELETE'
       })
       
@@ -178,7 +178,7 @@ export default function ArticleDetailPage() {
                   setArticle(articleData)
                 }
 
-                const contentResponse = await fetch(`/api/article?article_id=${articleId}`)
+                const contentResponse = await fetch(`/api/articles/${articleId}/content`)
                 if (contentResponse.ok) {
                   const contentText = await contentResponse.text()
                   setContent(contentText)

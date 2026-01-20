@@ -112,7 +112,7 @@ export default function MarkdownViewer({
     }
     
     try {
-      const response = await fetch('/api/openai', {
+      const response = await fetch('/api/dictionary/define', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -483,7 +483,7 @@ export default function MarkdownViewer({
               }
               
               try {
-                const response = await fetch('/api/vocabularies', {
+                const response = await fetch('/api/dictionary/vocabularies', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -516,7 +516,7 @@ export default function MarkdownViewer({
               const vocab = vocabularies.find(v => v.lemma.toLowerCase() === lemma.toLowerCase())
               if (vocab) {
                 try {
-                  const response = await fetch(`/api/vocabularies/${vocab.id}`, {
+                  const response = await fetch(`/api/dictionary/vocabularies/${vocab.id}`, {
                     method: 'DELETE'
                   })
                   

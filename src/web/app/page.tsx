@@ -80,7 +80,7 @@ Choose a topic you're interested in and start learning with content that matches
     // Add timestamp to bypass cache
     const timestamp = new Date().getTime()
     // Call FastAPI through web API route
-    fetch(`/api/article?article_id=${targetArticleId}&t=${timestamp}`, {
+    fetch(`/api/articles/${targetArticleId}/content?t=${timestamp}`, {
       signal: abortController.signal
     })
       .then(res => {

@@ -15,8 +15,6 @@ graph TB
         FE["page.tsx"]
         API__api_articles["GET /api/articles"]
         FE --> API__api_articles
-        API__api_latest["GET /api/latest"]
-        FE --> API__api_latest
         API__api_status["GET /api/status"]
         FE --> API__api_status
         API__api_generate["POST /api/generate"]
@@ -27,16 +25,19 @@ graph TB
         FE --> API__api_stats
         API__api_articles_id["GET /api/articles/[id]"]
         FE --> API__api_articles_id
-        API__api_vocabularies["POST/GET /api/vocabularies"]
-        FE --> API__api_vocabularies
-        API__api_vocabularies_id["DELETE /api/vocabularies/[id]"]
-        FE --> API__api_vocabularies_id
+        API__api_dictionary_define["POST /api/dictionary/define"]
+        FE --> API__api_dictionary_define
+        API__api_dictionary_vocabularies["POST/GET /api/dictionary/vocabularies"]
+        FE --> API__api_dictionary_vocabularies
+        API__api_dictionary_vocabularies_id["DELETE /api/dictionary/vocabularies/[id]"]
+        FE --> API__api_dictionary_vocabularies_id
+        API__api_dictionary_stats["GET /api/dictionary/stats"]
+        FE --> API__api_dictionary_stats
     end
 
     subgraph Backend["Backend - FastAPI"]
         subgraph Articles["Articles"]
             FastAPI__articles["GET /articles"]
-            FastAPI__articles_latest["GET /articles/latest"]
             FastAPI__articles_generate["POST /articles/generate"]
             FastAPI__articles_get["GET /articles/{article_id}"]
             FastAPI__articles_delete["DELETE /articles/{article_id}"]
@@ -230,7 +231,6 @@ generateResponse.status === 409  ← Response handling!
 #### Articles
 
 - **GET** `/articles` - List Articles Endpoint
-- **GET** `/articles/latest` - Get Latest Article Endpoint
 - **POST** `/articles/generate` - Generate Article
 - **GET** `/articles/{article_id}` - Get Article Endpoint
 - **DELETE** `/articles/{article_id}` - Delete Article Endpoint
@@ -274,8 +274,6 @@ generateResponse.status === 409  ← Response handling!
 
 - **GET** `/api/articles`
   - File: `src/web/app/api/articles/route.ts`
-- **GET** `/api/latest`
-  - File: `src/web/app/api/latest/route.ts`
 - **GET** `/api/status`
   - File: `src/web/app/api/status/route.ts`
 - **POST** `/api/generate`
@@ -286,11 +284,15 @@ generateResponse.status === 409  ← Response handling!
   - File: `src/web/app/api/stats/route.ts`
 - **GET** `/api/articles/[id]`
   - File: `src/web/app/api/articles/[id]/route.ts`
-- **POST** `/api/vocabularies`
-  - File: `src/web/app/api/vocabularies/route.ts`
-- **GET** `/api/vocabularies`
-  - File: `src/web/app/api/vocabularies/route.ts`
-- **DELETE** `/api/vocabularies/[id]`
-  - File: `src/web/app/api/vocabularies/[id]/route.ts`
+- **POST** `/api/dictionary/define`
+  - File: `src/web/app/api/dictionary/define/route.ts`
+- **POST** `/api/dictionary/vocabularies`
+  - File: `src/web/app/api/dictionary/vocabularies/route.ts`
+- **GET** `/api/dictionary/vocabularies`
+  - File: `src/web/app/api/dictionary/vocabularies/route.ts`
+- **DELETE** `/api/dictionary/vocabularies/[id]`
+  - File: `src/web/app/api/dictionary/vocabularies/[id]/route.ts`
+- **GET** `/api/dictionary/stats`
+  - File: `src/web/app/api/dictionary/stats/route.ts`
 
 ---

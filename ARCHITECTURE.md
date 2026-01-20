@@ -114,8 +114,8 @@ sequenceDiagram
 | From | To | Method | Purpose |
 |------|-----|--------|---------|
 | **Web** | **API** | HTTP | Article 생성, Job enqueue |
-| **Web** | **Next.js API** | HTTP | Dictionary API 요청 (프록시), Vocabulary CRUD 요청 (프록시) |
-| **Next.js API** | **API** | HTTP | Dictionary API 프록시 요청, Vocabulary CRUD 프록시 요청 |
+| **Web** | **Next.js API** | HTTP | Dictionary API 요청 (프록시), Vocabulary CRUD 요청 (프록시), Dictionary Stats 요청 (프록시) |
+| **Next.js API** | **API** | HTTP | Dictionary API 프록시 요청, Vocabulary CRUD 프록시 요청, Dictionary Stats 프록시 요청 |
 | **API** | **MongoDB** | (via utils.mongodb) | 중복 체크, Article metadata 저장/조회, Vocabulary 저장/조회 |
 | **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
 | **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.job_queue` 사용) |
@@ -386,12 +386,12 @@ prompt = build_word_definition_prompt(
 ```mermaid
 sequenceDiagram
     participant Frontend as Frontend<br/>(MarkdownViewer)
-    participant NextAPI as Next.js API<br/>(/api/openai)
+    participant NextAPI as Next.js API<br/>(/api/dictionary/define)
     participant FastAPI as FastAPI<br/>(/dictionary/define)
     participant Utils as Utils<br/>(prompts.py + llm.py)
     participant OpenAI as OpenAI API
     
-    Frontend->>NextAPI: POST /api/openai<br/>{word, sentence, language}
+    Frontend->>NextAPI: POST /api/dictionary/define<br/>{word, sentence, language}
     NextAPI->>FastAPI: POST /dictionary/define<br/>{word, sentence, language}
     
     FastAPI->>Utils: build_word_definition_prompt()

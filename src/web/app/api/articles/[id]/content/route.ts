@@ -7,22 +7,21 @@ export const fetchCache = 'force-no-store'
 /**
  * Get article content from FastAPI (MongoDB).
  * 
- * Query parameters:
- * - article_id: Article ID (optional, if not provided, returns error)
- * 
  * Flow:
- * 1. Get article_id from query parameter
+ * 1. Extract article ID from route params
  * 2. Call FastAPI GET /articles/:id/content
  * 3. Return markdown content
  */
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const searchParams = request.nextUrl.searchParams
-    const articleId = searchParams.get('article_id')
-    
+    const articleId = params.id
+
     if (!articleId) {
       return new NextResponse(
-        `# No article ID provided\n\nPlease provide article_id as query parameter.`,
+        `# No article ID provided\n\nPlease provide article ID in the URL path.`,
         {
           status: 400,
           headers: {
@@ -63,8 +62,8 @@ export async function GET(request: NextRequest) {
     console.log(JSON.stringify({
       source: 'web',
       level: 'info',
-      endpoint: '/api/article',
-      message: `Successfully loaded article from MongoDB (${content.length} bytes)`
+      endpoint: `/api/articles/${articleId}/content`,
+      message: `Successfully loaded article content from MongoDB (${content.length} bytes)`
     }))
 
     return new NextResponse(content, {
@@ -76,7 +75,7 @@ export async function GET(request: NextRequest) {
     console.error(JSON.stringify({
       source: 'web',
       level: 'error',
-      endpoint: '/api/article',
+      endpoint: `/api/articles/${params.id}/content`,
       message: `Fatal error: ${error.message}`
     }))
     return new NextResponse(
@@ -90,4 +89,3 @@ export async function GET(request: NextRequest) {
     )
   }
 }
-

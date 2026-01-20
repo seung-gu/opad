@@ -31,7 +31,6 @@ from utils.mongodb import (
     save_article_metadata, 
     get_article, 
     get_mongodb_client, 
-    get_latest_article,
     find_duplicate_article,
     list_articles,
     delete_article,
@@ -285,19 +284,6 @@ async def list_articles_endpoint(
         skip=skip,
         limit=limit
     )
-
-
-@router.get("/latest")
-async def get_latest_article_endpoint():
-    """Get the most recently created article."""
-    _check_mongodb_connection()
-    
-    article = get_latest_article()
-    if not article:
-        raise HTTPException(status_code=404, detail="No articles found")
-    
-    logger.info("Retrieved latest article", extra={"articleId": article.get('_id')})
-    return _build_article_response(article)
 
 
 @router.post("/generate", response_model=GenerateResponse)
