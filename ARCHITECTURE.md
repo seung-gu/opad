@@ -49,7 +49,7 @@ graph TB
     API -->|RPUSH| Redis[(Redis<br/>Queue + Status)]
     Redis -->|BLPOP| Worker[Worker<br/>Python]
     Worker -->|Execute| CrewAI[CrewAI]
-    Worker -->|Save| MongoDB[(MongoDB<br/>Article Storage)]
+    Worker -->|Save| MongoDB[(MongoDB<br/>Article + Vocabulary)]
     
     Web -->|HTTP<br/>Dictionary| NextAPI[Next.js<br/>API Route]
     NextAPI -->|HTTP<br/>Proxy| API
@@ -59,6 +59,10 @@ graph TB
     Worker -.->|SET| Redis
     
     API -.->|utils/llm.py<br/>utils/prompts.py| OpenAI
+    
+    Web -->|HTTP<br/>Vocabulary CRUD| NextAPI
+    NextAPI -->|HTTP<br/>Proxy| API
+    API -->|Save/Query| MongoDB
     
     style Web fill:#2196F3
     style NextAPI fill:#2196F3
@@ -116,12 +120,12 @@ sequenceDiagram
 | From | To | Method | Purpose |
 |------|-----|--------|---------|
 | **Web** | **API** | HTTP | Article 생성, Job enqueue |
-| **Web** | **Next.js API** | HTTP | Dictionary API 요청 (프록시) |
-| **Next.js API** | **API** | HTTP | Dictionary API 프록시 요청 |
-| **API** | **MongoDB** | (via utils.mongodb) | 중복 체크, Article metadata 저장/조회 |
+| **Web** | **Next.js API** | HTTP | Dictionary API 요청 (프록시), Vocabulary CRUD 요청 (프록시) |
+| **Next.js API** | **API** | HTTP | Dictionary API 프록시 요청, Vocabulary CRUD 프록시 요청 |
+| **API** | **MongoDB** | (via utils.mongodb) | 중복 체크, Article metadata 저장/조회, Vocabulary 저장/조회 |
 | **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
 | **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.job_queue` 사용) |
-| **API** | **OpenAI** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 |
+| **API** | **OpenAI** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 (lemma, definition, related_words) |
 | **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
 | **Worker** | **Redis** | `SET` | Job 상태 업데이트 (공통 모듈 `api.job_queue` 사용) |
 | **Worker** | **CrewAI** | Function Call | Article 생성 |
@@ -214,6 +218,11 @@ Queue: opad:jobs (List)
 - **Article metadata 및 content 저장**
   - 중복 체크 (24시간 내 동일 입력 파라미터)
   - Article 조회 및 리스트
+
+- **Vocabulary 저장** (`vocabularies` 컬렉션)
+  - 단어, lemma, 정의, 문장 컨텍스트 저장
+  - `related_words` 배열 포함 (분리 동사 등 복잡한 언어 구조 지원)
+  - Article별로 그룹화하여 관리
   
 **Article Status** (MongoDB, 영구 저장):
 - `running`: Article 생성 시 초기 상태 (처리 중)
@@ -366,13 +375,15 @@ prompt = build_word_definition_prompt(
 ```json
 {
   "lemma": "abhängen",
-  "definition": "의존하다, ~에 달려있다"
+  "definition": "의존하다, ~에 달려있다",
+  "related_words": ["hängt", "ab"]
 }
 ```
 
 **특징:**
 - **분리동사 처리**: 독일어 등에서 동사가 분리된 경우 전체 lemma 반환 (예: `hängt ... ab` → `abhängen`)
 - **복합어 처리**: 단어가 복합어의 일부인 경우 전체 형태 반환
+- **related_words**: 문장에서 같은 lemma에 속하는 모든 단어들을 배열로 반환 (예: 분리 동사의 경우 모든 부분 포함)
 - **공통 유틸 사용**: `utils/llm.py`의 `call_openai_chat()` 함수 활용
 - **프롬프트 분리**: `utils/prompts.py`의 `build_word_definition_prompt()` 사용
 
@@ -394,10 +405,28 @@ sequenceDiagram
     
     FastAPI->>Utils: call_openai_chat(prompt)
     Utils->>OpenAI: POST /v1/chat/completions
-    OpenAI-->>Utils: {lemma, definition}
+    OpenAI-->>Utils: {lemma, definition, related_words}
     Utils->>Utils: parse_json_from_content()
-    Utils-->>FastAPI: {lemma, definition}
+    Utils-->>FastAPI: {lemma, definition, related_words}
     
-    FastAPI-->>NextAPI: DefineResponse<br/>{lemma, definition}
-    NextAPI-->>Frontend: {lemma, definition}
+    FastAPI-->>NextAPI: DefineResponse<br/>{lemma, definition, related_words}
+    NextAPI-->>Frontend: {lemma, definition, related_words}
 ```
+
+### Vocabulary Management Endpoints
+
+**Endpoints:**
+- `POST /dictionary/vocabularies` - Add vocabulary
+- `GET /dictionary/vocabularies` - Get vocabulary list (optionally filtered by article_id)
+- `DELETE /dictionary/vocabularies/{id}` - Delete vocabulary
+- `GET /dictionary/stats` - Get vocabulary statistics (word counts by language)
+
+**Vocabulary 저장:**
+- MongoDB `vocabularies` 컬렉션에 저장
+- `related_words` 배열 포함 (분리 동사 등 복잡한 언어 구조 지원)
+- Article별로 그룹화하여 관리
+
+**Vocabulary 표시:**
+- 저장된 단어는 초록색으로 하이라이트
+- `related_words`에 포함된 단어들도 함께 초록색 표시
+- 예: "hängt" 저장 시 "ab"도 자동으로 초록색 표시

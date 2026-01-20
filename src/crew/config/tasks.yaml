@@ -77,6 +77,7 @@ adapt_news_article:
     The text should be approximately {length} words, use appropriate vocabulary for the level, and maintain all key information from the original article.
     The content should be clear, engaging, and suitable as educational reading material.
     The output must start with a source section containing: source name, source URL (as markdown link), publication date, and author (if available).
+    The output must NOT include any vocabulary list, key vocabulary section, or word list at the end.
   agent: paragraph_writer
   context:
     - pick_best_article

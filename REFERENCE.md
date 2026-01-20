@@ -27,6 +27,10 @@ graph TB
         FE --> API__api_stats
         API__api_articles_id["GET /api/articles/[id]"]
         FE --> API__api_articles_id
+        API__api_vocabularies["POST/GET /api/vocabularies"]
+        FE --> API__api_vocabularies
+        API__api_vocabularies_id["DELETE /api/vocabularies/[id]"]
+        FE --> API__api_vocabularies_id
     end
 
     subgraph Backend["Backend - FastAPI"]
@@ -49,6 +53,13 @@ graph TB
         end
         subgraph Stats["Stats"]
             FastAPI__stats["GET /stats"]
+        end
+        subgraph Dictionary["Dictionary"]
+            FastAPI__dictionary_define["POST /dictionary/define"]
+            FastAPI__dictionary_vocab_post["POST /dictionary/vocabularies"]
+            FastAPI__dictionary_vocab_get["GET /dictionary/vocabularies"]
+            FastAPI__dictionary_vocab_delete["DELETE /dictionary/vocabularies/{id}"]
+            FastAPI__dictionary_stats["GET /dictionary/stats"]
         end
         subgraph Uncategorized["Uncategorized"]
             FastAPI__root["GET /"]
@@ -211,8 +222,8 @@ generateResponse.status === 409  ← Response handling!
 ## FastAPI Endpoints
 
 ### Summary
-- Total endpoints: 11
-- Tags: meta, health, jobs, stats, articles
+- Total endpoints: 16
+- Tags: meta, health, jobs, stats, articles, dictionary
 
 ### Endpoints by Tag
 
@@ -245,13 +256,21 @@ generateResponse.status === 409  ← Response handling!
 
 - **GET** `/stats` - Get Database Stats Endpoint
 
+#### Dictionary
+
+- **POST** `/dictionary/define` - Get word definition and lemma from sentence context
+- **POST** `/dictionary/vocabularies` - Add vocabulary
+- **GET** `/dictionary/vocabularies` - Get vocabulary list
+- **DELETE** `/dictionary/vocabularies/{id}` - Delete vocabulary
+- **GET** `/dictionary/stats` - Get vocabulary statistics
+
 
 ---
 
 ## Next.js API Routes
 
 ### Summary
-- Total routes: 7
+- Total routes: 10
 
 - **GET** `/api/articles`
   - File: `src/web/app/api/articles/route.ts`
@@ -267,5 +286,11 @@ generateResponse.status === 409  ← Response handling!
   - File: `src/web/app/api/stats/route.ts`
 - **GET** `/api/articles/[id]`
   - File: `src/web/app/api/articles/[id]/route.ts`
+- **POST** `/api/vocabularies`
+  - File: `src/web/app/api/vocabularies/route.ts`
+- **GET** `/api/vocabularies`
+  - File: `src/web/app/api/vocabularies/route.ts`
+- **DELETE** `/api/vocabularies/[id]`
+  - File: `src/web/app/api/vocabularies/[id]/route.ts`
 
 ---
