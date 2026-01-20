@@ -51,24 +51,18 @@ graph TB
     Worker -->|Execute| CrewAI[CrewAI]
     Worker -->|Save| MongoDB[(MongoDB<br/>Article + Vocabulary)]
     
-    Web -->|HTTP<br/>Dictionary| NextAPI[Next.js<br/>API Route]
-    NextAPI -->|HTTP<br/>Proxy| API
-    API -->|HTTP<br/>API Call| OpenAI[OpenAI<br/>API]
-    
     API -.->|SET/GET| Redis
     Worker -.->|SET| Redis
     
     API -.->|utils/llm.py<br/>utils/prompts.py| OpenAI
     
-    Web -->|HTTP<br/>Vocabulary CRUD| NextAPI
-    NextAPI -->|HTTP<br/>Proxy| API
+    Web -->|HTTP<br/>Proxy| API
     API -->|Save/Query| MongoDB
     
     style Web fill:#2196F3
-    style NextAPI fill:#2196F3
     style API fill:#2196F3
     style Worker fill:#2196F3
-    style CrewAI fill:#2196F3
+    style CrewAI fill:#10a37f
     style Redis fill:#dc382d
     style MongoDB fill:#13aa52
     style OpenAI fill:#10a37f
