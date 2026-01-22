@@ -46,5 +46,6 @@ export interface Vocabulary {
   sentence: string
   language: string
   related_words?: string[] // All words in sentence belonging to this lemma (e.g., for separable verbs)
+  span_id?: string // Span ID of the clicked word in the article
   created_at: string // ISO datetime string
 }

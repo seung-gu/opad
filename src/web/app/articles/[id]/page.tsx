@@ -71,6 +71,7 @@ export default function ArticleDetailPage() {
           const vocabResponse = await fetch(`/api/dictionary/vocabularies?article_id=${articleId}`)
           if (vocabResponse.ok) {
             const vocabData = await vocabResponse.json()
+            console.log('[Vocab] Loaded vocabularies:', vocabData.map((v: Vocabulary) => ({ word: v.word, span_id: v.span_id })))
             setVocabularies(vocabData)
           }
         } catch (vocabErr) {

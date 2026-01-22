@@ -95,7 +95,8 @@ async def add_vocabulary(request: VocabularyRequest):
         definition=request.definition,
         sentence=request.sentence,
         language=request.language,
-        related_words=request.related_words
+        related_words=request.related_words,
+        span_id=request.span_id
     )
     
     if not vocabulary_id:

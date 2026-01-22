@@ -17,7 +17,7 @@ def build_word_definition_prompt(language: str, sentence: str, word: str) -> str
     Returns:
         Formatted prompt string ready for LLM
     """
-    return f"""You are analyzing a {language} sentence to find the complete dictionary form of a clicked word.
+    prompt = f"""You are analyzing a {language} sentence to find the complete dictionary form of a clicked word.
 
 Sentence: "{sentence}"
 Clicked word: "{word}"
@@ -31,11 +31,24 @@ CRITICAL INSTRUCTIONS:
 
 Analyze the sentence structure carefully. Look for particles, prefixes, or other words that grammatically belong with "{word}".
 
-IMPORTANT: If the word is part of a separable verb or compound word, identify ALL words in the sentence that belong to the same lemma.
+IMPORTANT: If the word is part of a separable verb or compound word, identify ONLY the grammatical components that form the same lexical unit (lemma). Do NOT include prepositions, objects, or other words that are grammatically separate, even if they are semantically related.
 
 Return ONLY valid JSON:
 {{
   "lemma": "complete dictionary form with all parts combined",
   "definition": "meaning in this sentence context",
   "related_words": ["list", "of", "all", "words", "in", "sentence", "belonging", "to", "this", "lemma"]
-}}"""
+}}
+
+IMPORTANT: related_words must contain ONLY the grammatical parts of the lemma (e.g., separable verb prefix + stem, reflexive pronoun for reflexive verbs). The order in related_words must match the exact order these words appear in the provided sentence :{sentence}."""
+    if language == "German":
+        prompt += """
+        
+IMPORTANT for German language:
+1. Separable verbs (trennbare Verben): If the clicked word is part of a separable verb with separable prefixes (ab-, aus-, ein-, mit-, vor-, etc.), identify ALL components including the prefix and any associated prepositions. The lemma must include the complete separable prefix.
+2. Reflexive verbs (reflexive Verben): If the clicked word is part of a reflexive verb construction requiring "sich", include "sich" in the related_words array. The lemma should be the complete reflexive form.
+3. Prepositional verbs (Präpositionalverben): If the verb requires a specific preposition (e.g., "von", "mit", "auf"), include that preposition in the related_words array.
+
+For all these cases, scan the ENTIRE sentence to find ALL words that belong to the same lexical unit and include them in related_words.
+        """
+    return prompt

@@ -34,6 +34,145 @@ export default function MarkdownViewer({
   const wordToLemmaRef = useRef<Map<string, string>>(new Map()) // Word -> Lemma mapping: "word" -> "lemma" (for finding same lemma variants)
   const loadingWordsRef = useRef<Set<string>>(new Set()) // Synchronous loading state tracking
 
+  // Helper: Get word meaning and lemma from cache
+  const getWordMeaning = useCallback((word: string): { meaning: string | null, displayLemma: string } => {
+    let meaning: string | null = null
+    let displayLemma: string = word
+
+    if (wordToLemmaRef.current.has(word.toLowerCase())) {
+      const lemma = wordToLemmaRef.current.get(word.toLowerCase())
+      if (lemma) {
+        displayLemma = lemma
+        meaning = wordDefinitions[lemma] || null
+      }
+    }
+
+    if (!meaning) {
+      const wordCacheKey = language ? `${language}:${word.toLowerCase()}` : null
+      if (wordCacheKey && lemmaCacheRef.current.has(wordCacheKey)) {
+        const cached = lemmaCacheRef.current.get(wordCacheKey)
+        if (cached) {
+          try {
+            const { lemma } = JSON.parse(cached)
+            displayLemma = lemma
+            meaning = wordDefinitions[lemma] || null
+          } catch (e) {
+            console.warn('[Dictionary] Failed to parse cached value')
+          }
+        }
+      }
+    }
+
+    if (!meaning) {
+      meaning = wordDefinitions[word] || null
+    }
+
+    return { meaning, displayLemma }
+  }, [language, wordDefinitions])
+
+  // Helper: Get related words from cache
+  const getRelatedWords = useCallback((word: string): string[] | undefined => {
+    const wordCacheKey = language ? `${language}:${word.toLowerCase()}` : null
+    if (wordCacheKey && lemmaCacheRef.current.has(wordCacheKey)) {
+      const cached = lemmaCacheRef.current.get(wordCacheKey)
+      if (cached) {
+        try {
+          const { related_words } = JSON.parse(cached)
+          return related_words
+        } catch (e) {
+          // Ignore parse error
+        }
+      }
+    }
+    return undefined
+  }, [language])
+
+  // Helper: Create vocabulary button HTML
+  const createVocabularyButtonHTML = useCallback((
+    word: string,
+    lemma: string,
+    definition: string,
+    sentence: string,
+    relatedWords: string[] | undefined,
+    spanId: string,
+    isInVocabulary: boolean
+  ): string => {
+    const relatedWordsStr = relatedWords ? JSON.stringify(relatedWords).replace(/"/g, '&quot;') : ''
+    const sentenceEscaped = sentence.replace(/"/g, '&quot;')
+    const baseStyle = 'margin-left: 6px; padding: 1px 4px; font-size: 0.7rem; color: white; border: none; border-radius: 3px; cursor: pointer; min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;'
+    
+    if (isInVocabulary) {
+      const style = `${baseStyle} background: #ef4444;`
+      return ` <button class="vocab-btn vocab-remove" data-word="${word}" data-lemma="${lemma}" data-definition="${definition}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanId}" style="${style}" title="Remove from vocabulary">−</button>`
+    } else {
+      const style = `${baseStyle} background: #10b981;`
+      return ` <button class="vocab-btn vocab-add" data-word="${word}" data-lemma="${lemma}" data-definition="${definition}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanId}" style="${style}" title="Add to vocabulary">+</button>`
+    }
+  }, [])
+
+  // Helper: Handle add vocabulary button click
+  const handleAddVocabularyClick = useCallback(async (btn: HTMLElement) => {
+    const word = btn.getAttribute('data-word') || ''
+    const lemma = btn.getAttribute('data-lemma') || ''
+    const definition = btn.getAttribute('data-definition') || ''
+    const sentence = btn.getAttribute('data-sentence') || ''
+    const relatedWordsStr = btn.getAttribute('data-related-words') || ''
+    const spanId = btn.getAttribute('data-span-id') || ''
+
+    let relatedWords: string[] | undefined = undefined
+    if (relatedWordsStr) {
+      try {
+        relatedWords = JSON.parse(relatedWordsStr.replace(/&quot;/g, '"'))
+      } catch (e) {
+        // Ignore parse error
+      }
+    }
+
+    try {
+      const response = await fetch('/api/dictionary/vocabularies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          article_id: articleId,
+          word,
+          lemma,
+          definition,
+          sentence,
+          language,
+          related_words: relatedWords,
+          span_id: spanId || undefined
+        })
+      })
+
+      if (response.ok) {
+        const newVocab = await response.json()
+        onAddVocabulary?.(newVocab)
+      }
+    } catch (error) {
+      console.error('Failed to add vocabulary:', error)
+    }
+  }, [articleId, language, onAddVocabulary])
+
+  // Helper: Handle remove vocabulary button click
+  const handleRemoveVocabularyClick = useCallback(async (btn: HTMLElement) => {
+    const lemma = btn.getAttribute('data-lemma') || ''
+    const vocab = vocabularies.find(v => v.lemma.toLowerCase() === lemma.toLowerCase())
+    
+    if (vocab) {
+      try {
+        const response = await fetch(`/api/dictionary/vocabularies/${vocab.id}`, {
+          method: 'DELETE'
+        })
+
+        if (response.ok) {
+          window.dispatchEvent(new CustomEvent('vocabulary-removed', { detail: vocab.id }))
+        }
+      } catch (error) {
+        console.error('Failed to remove vocabulary:', error)
+      }
+    }
+  }, [vocabularies])
+
   // Extract sentence containing the clicked word
   const extractSentence = (wordSpan: HTMLElement): string => {
     // If parent.innerText equals word, it's likely an inline element, go up one more level
@@ -95,22 +234,6 @@ export default function MarkdownViewer({
       }
     }
     
-    // Fallback: check sentence-specific cache
-    const sentenceCacheKey = `${language}:${word.toLowerCase()}:${sentence.substring(0, 50)}`
-    if (lemmaCacheRef.current.has(sentenceCacheKey)) {
-      const cached = lemmaCacheRef.current.get(sentenceCacheKey)
-      if (cached) {
-        try {
-          const { lemma, definition, related_words } = JSON.parse(cached)
-          console.log('[Dictionary] Using sentence-specific cache for:', word)
-          return { lemma, definition, related_words }
-        } catch (e) {
-          console.warn('[Dictionary] Failed to parse cached value, clearing cache')
-          lemmaCacheRef.current.delete(sentenceCacheKey)
-        }
-      }
-    }
-    
     try {
       const response = await fetch('/api/dictionary/define', {
         method: 'POST',
@@ -141,13 +264,11 @@ export default function MarkdownViewer({
       const related_words = data.related_words || undefined
       
       if (definition) {
-        // Cache: store in both word-only cache and sentence-specific cache
+        // Cache: store word-only cache (same word = same definition, regardless of sentence)
         const wordCacheKey = `${language}:${word.toLowerCase()}`
-        const sentenceCacheKey = `${language}:${word.toLowerCase()}:${sentence.substring(0, 50)}`
         const cacheValue = JSON.stringify({ lemma, definition, related_words })
         
-        lemmaCacheRef.current.set(wordCacheKey, cacheValue) // Word-only cache (reusable across sentences)
-        lemmaCacheRef.current.set(sentenceCacheKey, cacheValue) // Sentence-specific cache
+        lemmaCacheRef.current.set(wordCacheKey, cacheValue)
         
         console.log('[Dictionary] Cached definition for:', word, 'lemma:', lemma, 'related_words:', related_words)
         return { lemma, definition, related_words }
@@ -234,7 +355,7 @@ export default function MarkdownViewer({
     
     // Get definition and lemma from LLM using sentence context
     const result = await getWordDefinitionFromLLM(word, sentence)
-    
+
     loadingWordsRef.current.delete(word)
     setLoadingWords(prev => {
       const next = new Set(prev)
@@ -253,16 +374,7 @@ export default function MarkdownViewer({
       // Store word -> lemma mapping (so we can find same lemma variants later)
       wordToLemmaRef.current.set(word.toLowerCase(), lemma.toLowerCase())
       
-      // Also store in lemmaCacheRef for backward compatibility
-      if (lemma.toLowerCase() !== word.toLowerCase()) {
-        const cacheKey = `${language}:${word.toLowerCase()}`
-        const cacheValue = JSON.stringify({ 
-          lemma, 
-          definition: result.definition, 
-          related_words: result.related_words 
-        })
-        lemmaCacheRef.current.set(cacheKey, cacheValue)
-      }
+      // Note: lemmaCacheRef is already set in getWordDefinitionFromLLM, no need to set again here
       
       // Store related_words mapping for all related words
       if (result.related_words && result.related_words.length > 0) {
@@ -342,207 +454,173 @@ export default function MarkdownViewer({
     processNode(containerRef.current)
   }, [content, language, handleWordClick, clickable])
 
+  // Vocabulary highlighting: highlight vocabularies based on span_id and related_words
+  useEffect(() => {
+    if (!containerRef.current) return
+    
+    // Remove all vocab-saved classes first
+    containerRef.current.querySelectorAll('.vocab-saved').forEach(el => {
+      el.classList.remove('vocab-saved')
+    })
+    
+    // Process each vocabulary
+    vocabularies.forEach(v => {
+      if (!v.span_id || !v.related_words || v.related_words.length === 0) return
+      
+      const spanId = v.span_id
+      
+      // Find the clicked word's span by span_id
+      const clickedSpan = containerRef.current!.querySelector(`[data-span-id="${spanId}"]`) as HTMLElement
+      if (!clickedSpan) return
+      
+      // Get all vocab-word spans in container, in DOM order
+      const allSpans = Array.from(containerRef.current!.querySelectorAll('.vocab-word')) as HTMLElement[]
+      
+      // Find clicked span index
+      const clickedIndex = allSpans.findIndex(span => span.getAttribute('data-span-id') === spanId)
+      if (clickedIndex === -1) return
+      
+      // Find clicked word's index in related_words array
+      const clickedWord = clickedSpan.getAttribute('data-word')
+      if (!clickedWord) return
+      
+      const clickedWordIndex = v.related_words.findIndex(w => w.toLowerCase() === clickedWord.toLowerCase())
+      if (clickedWordIndex === -1) return
+      
+      // Color clicked word first
+      clickedSpan.classList.add('vocab-saved')
+      
+      // Find words to the left (before clicked word in related_words)
+      // Search backwards from clickedIndex
+      for (let i = clickedWordIndex - 1; i >= 0; i--) {
+        const targetWord = v.related_words[i]
+        let found = false
+        
+        // Search backwards from clickedIndex
+        for (let j = clickedIndex - 1; j >= 0; j--) {
+          const span = allSpans[j]
+          const word = span.getAttribute('data-word')
+          
+          if (word && word.toLowerCase() === targetWord.toLowerCase()) {
+            span.classList.add('vocab-saved')
+            found = true
+            break
+          }
+        }
+        
+        if (!found) break // If we can't find a word, stop searching
+      }
+      
+      // Find words to the right (after clicked word in related_words)
+      // Search forwards from clickedIndex
+      for (let i = clickedWordIndex + 1; i < v.related_words.length; i++) {
+        const targetWord = v.related_words[i]
+        let found = false
+        
+        // Search forwards from clickedIndex
+        for (let j = clickedIndex + 1; j < allSpans.length; j++) {
+          const span = allSpans[j]
+          const word = span.getAttribute('data-word')
+          
+          if (word && word.toLowerCase() === targetWord.toLowerCase()) {
+            span.classList.add('vocab-saved')
+            found = true
+            break
+          }
+        }
+        
+        if (!found) break // If we can't find a word, stop searching
+      }
+    })
+  }, [vocabularies])
+
   // Update definition visibility when openSpanIds change
   useEffect(() => {
     if (!containerRef.current) return
-
-    const wordSpans = containerRef.current.querySelectorAll('.vocab-word')
-    wordSpans.forEach((span) => {
-      const word = span.getAttribute('data-word')
-      const spanId = span.getAttribute('data-span-id')
-      if (!word || !spanId) return
-      
-      let meaning: string | null = null
-      let displayLemma: string = word // Default to word if lemma not found
-      
-      // Try to find lemma from wordToLemmaRef first
-      if (wordToLemmaRef.current.has(word.toLowerCase())) {
-        const lemma = wordToLemmaRef.current.get(word.toLowerCase())
-        if (lemma) {
-          displayLemma = lemma
-          meaning = wordDefinitions[lemma] || null
-        }
-      }
-      // Fallback: try lemmaCacheRef
-      if (!meaning) {
-        const wordCacheKey = language ? `${language}:${word.toLowerCase()}` : null
-        if (wordCacheKey && lemmaCacheRef.current.has(wordCacheKey)) {
-          const cached = lemmaCacheRef.current.get(wordCacheKey)
-          if (cached) {
-            try {
-              const { lemma } = JSON.parse(cached)
-              displayLemma = lemma
-              meaning = wordDefinitions[lemma] || null
-            } catch (e) {
-              console.warn('[Dictionary] Failed to parse cached value')
-            }
+    
+    // Remove definitions for spans that are no longer open
+    containerRef.current.querySelectorAll('.word-definition').forEach(defSpan => {
+      const prevSpan = defSpan.previousElementSibling as HTMLElement
+      if (prevSpan && prevSpan.classList.contains('vocab-word')) {
+        const spanId = prevSpan.getAttribute('data-span-id')
+        if (spanId && !openSpanIds.has(spanId)) {
+          const afterDef = defSpan.nextSibling
+          defSpan.remove()
+          if (afterDef) {
+            prevSpan.parentNode?.insertBefore(afterDef, prevSpan.nextSibling)
           }
         }
       }
-      // Fallback: try word directly (for old cache format or errors)
-      if (!meaning) {
-        meaning = wordDefinitions[word] || null
-      }
+    })
+    
+    // Add definitions for open spans
+    openSpanIds.forEach(spanId => {
+      const span = containerRef.current!.querySelector(`[data-span-id="${spanId}"]`) as HTMLElement
+      if (!span) return
       
-      // Check if word is in vocabulary and add/remove class
-      // Compare with lemma, original word, and related_words
-      const isInVocabulary = vocabularies.some(
-        v => v.lemma.toLowerCase() === displayLemma.toLowerCase() ||
-             v.lemma.toLowerCase() === word.toLowerCase() ||
-             v.word.toLowerCase() === word.toLowerCase() ||
-             (v.related_words && v.related_words.some(rw => rw.toLowerCase() === word.toLowerCase()))
-      )
+      const word = span.getAttribute('data-word')
+      if (!word) return
       
-      if (isInVocabulary) {
-        span.classList.add('vocab-saved')
-      } else {
-        span.classList.remove('vocab-saved')
-      }
+      const { meaning, displayLemma } = getWordMeaning(word)
+      const isLoading = loadingWords.has(word) || loadingWordsRef.current.has(word)
       
-      const isVisible = openSpanIds.has(spanId)
-      const isLoading = loadingWords.has(word) && isVisible
-      
-      // Remove existing definition
+      // Remove existing definition if it exists
       const existingDef = span.nextElementSibling
       if (existingDef && existingDef.classList.contains('word-definition')) {
-        // Save what comes after the definition
         const afterDef = existingDef.nextSibling
         existingDef.remove()
-        // Restore what was after the definition to after the word
         if (afterDef) {
           span.parentNode?.insertBefore(afterDef, span.nextSibling)
         }
       }
-
-      // Add new definition or loading indicator
-      if (isVisible || isLoading) {
-        // Save what comes after the word
+      
+      // Only show if loading or has meaning
+      if (isLoading || meaning) {
         const afterWord = span.nextSibling
-        
         const defSpan = document.createElement('span')
         defSpan.className = 'word-definition'
         
-        if (isLoading) {
+        if (isLoading && !meaning) {
           defSpan.innerHTML = `<strong>${word}</strong>: <em>Loading...</em>`
         } else if (meaning) {
-          // Check if word is already in vocabulary
           const isInVocabulary = vocabularies.some(v => v.lemma.toLowerCase() === displayLemma.toLowerCase())
-          const sentence = extractSentence(span as HTMLElement)
+          const sentence = extractSentence(span)
+          const relatedWords = getRelatedWords(word)
           
-          // Get related_words from wordDefinitions (stored when word was clicked)
-          // We need to find the related_words for this lemma
-          let relatedWords: string[] | undefined = undefined
-          // Try to find related_words from wordToLemmaRef and lemmaCacheRef
-          const wordCacheKey = language ? `${language}:${word.toLowerCase()}` : null
-          if (wordCacheKey && lemmaCacheRef.current.has(wordCacheKey)) {
-            const cached = lemmaCacheRef.current.get(wordCacheKey)
-            if (cached) {
-              try {
-                const { related_words } = JSON.parse(cached)
-                relatedWords = related_words
-              } catch (e) {
-                // Ignore parse error
-              }
-            }
-          }
-          
-          // Create definition HTML with vocabulary button
           let defHtml = `<strong>${displayLemma}</strong>: ${meaning}`
           
           if (articleId && onAddVocabulary) {
-            const relatedWordsStr = relatedWords ? JSON.stringify(relatedWords).replace(/"/g, '&quot;') : ''
-            if (isInVocabulary) {
-              defHtml += ` <button class="vocab-btn vocab-remove" data-word="${word}" data-lemma="${displayLemma}" data-definition="${meaning}" data-sentence="${sentence.replace(/"/g, '&quot;')}" data-related-words="${relatedWordsStr}" style="margin-left: 6px; padding: 1px 4px; font-size: 0.7rem; background: #ef4444; color: white; border: none; border-radius: 3px; cursor: pointer; min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;" title="Remove from vocabulary">−</button>`
-            } else {
-              defHtml += ` <button class="vocab-btn vocab-add" data-word="${word}" data-lemma="${displayLemma}" data-definition="${meaning}" data-sentence="${sentence.replace(/"/g, '&quot;')}" data-related-words="${relatedWordsStr}" style="margin-left: 6px; padding: 1px 4px; font-size: 0.7rem; background: #10b981; color: white; border: none; border-radius: 3px; cursor: pointer; min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;" title="Add to vocabulary">+</button>`
-            }
+            defHtml += createVocabularyButtonHTML(word, displayLemma, meaning, sentence, relatedWords, spanId, isInVocabulary)
           }
           
           defSpan.innerHTML = defHtml
           
-          // Attach click handlers to vocabulary buttons
           const addBtn = defSpan.querySelector('.vocab-add')
           const removeBtn = defSpan.querySelector('.vocab-remove')
           
           if (addBtn) {
-            addBtn.addEventListener('click', async (e) => {
+            addBtn.addEventListener('click', (e) => {
               e.stopPropagation()
-              const btn = e.target as HTMLElement
-              const word = btn.getAttribute('data-word') || ''
-              const lemma = btn.getAttribute('data-lemma') || ''
-              const definition = btn.getAttribute('data-definition') || ''
-              const sentence = btn.getAttribute('data-sentence') || ''
-              const relatedWordsStr = btn.getAttribute('data-related-words') || ''
-              let relatedWords: string[] | undefined = undefined
-              if (relatedWordsStr) {
-                try {
-                  relatedWords = JSON.parse(relatedWordsStr.replace(/&quot;/g, '"'))
-                } catch (e) {
-                  // Ignore parse error
-                }
-              }
-              
-              try {
-                const response = await fetch('/api/dictionary/vocabularies', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    article_id: articleId,
-                    word,
-                    lemma,
-                    definition,
-                    sentence,
-                    language,
-                    related_words: relatedWords
-                  })
-                })
-                
-                if (response.ok) {
-                  const newVocab = await response.json()
-                  onAddVocabulary?.(newVocab)
-                }
-              } catch (error) {
-                console.error('Failed to add vocabulary:', error)
-              }
+              handleAddVocabularyClick(e.currentTarget as HTMLElement)
             })
           }
           
           if (removeBtn) {
-            removeBtn.addEventListener('click', async (e) => {
+            removeBtn.addEventListener('click', (e) => {
               e.stopPropagation()
-              const btn = e.target as HTMLElement
-              const lemma = btn.getAttribute('data-lemma') || ''
-              
-              const vocab = vocabularies.find(v => v.lemma.toLowerCase() === lemma.toLowerCase())
-              if (vocab) {
-                try {
-                  const response = await fetch(`/api/dictionary/vocabularies/${vocab.id}`, {
-                    method: 'DELETE'
-                  })
-                  
-                  if (response.ok) {
-                    // Remove from vocabularies list (parent component will handle)
-                    // We'll trigger a re-render by updating state
-                    window.dispatchEvent(new CustomEvent('vocabulary-removed', { detail: vocab.id }))
-                  }
-                } catch (error) {
-                  console.error('Failed to remove vocabulary:', error)
-                }
-              }
+              handleRemoveVocabularyClick(e.currentTarget as HTMLElement)
             })
           }
         }
         
-        // Insert definition after the word
         span.parentNode?.insertBefore(defSpan, afterWord)
         
-        // Restore what was after the word to after the definition
         if (afterWord) {
           span.parentNode?.insertBefore(afterWord, defSpan.nextSibling)
         }
       }
     })
-  }, [openSpanIds, wordDefinitions, loadingWords, vocabularies, articleId, onAddVocabulary, language])
+  }, [openSpanIds, wordDefinitions, loadingWords, vocabularies, articleId, onAddVocabulary, language, getWordMeaning, getRelatedWords, createVocabularyButtonHTML, handleAddVocabularyClick, handleRemoveVocabularyClick])
 
   const className = dark
     ? "prose prose-invert max-w-none text-white prose-headings:text-white prose-p:text-white prose-strong:text-white prose-li:text-white prose-ul:text-white prose-ol:text-white prose-a:text-emerald-400 prose-a:no-underline hover:prose-a:text-emerald-300 prose-code:text-emerald-300 prose-pre:bg-slate-800 prose-blockquote:text-white prose-blockquote:border-slate-600"

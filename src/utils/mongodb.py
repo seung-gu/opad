@@ -607,7 +607,8 @@ def save_vocabulary(
     definition: str,
     sentence: str,
     language: str,
-    related_words: list[str] | None = None
+    related_words: list[str] | None = None,
+    span_id: str | None = None
 ) -> str | None:
     """Save vocabulary word to MongoDB.
     
@@ -619,6 +620,7 @@ def save_vocabulary(
         sentence: Sentence context
         language: Language
         related_words: All words in sentence belonging to this lemma (e.g., for separable verbs)
+        span_id: Span ID of the clicked word
         
     Returns:
         Vocabulary ID if successful, None otherwise
@@ -637,7 +639,16 @@ def save_vocabulary(
             'lemma': lemma.lower()
         })
         
+        # Normalize span_id: convert empty string to None
+        normalized_span_id = span_id if span_id and span_id.strip() else None
+        
         if existing:
+            # Update span_id if provided and different
+            if normalized_span_id and existing.get('span_id') != normalized_span_id:
+                collection.update_one(
+                    {'_id': existing['_id']},
+                    {'$set': {'span_id': normalized_span_id, 'updated_at': datetime.now(timezone.utc)}}
+                )
             # Return existing vocabulary ID
             return existing['_id']
         
@@ -651,6 +662,7 @@ def save_vocabulary(
             'sentence': sentence,
             'language': language,
             'related_words': [w.lower() for w in (related_words or [])],  # Store lowercase for case-insensitive lookup
+            'span_id': normalized_span_id,
             'created_at': datetime.now(timezone.utc),
             'updated_at': datetime.now(timezone.utc)
         }
@@ -704,6 +716,7 @@ def get_vocabularies(article_id: str | None = None) -> list[dict]:
                 'lemma': vocab['lemma'],
                 'definition': vocab['definition'],
                 'sentence': vocab['sentence'],
+                'span_id': vocab.get('span_id'),  # Include span_id in response
                 'language': vocab['language'],
                 'related_words': vocab.get('related_words', None),  # May not exist for old entries
                 'created_at': vocab['created_at']

@@ -78,6 +78,7 @@ class VocabularyRequest(BaseModel):
     sentence: str = Field(..., description="Sentence context")
     language: str = Field(..., description="Language")
     related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma")
+    span_id: Optional[str] = Field(None, description="Span ID of the clicked word")
 
 
 class VocabularyResponse(BaseModel):
@@ -90,4 +91,5 @@ class VocabularyResponse(BaseModel):
     sentence: str = Field(..., description="Sentence context")
     language: str = Field(..., description="Language")
     related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma")
+    span_id: Optional[str] = Field(None, description="Span ID of the clicked word")
     created_at: datetime = Field(..., description="Creation timestamp")
