@@ -49,6 +49,13 @@
 
 ## Other Issues
 
+### Completed
+- ✅ LLM 유틸리티 리팩토링 *(2026-01-19)*
+  - `utils/llm.py`: 공통 OpenAI API 호출 함수 분리 (`call_openai_chat`, `parse_json_from_content`, `get_llm_error_response`)
+  - `utils/prompts.py`: 프롬프트 템플릿 분리 (`build_word_definition_prompt`)
+  - `api/routes/dictionary.py`: Dictionary endpoint 간소화 (에러 처리 및 프롬프트 분리)
+  - Python 3.11+ 스타일 타입 힌트 적용 (`Optional[X]` → `X | None`, `Tuple[X, Y]` → `tuple[X, Y]`)
+
 ### Open
 - [#24](https://github.com/seung-gu/opad/issues/24) - Roadmap: 3-service split (web/api/worker)
 - [#26](https://github.com/seung-gu/opad/issues/26) - [Enhancement] Replace polling with SSE for real-time progress updates

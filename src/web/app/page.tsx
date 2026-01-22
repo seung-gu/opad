@@ -80,7 +80,7 @@ Choose a topic you're interested in and start learning with content that matches
     // Add timestamp to bypass cache
     const timestamp = new Date().getTime()
     // Call FastAPI through web API route
-    fetch(`/api/article?article_id=${targetArticleId}&t=${timestamp}`, {
+    fetch(`/api/articles/${targetArticleId}/content?t=${timestamp}`, {
       signal: abortController.signal
     })
       .then(res => {
@@ -126,13 +126,16 @@ Choose a topic you're interested in and start learning with content that matches
   }, [currentArticleId])
 
   useEffect(() => {
-    // Call loadContent when currentArticleId changes or when generating becomes false
-    // loadContent handles the case when currentArticleId is null (shows "No article selected" message)
+    // Call loadContent when currentArticleId changes
+    // loadContent handles the case when currentArticleId is null (shows welcome message)
     // Only load if not currently generating (to prevent flicker when cancelling duplicate)
-    // When generating becomes false, reload content to ensure it's up to date
     // Note: We call loadContent even when currentArticleId is null to show welcome message
+    // Don't auto-load when generating becomes false - let the completion handler manage that
     if (!generating) {
-      loadContent(true)
+      // Only load if currentArticleId is set, or if content is empty (show welcome message)
+      if (currentArticleId || !content) {
+        loadContent(true)
+      }
     }
     
     // Cleanup: cancel any pending fetch when article_id changes or component unmounts
@@ -185,8 +188,10 @@ Choose a topic you're interested in and start learning with content that matches
           if (data.status === 'completed') {
             setGenerating(false)
             setCurrentJobId(null) // Clear jobId
-            // Load content without showing loading screen
-            loadContent(false)
+            // Show success message instead of loading article
+            const successMessage = `# ✅ Article Generation Complete!\n\nYour article has been successfully generated.\n\nPlease go to **Articles** page to view and read your new article.`
+            setContent(successMessage)
+            setCurrentArticleId(null) // Clear articleId so it doesn't auto-load
             // Clear interval immediately
             if (statusPollIntervalRef.current) {
               clearInterval(statusPollIntervalRef.current)
@@ -389,7 +394,7 @@ Choose a topic you're interested in and start learning with content that matches
         </div>
       )}
 
-      <MarkdownViewer content={content} dark={false} />
+      <MarkdownViewer content={content} dark={false} clickable={false} />
     </main>
   )
 }

@@ -55,12 +55,6 @@ class ReadingMaterialCreator():
             config=self.tasks_config['adapt_news_article']
         )
 
-    @task
-    def add_vocabulary(self) -> Task:
-        return Task(
-            config=self.tasks_config['add_vocabulary']
-        )
-    
     @crew
     def crew(self) -> Crew:
         """ Creates the Reading Material Creator Crew """
@@ -101,7 +95,7 @@ class ReadingMaterialCreator():
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,  # sequential process: find articles -> pick best -> adapt for learners
-            verbose=False,
+            verbose=True,
             memory=True,
             short_term_memory=short_term_memory,
             long_term_memory=long_term_memory,

@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.routes import articles, jobs, health, endpoints, stats
+from api.routes import articles, jobs, health, endpoints, stats, dictionary
 from utils.logging import setup_structured_logging
 from utils.mongodb import ensure_indexes
 
@@ -22,11 +22,14 @@ setup_structured_logging()
 
 logger = logging.getLogger(__name__)
 
+VERSION = "0.6.0"
+SERVICE_NAME = "One Story A Day API"
+
 # Create FastAPI app
 app = FastAPI(
-    title="OPAD API",
-    description="API service for OPAD - handles articles and job queue",
-    version="0.3.0"
+    title=SERVICE_NAME,
+    description="API service for One Story A Day - handles articles and job queue",
+    version=VERSION
 )
 
 # CORS configuration for cross-origin requests from Next.js
@@ -51,6 +54,7 @@ app.include_router(jobs.router)
 app.include_router(health.router)
 app.include_router(endpoints.router)
 app.include_router(stats.router)
+app.include_router(dictionary.router)
 
 
 @app.on_event("startup")
@@ -67,8 +71,8 @@ async def startup():
 async def root():
     """Root endpoint."""
     return {
-        "service": "OPAD API",
-        "version": "0.3.0",
+        "service": SERVICE_NAME,
+        "version": VERSION,
         "status": "running"
     }
 

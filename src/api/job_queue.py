@@ -179,6 +179,7 @@ def dequeue_job() -> Optional[dict]:
     """
     client = get_redis_client()
     if not client:
+        logger.debug("[DEQUEUE] Redis client unavailable, cannot dequeue job")
         return None
     
     try:
@@ -189,11 +190,14 @@ def dequeue_job() -> Optional[dict]:
         result = client.blpop(QUEUE_NAME, timeout=1)
         if result:
             _, job_data_str = result  # Unpack (queue_name, data)
-            return json.loads(job_data_str)
-        return None  # Timeout (queue was empty for 1 second)
+            job_data = json.loads(job_data_str)
+            logger.debug("[DEQUEUE] Successfully dequeued job", extra={"jobId": job_data.get('job_id')})
+            return job_data
+        # Timeout (queue was empty for 1 second) - this is normal, don't log
+        return None
     except (RedisError, json.JSONDecodeError) as e:
-        # Don't log every dequeue failure (worker polls continuously)
-        # Initial connection errors already logged in get_redis_client
+        # Log dequeue errors (these indicate real problems)
+        logger.warning("[DEQUEUE] Failed to dequeue job", extra={"error": str(e), "errorType": type(e).__name__})
         return None
 
 

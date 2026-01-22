@@ -12,12 +12,38 @@ from fastapi.responses import HTMLResponse
 _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
-from utils.mongodb import get_mongodb_client, get_database_stats
+from utils.mongodb import get_mongodb_client, get_database_stats, get_vocabulary_stats
 from api.job_queue import get_job_stats
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/stats", tags=["stats"])
+
+
+@router.get("")
+async def get_database_stats_endpoint():
+    """Get MongoDB database and Redis statistics.
+    
+    Returns information about collection size, index size, document counts, job statistics, etc.
+    Useful for debugging disk space issues and job processing.
+    """
+    _check_mongodb_connection()
+    
+    stats = get_database_stats()
+    if not stats:
+        raise HTTPException(status_code=503, detail="Failed to retrieve database statistics")
+    
+    # Get job statistics from Redis
+    job_stats = get_job_stats()
+    if job_stats:
+        stats.update({f'job_{k}': v for k, v in job_stats.items()})
+    
+    # Get vocabulary statistics
+    vocab_stats = get_vocabulary_stats()
+    if vocab_stats:
+        stats.update({f'vocab_{k}': v for k, v in vocab_stats.items()})
+    
+    return _render_stats_html(stats)
 
 
 def _check_mongodb_connection() -> None:
@@ -196,10 +222,63 @@ def _render_stats_html(stats: dict) -> HTMLResponse:
                 </div>
             </div>
 
-            <div class="mt-6 text-center">
+            <!-- Vocabulary Collection Section -->
+            <div class="bg-white rounded-lg shadow-lg overflow-hidden mt-8">
+                <div class="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white p-6">
+                    <h2 class="text-2xl font-semibold mb-2">Vocabularies (MongoDB)</h2>
+                    <p class="text-emerald-100">Collection Overview</p>
+                </div>
+
+                <div class="p-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                        <div class="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
+                            <div class="text-sm text-emerald-600 font-medium mb-1">Total Words</div>
+                            <div class="text-3xl font-bold text-emerald-900">{_format_number(stats.get('vocab_total_documents', 0))}</div>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                            <div class="text-sm text-gray-600 font-medium mb-1">Data Size</div>
+                            <div class="text-2xl font-bold text-gray-900">
+                                {stats.get('vocab_data_size_mb', 0):.2f} MB
+                            </div>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                            <div class="text-sm text-gray-600 font-medium mb-1">Total Size</div>
+                            <div class="text-2xl font-bold text-gray-900">
+                                {stats.get('vocab_total_size_mb', 0):.2f} MB
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-8">
+                        <h3 class="text-xl font-semibold text-gray-900 mb-4">By Language</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+"""
+    
+    # Add language breakdown if available
+    vocab_by_language = stats.get('vocab_by_language', {})
+    if vocab_by_language:
+        for lang, count in sorted(vocab_by_language.items(), key=lambda x: x[1], reverse=True):
+            html += f"""
+                            <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                <div class="text-sm text-gray-600 font-medium mb-1">{lang}</div>
+                                <div class="text-2xl font-bold text-gray-900">{_format_number(count)}</div>
+                            </div>"""
+    else:
+        html += "                            <div class='text-gray-500 col-span-3 text-center py-4'>No vocabulary data available</div>"
+    
+    html += """
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-6 text-center space-x-4">
                 <button onclick="window.location.reload()" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                     Refresh Statistics
                 </button>
+                <a href="/dictionary/stats" class="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors inline-block">
+                    View Vocabulary List
+                </a>
             </div>
         </div>
     </body>
@@ -207,37 +286,3 @@ def _render_stats_html(stats: dict) -> HTMLResponse:
     """
     
     return HTMLResponse(content=html)
-
-
-@router.get("")
-async def get_database_stats_endpoint():
-    """Get MongoDB database statistics.
-    
-    Returns information about collection size, index size, document counts, etc.
-    Useful for debugging disk space issues.
-    
-    Returns HTML page for browser requests.
-    """
-    _check_mongodb_connection()
-    
-    stats = get_database_stats()
-    if not stats:
-        raise HTTPException(status_code=503, detail="Failed to retrieve database statistics")
-    
-    # Get job statistics from Redis
-    job_stats = get_job_stats()
-    if job_stats:
-        stats['job_queued'] = job_stats.get('queued', 0)
-        stats['job_running'] = job_stats.get('running', 0)
-        stats['job_completed'] = job_stats.get('completed', 0)
-        stats['job_failed'] = job_stats.get('failed', 0)
-        stats['job_total'] = job_stats.get('total', 0)
-    else:
-        # Redis unavailable - set defaults
-        stats['job_queued'] = 0
-        stats['job_running'] = 0
-        stats['job_completed'] = 0
-        stats['job_failed'] = 0
-        stats['job_total'] = 0
-    
-    return _render_stats_html(stats)

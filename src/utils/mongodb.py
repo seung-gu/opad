@@ -2,6 +2,7 @@
 
 import os
 import logging
+import uuid
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
@@ -19,6 +20,7 @@ pymongo_logger.setLevel(logging.WARNING)
 MONGO_URL = os.getenv('MONGO_URL')
 DATABASE_NAME = os.getenv('MONGODB_DATABASE', 'opad')
 COLLECTION_NAME = 'articles'
+VOCABULARY_COLLECTION_NAME = 'vocabularies'
 
 _client_cache = None
 _connection_attempted = False
@@ -598,6 +600,170 @@ def delete_article(article_id: str) -> bool:
         return False
 
 
+def save_vocabulary(
+    article_id: str,
+    word: str,
+    lemma: str,
+    definition: str,
+    sentence: str,
+    language: str,
+    related_words: list[str] | None = None,
+    span_id: str | None = None
+) -> str | None:
+    """Save vocabulary word to MongoDB.
+    
+    Args:
+        article_id: Article ID where the word was found
+        word: Original word clicked
+        lemma: Dictionary form (lemma)
+        definition: Word definition
+        sentence: Sentence context
+        language: Language
+        related_words: All words in sentence belonging to this lemma (e.g., for separable verbs)
+        span_id: Span ID of the clicked word
+        
+    Returns:
+        Vocabulary ID if successful, None otherwise
+    """
+    client = get_mongodb_client()
+    if not client:
+        return None
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[VOCABULARY_COLLECTION_NAME]
+        
+        # Check if vocabulary already exists (same article_id and lemma)
+        existing = collection.find_one({
+            'article_id': article_id,
+            'lemma': lemma.lower()
+        })
+        
+        # Normalize span_id: convert empty string to None
+        normalized_span_id = span_id if span_id and span_id.strip() else None
+        
+        if existing:
+            # Update span_id if provided and different
+            if normalized_span_id and existing.get('span_id') != normalized_span_id:
+                collection.update_one(
+                    {'_id': existing['_id']},
+                    {'$set': {'span_id': normalized_span_id, 'updated_at': datetime.now(timezone.utc)}}
+                )
+            # Return existing vocabulary ID
+            return existing['_id']
+        
+        # Create new vocabulary
+        vocabulary_doc = {
+            '_id': str(uuid.uuid4()),
+            'article_id': article_id,
+            'word': word,
+            'lemma': lemma.lower(),  # Store lowercase for case-insensitive lookup
+            'definition': definition,
+            'sentence': sentence,
+            'language': language,
+            'related_words': [w.lower() for w in (related_words or [])],  # Store lowercase for case-insensitive lookup
+            'span_id': normalized_span_id,
+            'created_at': datetime.now(timezone.utc),
+            'updated_at': datetime.now(timezone.utc)
+        }
+        
+        collection.insert_one(vocabulary_doc)
+        vocabulary_id = vocabulary_doc['_id']
+        
+        logger.info("Vocabulary saved", extra={
+            "vocabularyId": vocabulary_id,
+            "articleId": article_id,
+            "lemma": lemma
+        })
+        return vocabulary_id
+    except PyMongoError as e:
+        logger.error("Failed to save vocabulary", extra={
+            "articleId": article_id,
+            "lemma": lemma,
+            "error": str(e)
+        })
+        return None
+
+
+def get_vocabularies(article_id: str | None = None) -> list[dict]:
+    """Get vocabularies from MongoDB.
+    
+    Args:
+        article_id: Optional article ID to filter by
+        
+    Returns:
+        List of vocabulary documents
+    """
+    client = get_mongodb_client()
+    if not client:
+        return []
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[VOCABULARY_COLLECTION_NAME]
+        
+        query = {}
+        if article_id:
+            query['article_id'] = article_id
+        
+        # Convert ObjectId to string and format for API response
+        result = []
+        for vocab in collection.find(query).sort('created_at', -1):
+            result.append({
+                'id': vocab['_id'],
+                'article_id': vocab['article_id'],
+                'word': vocab['word'],
+                'lemma': vocab['lemma'],
+                'definition': vocab['definition'],
+                'sentence': vocab['sentence'],
+                'span_id': vocab.get('span_id'),  # Include span_id in response
+                'language': vocab['language'],
+                'related_words': vocab.get('related_words', None),  # May not exist for old entries
+                'created_at': vocab['created_at']
+            })
+        
+        return result
+    except PyMongoError as e:
+        logger.error("Failed to get vocabularies", extra={
+            "articleId": article_id,
+            "error": str(e)
+        })
+        return []
+
+
+def delete_vocabulary(vocabulary_id: str) -> bool:
+    """Delete vocabulary from MongoDB.
+    
+    Args:
+        vocabulary_id: Vocabulary ID to delete
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    client = get_mongodb_client()
+    if not client:
+        return False
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[VOCABULARY_COLLECTION_NAME]
+        
+        result = collection.delete_one({'_id': vocabulary_id})
+        
+        if result.deleted_count == 0:
+            logger.warning("Vocabulary not found for deletion", extra={"vocabularyId": vocabulary_id})
+            return False
+        
+        logger.info("Vocabulary deleted", extra={"vocabularyId": vocabulary_id})
+        return True
+    except PyMongoError as e:
+        logger.error("Failed to delete vocabulary", extra={
+            "vocabularyId": vocabulary_id,
+            "error": str(e)
+        })
+        return False
+
+
 def get_database_stats() -> Optional[dict]:
     """Get MongoDB database and collection statistics.
     
@@ -673,3 +839,136 @@ def get_database_stats() -> Optional[dict]:
     except PyMongoError as e:
         logger.error("Failed to get database stats", extra={"error": str(e)})
         return None
+
+
+def get_vocabulary_stats() -> Optional[dict]:
+    """Get vocabulary collection statistics.
+    
+    Returns information about:
+    - Collection size (dataSize)
+    - Index size (indexSize)
+    - Total size (totalSize)
+    - Document count
+    - Average document size
+    - Count by language
+    
+    Returns:
+        Dictionary with vocabulary statistics or None if unavailable
+    """
+    client = get_mongodb_client()
+    if not client:
+        return None
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[VOCABULARY_COLLECTION_NAME]
+        
+        # Get collection stats
+        coll_stats = db.command("collStats", VOCABULARY_COLLECTION_NAME)
+        
+        # Get document count
+        total_count = collection.count_documents({})
+        
+        # Get count by language using aggregation
+        language_counts = {}
+        for doc in collection.aggregate([
+            {'$group': {'_id': '$language', 'count': {'$sum': 1}}},
+            {'$sort': {'count': -1}}
+        ]):
+            lang = doc.get('_id') or 'Unknown'
+            language_counts[lang] = doc.get('count', 0)
+        
+        # Format sizes in MB
+        data_size_bytes = coll_stats.get('size', 0)
+        index_size_bytes = coll_stats.get('totalIndexSize', 0)
+        storage_size_bytes = coll_stats.get('storageSize', 0)
+        total_size_bytes = coll_stats.get('totalSize', storage_size_bytes + index_size_bytes)
+        
+        data_size_mb = data_size_bytes / (1024 * 1024)
+        index_size_mb = index_size_bytes / (1024 * 1024)
+        storage_size_mb = storage_size_bytes / (1024 * 1024)
+        total_size_mb = total_size_bytes / (1024 * 1024)
+        
+        result = {
+            'total_documents': total_count,
+            'data_size_mb': round(data_size_mb, 2),
+            'data_size_bytes': data_size_bytes,
+            'index_size_mb': round(index_size_mb, 2),
+            'index_size_bytes': index_size_bytes,
+            'storage_size_mb': round(storage_size_mb, 2),
+            'storage_size_bytes': storage_size_bytes,
+            'total_size_mb': round(total_size_mb, 2),
+            'total_size_bytes': total_size_bytes,
+            'avg_document_size_bytes': round(coll_stats.get('avgObjSize', 0), 2),
+            'by_language': language_counts,
+        }
+        
+        logger.info("Vocabulary statistics retrieved", extra={
+            "totalDocuments": total_count,
+            "dataSizeMB": round(data_size_mb, 2)
+        })
+        
+        return result
+    except PyMongoError as e:
+        logger.error("Failed to get vocabulary stats", extra={"error": str(e)})
+        return None
+
+
+def get_vocabulary_word_counts(language: str | None = None) -> list[dict]:
+    """Get vocabulary word counts grouped by language and lemma.
+    
+    Args:
+        language: Optional language filter
+        
+    Returns:
+        List of dictionaries with language, lemma, count, and article_ids:
+        [
+            {'language': 'English', 'lemma': 'agent', 'count': 5, 'article_ids': ['id1', 'id2']},
+            ...
+        ]
+    """
+    client = get_mongodb_client()
+    if not client:
+        return []
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[VOCABULARY_COLLECTION_NAME]
+        
+        # Build aggregation pipeline
+        pipeline = []
+        
+        # Filter by language if provided
+        if language:
+            pipeline.append({'$match': {'language': language}})
+        
+        # Group by language and lemma
+        pipeline.extend([
+            {
+                '$group': {
+                    '_id': {
+                        'language': '$language',
+                        'lemma': '$lemma'
+                    },
+                    'count': {'$sum': 1},
+                    'article_ids': {'$addToSet': '$article_id'}
+                }
+            },
+            {
+                '$sort': {'count': -1, '_id.lemma': 1}
+            }
+        ])
+        
+        result = []
+        for doc in collection.aggregate(pipeline):
+            result.append({
+                'language': doc['_id']['language'],
+                'lemma': doc['_id']['lemma'],
+                'count': doc['count'],
+                'article_ids': doc['article_ids']
+            })
+        
+        return result
+    except PyMongoError as e:
+        logger.error("Failed to get vocabulary word counts", extra={"error": str(e)})
+        return []
