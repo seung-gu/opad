@@ -399,7 +399,7 @@ export default function MarkdownViewer({
       if (node.nodeType === Node.TEXT_NODE && node.textContent) {
         const text = node.textContent
         const parent = node.parentNode
-        
+
         // Skip if already processed or in code blocks
         if (!parent || parent.nodeName === 'CODE' || parent.nodeName === 'PRE') return
         if (parent instanceof HTMLElement && parent.classList.contains('vocab-word')) return
@@ -422,13 +422,15 @@ export default function MarkdownViewer({
           if (/[a-zA-Z0-9]/.test(part)) {
             const spanId = `vocab-${spanIdCounterRef.current++}`
             const wordSpan = document.createElement('span')
-            wordSpan.className = 'vocab-word user-clickable'
             wordSpan.textContent = part
             wordSpan.setAttribute('data-word', part)
             wordSpan.setAttribute('data-span-id', spanId)
-            wordSpan.onclick = (e) => {
-              e.stopPropagation()
-              handleWordClick(spanId, part)
+            if ((parent as HTMLElement).tagName === 'P'){
+              wordSpan.className = 'vocab-word user-clickable'
+              wordSpan.onclick = (e) => {
+                e.stopPropagation()
+                handleWordClick(spanId, part)
+              }
             }
             fragment.appendChild(wordSpan)
           } else {
