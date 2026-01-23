@@ -21,6 +21,7 @@ MONGO_URL = os.getenv('MONGO_URL')
 DATABASE_NAME = os.getenv('MONGODB_DATABASE', 'opad')
 COLLECTION_NAME = 'articles'
 VOCABULARY_COLLECTION_NAME = 'vocabularies'
+USERS_COLLECTION_NAME = 'users'
 
 _client_cache = None
 _connection_attempted = False
@@ -183,7 +184,7 @@ def get_article(article_id: str) -> Optional[dict]:
 def save_article_metadata(article_id: str, language: str, level: str, 
                           length: str, topic: str, status: str = 'running',
                           created_at: Optional[datetime] = None,
-                          owner_id: Optional[str] = None,
+                          user_id: Optional[str] = None,
                           job_id: Optional[str] = None) -> bool:
     """Save article metadata to MongoDB (without content).
     
@@ -201,7 +202,7 @@ def save_article_metadata(article_id: str, language: str, level: str,
                     By passing created_at from the caller, we eliminate the need to fetch
                     the saved document immediately after saving, preventing orphaned records
                     if MongoDB becomes unavailable between save and fetch operations.
-        owner_id: Optional owner ID for multi-user support
+        user_id: Optional owner ID for multi-user support
         job_id: Optional job ID for tracking generation job
         
     Returns:
@@ -232,7 +233,7 @@ def save_article_metadata(article_id: str, language: str, level: str,
             'inputs': inputs,  # Store only inputs (structured)
             'status': status,
             'updated_at': datetime.now(timezone.utc),
-            'owner_id': owner_id,
+            'user_id': user_id,
             'job_id': job_id  # Store job_id for duplicate detection
         }
         
@@ -255,13 +256,13 @@ def save_article_metadata(article_id: str, language: str, level: str,
         return False
 
 
-def ensure_indexes() -> bool:
+def _ensure_articles_indexes() -> bool:
     """Ensure MongoDB indexes exist for articles collection.
     
     Creates indexes if they don't exist:
     - created_at: descending (for get_latest_article queries)
-    - owner_id: ascending, sparse (for future multi-user queries)
-    - compound index: owner_id + inputs.* + created_at (for duplicate detection)
+    - user_id: ascending, sparse (for future multi-user queries)
+    - compound index: user_id + inputs.* + created_at (for duplicate detection)
     
     This function is idempotent - safe to call multiple times.
     Handles index name conflicts by removing old indexes with different names.
@@ -325,15 +326,15 @@ def ensure_indexes() -> bool:
         # Create index on created_at (descending) for latest article queries
         _ensure_index([('created_at', -1)], 'idx_created_at_desc')
         
-        # Create sparse index on owner_id (for future multi-user support)
-        # Sparse index only includes documents that have the owner_id field
-        _ensure_index([('owner_id', 1)], 'idx_owner_id', sparse=True)
+        # Create sparse index on user_id (for future multi-user support)
+        # Sparse index only includes documents that have the user_id field
+        _ensure_index([('user_id', 1)], 'idx_user_id', sparse=True)
         
         # Create compound index for duplicate detection
-        # This enables efficient queries on: owner_id + inputs.* + created_at
+        # This enables efficient queries on: user_id + inputs.* + created_at
         # Used by find_duplicate_article() for O(log N) duplicate detection
         _ensure_index([
-            ('owner_id', 1),
+            ('user_id', 1),
             ('inputs.language', 1),
             ('inputs.level', 1),
             ('inputs.length', 1),
@@ -343,11 +344,102 @@ def ensure_indexes() -> bool:
         
         return True
     except PyMongoError as e:
-        logger.error("Failed to create indexes", extra={"error": str(e)})
+        logger.error("Failed to create articles indexes", extra={"error": str(e)})
         return False
 
 
-def find_duplicate_article(inputs: dict, owner_id: Optional[str] = None, hours: int = 24) -> Optional[dict]:
+def _ensure_users_indexes() -> bool:
+    """Ensure MongoDB indexes exist for users collection.
+    
+    Creates indexes if they don't exist:
+    - email: unique index (for login and duplicate prevention)
+    - created_at: descending index (for latest users queries)
+    
+    This function is idempotent - safe to call multiple times.
+    Handles index name conflicts by removing old indexes with different names.
+    
+    Returns:
+        True if indexes were created/verified successfully, False otherwise
+    """
+    client = get_mongodb_client()
+    if not client:
+        return False
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[USERS_COLLECTION_NAME]
+        
+        # Helper function to ensure index with conflict handling
+        def _ensure_index(keys, name, **kwargs):
+            """Create index, removing conflicting indexes if needed."""
+            try:
+                # Try to create index with the desired name
+                collection.create_index(keys, name=name, **kwargs)
+                logger.info(f"Created/verified index: {name}")
+            except PyMongoError as e:
+                error_str = str(e)
+                # Check if error is due to index name conflict
+                if 'Index already exists with a different name' in error_str or 'IndexOptionsConflict' in error_str:
+                    # Find and drop conflicting index
+                    # Get all existing indexes
+                    existing_indexes = list(collection.list_indexes())
+                    keys_dict = dict(keys)  # Convert list of tuples to dict for comparison
+                    
+                    for idx in existing_indexes:
+                        idx_name = idx.get('name')
+                        idx_keys = idx.get('key', {})
+                        
+                        # Skip _id index and the target index name
+                        if idx_name == '_id_' or idx_name == name:
+                            continue
+                        
+                        # Compare keys: convert both to dict and compare
+                        # Note: MongoDB preserves key order, so we compare as dict
+                        if isinstance(idx_keys, dict) and keys_dict == idx_keys:
+                            logger.warning(f"Dropping conflicting index: {idx_name} (replacing with {name})")
+                            try:
+                                collection.drop_index(idx_name)
+                                # Retry creating index with desired name
+                                collection.create_index(keys, name=name, **kwargs)
+                                logger.info(f"Created index: {name} (replaced {idx_name})")
+                                return
+                            except PyMongoError as drop_error:
+                                logger.error(f"Failed to drop conflicting index {idx_name}", extra={"error": str(drop_error)})
+                                raise
+                    
+                    # If we get here, couldn't resolve conflict
+                    logger.error(f"Failed to resolve index conflict for {name}", extra={"error": error_str})
+                    raise
+                else:
+                    # Other error, re-raise
+                    raise
+        
+        # Create unique index on email (for login and duplicate prevention)
+        _ensure_index([('email', 1)], 'idx_users_email', unique=True)
+        
+        # Create index on created_at (descending) for latest users queries
+        _ensure_index([('created_at', -1)], 'idx_users_created_at')
+        
+        return True
+    except PyMongoError as e:
+        logger.error("Failed to create users indexes", extra={"error": str(e)})
+        return False
+
+
+def ensure_indexes() -> bool:
+    """Ensure all MongoDB indexes exist for all collections.
+    
+    This function is idempotent - safe to call multiple times.
+    
+    Returns:
+        True if all indexes were created/verified successfully, False otherwise
+    """
+    articles_ok = _ensure_articles_indexes()
+    users_ok = _ensure_users_indexes()
+    return articles_ok and users_ok
+
+
+def find_duplicate_article(inputs: dict, user_id: Optional[str] = None, hours: int = 24) -> Optional[dict]:
     """Find duplicate article by inputs within specified hours.
     
     Searches for articles with identical inputs created within the time window.
@@ -355,14 +447,14 @@ def find_duplicate_article(inputs: dict, owner_id: Optional[str] = None, hours: 
     
     Args:
         inputs: Article inputs dict with keys: language, level, length, topic
-        owner_id: Owner ID for user-specific search (None for anonymous)
+        user_id: Owner ID for user-specific search (None for anonymous)
         hours: Time window in hours (default: 24)
         
     Returns:
         Article document if duplicate found, None otherwise
         
     Performance:
-        Uses compound index on (owner_id, inputs.*, created_at) for O(log N) lookup
+        Uses compound index on (user_id, inputs.*, created_at) for O(log N) lookup
     """
     client = get_mongodb_client()
     if not client:
@@ -375,11 +467,11 @@ def find_duplicate_article(inputs: dict, owner_id: Optional[str] = None, hours: 
         # Calculate cutoff time
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         
-        # Build query: exact inputs match + owner_id + recent created_at
+        # Build query: exact inputs match + user_id + recent created_at
         query = {
             'inputs': inputs,  # Exact match on nested dict
             'created_at': {'$gte': cutoff},
-            'owner_id': owner_id  # None matches None (anonymous users)
+            'user_id': user_id  # None matches None (anonymous users)
         }
         
         # Find most recent matching article
@@ -392,7 +484,7 @@ def find_duplicate_article(inputs: dict, owner_id: Optional[str] = None, hours: 
             article_id = article.get('_id')
             logger.debug("Found duplicate article", extra={
                 "articleId": article_id,
-                "ownerId": owner_id,
+                "userId": user_id,
                 "inputs": inputs
             })
         
@@ -400,7 +492,7 @@ def find_duplicate_article(inputs: dict, owner_id: Optional[str] = None, hours: 
     except (ConnectionFailure, PyMongoError) as e:
         logger.error("Failed to find duplicate article", extra={
             "error": str(e),
-            "ownerId": owner_id
+            "userId": user_id
         })
         # Clear cache to force reconnection on next call
         global _client_cache
@@ -449,7 +541,7 @@ def list_articles(
     status: Optional[str] = None,
     language: Optional[str] = None,
     level: Optional[str] = None,
-    owner_id: Optional[str] = None,
+    user_id: Optional[str] = None,
     exclude_deleted: bool = True
 ) -> tuple[list[dict], int]:
     """List articles with filtering, sorting, and pagination.
@@ -460,7 +552,7 @@ def list_articles(
         status: Filter by status (e.g., 'running', 'completed', 'deleted')
         language: Filter by language
         level: Filter by level
-        owner_id: Filter by owner_id
+        user_id: Filter by user_id
         exclude_deleted: If True (default), exclude soft-deleted articles (status='deleted')
                         unless status='deleted' is explicitly requested
     
@@ -488,8 +580,8 @@ def list_articles(
             filter_query['inputs.language'] = language
         if level:
             filter_query['inputs.level'] = level
-        if owner_id:
-            filter_query['owner_id'] = owner_id
+        if user_id:
+            filter_query['user_id'] = user_id
         
         # Get total count for pagination
         total_count = collection.count_documents(filter_query)
@@ -972,3 +1064,116 @@ def get_vocabulary_word_counts(language: str | None = None) -> list[dict]:
     except PyMongoError as e:
         logger.error("Failed to get vocabulary word counts", extra={"error": str(e)})
         return []
+
+
+# ============================================================================
+# Users Collection Functions
+# ============================================================================
+
+def get_user(email: str) -> dict | None:
+    """Get user by email from MongoDB.
+    
+    Args:
+        email: User email address
+        
+    Returns:
+        User document or None if not found
+    """
+    client = get_mongodb_client()
+    if not client:
+        return None
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[USERS_COLLECTION_NAME]
+        
+        user = collection.find_one({'email': email})
+        if user:
+            # Convert _id to string for consistency
+            user['id'] = user.pop('_id')
+            return user
+        return None
+    except PyMongoError as e:
+        logger.error("Failed to get user by email", extra={"email": email, "error": str(e)})
+        return None
+
+
+def create_user(email: str, password_hash: str, name: str) -> dict | None:
+    """Create a new user in MongoDB.
+    
+    Args:
+        email: User email address (must be unique)
+        password_hash: Bcrypt hashed password
+        name: Display name
+        
+    Returns:
+        Created user document or None if creation failed
+        
+    Raises:
+        PyMongoError: If email already exists or database error occurs
+    """
+    client = get_mongodb_client()
+    if not client:
+        return None
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[USERS_COLLECTION_NAME]
+        
+        # Generate user ID (UUID)
+        user_id = uuid.uuid4().hex
+        
+        # Create user document
+        now = datetime.now(timezone.utc)
+        user_doc = {
+            '_id': user_id,
+            'email': email,
+            'password_hash': password_hash,
+            'name': name,
+            'created_at': now,
+            'updated_at': now,
+            'provider': 'email'
+        }
+        
+        collection.insert_one(user_doc)
+        
+        # Convert _id to id for consistency
+        user_doc['id'] = user_doc.pop('_id')
+        
+        logger.info("User created", extra={"userId": user_id, "email": email})
+        return user_doc
+    except PyMongoError as e:
+        error_str = str(e)
+        if 'duplicate key' in error_str.lower() or 'E11000' in error_str:
+            logger.warning("User creation failed: email already exists", extra={"email": email})
+        else:
+            logger.error("Failed to create user", extra={"email": email, "error": error_str})
+        return None
+
+
+def get_user_by_id(user_id: str) -> dict | None:
+    """Get user by ID from MongoDB.
+    
+    Args:
+        user_id: User ID (MongoDB _id)
+        
+    Returns:
+        User document or None if not found
+    """
+    client = get_mongodb_client()
+    if not client:
+        return None
+    
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[USERS_COLLECTION_NAME]
+        
+        user = collection.find_one({'_id': user_id})
+        if user:
+            # Convert _id to string for consistency
+            user['id'] = user.pop('_id')
+            return user
+        return None
+    except PyMongoError as e:
+        logger.error("Failed to get user by ID", extra={"userId": user_id, "error": str(e)})
+        return None

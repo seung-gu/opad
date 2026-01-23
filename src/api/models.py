@@ -14,7 +14,7 @@ class ArticleResponse(BaseModel):
     topic: str
     status: str = Field(..., description="Article status")
     created_at: datetime
-    owner_id: Optional[str] = Field(None, description="Owner ID for multi-user support")
+    user_id: Optional[str] = Field(None, description="User ID for multi-user support")
     job_id: Optional[str] = Field(None, description="Job ID for progress tracking")
     inputs: Optional[dict] = Field(None, description="Structured input parameters")
 
@@ -93,3 +93,14 @@ class VocabularyResponse(BaseModel):
     related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma")
     span_id: Optional[str] = Field(None, description="Span ID of the clicked word")
     created_at: datetime = Field(..., description="Creation timestamp")
+
+
+class User(BaseModel):
+    """User model for authentication."""
+    id: str = Field(..., description="User ID (MongoDB _id)")
+    email: str = Field(..., description="User email")
+    name: str = Field(..., description="Display name")
+    created_at: datetime = Field(..., description="Account creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+    last_login: Optional[datetime] = Field(None, description="Last login timestamp")
+    provider: str = Field("email", description="Authentication provider")

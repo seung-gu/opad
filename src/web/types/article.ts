@@ -14,7 +14,7 @@ export interface Article {
   topic: string
   status: ArticleStatus
   created_at: string // ISO datetime string
-  owner_id: string | null
+  user_id: string | null
   job_id?: string | null // Job ID for progress tracking
   inputs?: {
     language: string
