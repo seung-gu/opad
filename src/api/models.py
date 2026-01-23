@@ -14,7 +14,7 @@ class ArticleResponse(BaseModel):
     topic: str
     status: str = Field(..., description="Article status")
     created_at: datetime
-    owner_id: Optional[str] = Field(None, description="Owner ID for multi-user support")
+    user_id: Optional[str] = Field(None, description="User ID for multi-user support")
     job_id: Optional[str] = Field(None, description="Job ID for progress tracking")
     inputs: Optional[dict] = Field(None, description="Structured input parameters")
 
