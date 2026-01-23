@@ -70,7 +70,7 @@ For detailed architecture documentation, see [ARCHITECTURE.md](./ARCHITECTURE.md
    PYTHONPATH=src uvicorn api.main:app --reload --port 8001
    
    # Worker (Terminal 2)
-   PYTHONPATH=src python -m worker.main
+   PYTHONPATH=src uv run python -m worker.main
    
    # Web (Terminal 3)
    cd src/web

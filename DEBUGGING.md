@@ -167,7 +167,7 @@ Cursor 또는 VS Code에서 다음 확장 프로그램을 설치하세요:
 2. **FastAPI**: IDE 디버거로 실행 ("Python: FastAPI (API Server)" 선택 → `F5`)
 3. **Worker**: 터미널에서 일반 실행 (필요 시)
    ```bash
-   PYTHONPATH=src python -m worker.main
+   PYTHONPATH=src uv run python -m worker.main
    ```
 4. **Next.js**: 터미널에서 일반 실행
    ```bash
@@ -183,7 +183,7 @@ Cursor 또는 VS Code에서 다음 확장 프로그램을 설치하세요:
    ```
 3. **Worker**: 터미널에서 일반 실행 (필요 시)
    ```bash
-   PYTHONPATH=src python -m worker.main
+   PYTHONPATH=src uv run python -m worker.main
    ```
 4. **Next.js**: IDE 디버거로 실행 ("Next.js: Debug Server" 선택 → `F5`)
 
