@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.routes import articles, jobs, health, endpoints, stats, dictionary
+from api.routes import articles, jobs, health, endpoints, stats, dictionary, auth
 from utils.logging import setup_structured_logging
 from utils.mongodb import ensure_indexes
 
@@ -33,17 +33,31 @@ app = FastAPI(
 )
 
 # CORS configuration for cross-origin requests from Next.js
-# Note: allow_credentials=True requires explicit origin list (not "*")
-# Currently credentials are not needed, so we use allow_credentials=False
+# When using JWT authentication with Authorization header:
+# - If CORS_ORIGINS="*": allow_credentials must be False (browsers don't support credentials with wildcard)
+# - If CORS_ORIGINS is a specific list: allow_credentials can be True
 # For production, set CORS_ORIGINS env var with comma-separated list of allowed origins
 cors_origins_env = os.getenv("CORS_ORIGINS", "*")
-# Handle wildcard separately: FastAPI expects string "*", not list ["*"]
-# Strip whitespace from each origin to handle "origin1, origin2" format
-cors_origins = "*" if cors_origins_env == "*" else [origin.strip() for origin in cors_origins_env.split(",")]
+
+# Parse origins: handle wildcard separately from explicit origin list
+# Wildcard "*" is a string, explicit origins become a list
+if cors_origins_env == "*":
+    cors_origins = "*"
+    allow_credentials = False  # Browsers don't support credentials with wildcard
+    logger.warning(
+        "CORS configured with wildcard origin ('*'). "
+        "For production, set CORS_ORIGINS to specific domains (e.g., 'https://app.example.com')"
+    )
+else:
+    # Strip whitespace from each origin to handle "origin1, origin2" format
+    cors_origins = [origin.strip() for origin in cors_origins_env.split(",")]
+    allow_credentials = True  # Can enable credentials with specific origins
+    logger.info(f"CORS configured with specific origins: {cors_origins}")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,  # "*" (string) or ["origin1", "origin2"] (list)
-    allow_credentials=False,  # Must be False when using wildcard origins
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -55,6 +69,7 @@ app.include_router(health.router)
 app.include_router(endpoints.router)
 app.include_router(stats.router)
 app.include_router(dictionary.router)
+app.include_router(auth.router)
 
 
 @app.on_event("startup")

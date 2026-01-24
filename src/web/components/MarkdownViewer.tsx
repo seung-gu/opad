@@ -394,7 +394,6 @@ export default function MarkdownViewer({
   // Make all words clickable (only if clickable prop is true)
   useEffect(() => {
     if (!containerRef.current || !clickable) return
-
     const processNode = (node: Node) => {
       if (node.nodeType === Node.TEXT_NODE && node.textContent) {
         const text = node.textContent
