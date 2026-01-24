@@ -26,7 +26,7 @@ _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
 from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse, ArticleListResponse, User
-from api.middleware.auth import get_current_user
+from api.middleware.auth import get_current_user_required
 from api.job_queue import enqueue_job, update_job_status, get_job_status
 from utils.mongodb import (
     save_article_metadata, 
@@ -233,32 +233,36 @@ async def list_articles_endpoint(
     status: Optional[str] = None,
     language: Optional[str] = None,
     level: Optional[str] = None,
-    user_id: Optional[str] = None
+    current_user: User = Depends(get_current_user_required)
 ):
     """Get article list with filters and pagination.
-    
+
+    Returns only articles owned by the authenticated user.
+
     Query parameters:
         skip: Number of articles to skip (default: 0)
         limit: Maximum number of articles to return (default: 20, max: 100)
         status: Filter by status (optional)
         language: Filter by language (optional)
         level: Filter by level (optional)
-        user_id: Filter by user_id (optional)
-    
+
     Returns:
         ArticleListResponse with articles, total count, and pagination info
+
+    Raises:
+        HTTPException: 401 if user is not authenticated
     """
     _check_mongodb_connection()
-    
+
     # Validate limit
     if limit > 100:
         limit = 100
     if limit < 1:
         limit = 1
-    
-    # Get articles from MongoDB
+
+    # Get articles from MongoDB - automatically filter by current user
     # By default, exclude soft-deleted articles unless status='deleted' is explicitly requested
-    articles, total = list_articles(skip, limit, status, language, level, user_id, exclude_deleted=True)
+    articles, total = list_articles(skip, limit, status, language, level, current_user.id, exclude_deleted=True)
     
     # Build response list
     article_responses = []
@@ -291,28 +295,32 @@ async def list_articles_endpoint(
 async def generate_article(
     request: GenerateRequest,
     force: bool = False,
-    current_user: Optional[User] = Depends(get_current_user)
+    current_user: User = Depends(get_current_user_required)
 ):
     """Create article and start generation (unified endpoint).
-    
+
     This endpoint combines article creation and job enqueueing to prevent
     creating empty articles when duplicates are detected.
-    
+
+    Requires authentication - all articles are owned by the authenticated user.
+
     Args:
         request: Article generation parameters
         force: If True, skip duplicate check and create new article + job
-        current_user: Authenticated user (optional)
-    
-    Returns 409 Conflict if duplicate job exists (with existing_job info for user decision).
-    
-    Note: If user is authenticated, user_id is extracted from JWT token.
-    Otherwise, user_id is None (anonymous user).
+        current_user: Authenticated user (required)
+
+    Returns:
+        GenerateResponse with job_id and article_id
+
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 409 if duplicate job exists (with existing_job info for user decision)
     """
     _check_mongodb_connection()
     inputs = _prepare_inputs(request)
-    
-    # Extract user_id from JWT token if authenticated, otherwise None
-    user_id: Optional[str] = current_user.id if current_user else None
+
+    # Extract user_id from JWT token - authentication is now required
+    user_id: str = current_user.id
     
     logger.info(
         "Article generation requested",
@@ -352,70 +360,166 @@ async def generate_article(
 
 
 @router.get("/{article_id}", response_model=ArticleResponse)
-async def get_article_endpoint(article_id: str):
+async def get_article_endpoint(
+    article_id: str,
+    current_user: User = Depends(get_current_user_required)
+):
     """Get article metadata by ID.
-    
-    Returns 404 if article is soft-deleted (status='deleted').
+
+    Requires authentication - users can only access their own articles.
+
+    Args:
+        article_id: ID of the article to retrieve
+        current_user: Authenticated user (required)
+
+    Returns:
+        ArticleResponse with article metadata
+
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user doesn't own the article
+        HTTPException: 404 if article not found or soft-deleted
     """
     _validate_article(article_id)
-    
+
     article_doc = get_article(article_id)
     if not article_doc:
         # Race condition: article was deleted between validation and fetch
         raise HTTPException(status_code=404, detail="Article not found")
-    
+
     # Check if article is soft-deleted
     if article_doc.get('status') == 'deleted':
         raise HTTPException(status_code=404, detail="Article not found")
-    
+
+    # Check ownership
+    article_user_id = article_doc.get('user_id')
+    if article_user_id != current_user.id:
+        logger.warning(
+            "Unauthorized access attempt",
+            extra={
+                "articleId": article_id,
+                "articleUserId": article_user_id,
+                "requestUserId": current_user.id
+            }
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="You don't have permission to access this article"
+        )
+
     response_data = _build_article_response(article_doc)
     return ArticleResponse(**response_data)
 
 
 @router.get("/{article_id}/content")
-async def get_article_content(article_id: str):
+async def get_article_content(
+    article_id: str,
+    current_user: User = Depends(get_current_user_required)
+):
     """Get article content (markdown) from MongoDB.
-    
-    Returns 404 if article is soft-deleted (status='deleted').
+
+    Requires authentication - users can only access their own articles.
+
+    Args:
+        article_id: ID of the article to retrieve content for
+        current_user: Authenticated user (required)
+
+    Returns:
+        Markdown content of the article
+
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user doesn't own the article
+        HTTPException: 404 if article not found, soft-deleted, or content not available
     """
     from fastapi.responses import Response
-    
+
     _validate_article(article_id)
-    
+
     article_doc = get_article(article_id)
     if not article_doc:
         # Race condition: article was deleted between validation and fetch
         raise HTTPException(status_code=404, detail="Article not found")
-    
+
     # Check if article is soft-deleted
     if article_doc.get('status') == 'deleted':
         raise HTTPException(status_code=404, detail="Article not found")
-    
+
+    # Check ownership
+    article_user_id = article_doc.get('user_id')
+    if article_user_id != current_user.id:
+        logger.warning(
+            "Unauthorized content access attempt",
+            extra={
+                "articleId": article_id,
+                "articleUserId": article_user_id,
+                "requestUserId": current_user.id
+            }
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="You don't have permission to access this article"
+        )
+
     content = article_doc.get('content')
     if not content:
         raise HTTPException(status_code=404, detail="Article content not found")
-    
+
     return Response(content=content, media_type='text/markdown')
 
 
 @router.delete("/{article_id}")
-async def delete_article_endpoint(article_id: str):
+async def delete_article_endpoint(
+    article_id: str,
+    current_user: User = Depends(get_current_user_required)
+):
     """Soft delete article by setting status='deleted'.
-    
+
+    Requires authentication - users can only delete their own articles.
+
     Soft delete preserves data for potential recovery and audit trail.
     Article remains in database but is marked as deleted.
-    
+
+    Args:
+        article_id: ID of the article to delete
+        current_user: Authenticated user (required)
+
     Returns:
         Success message with deleted article_id
+
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user doesn't own the article
+        HTTPException: 404 if article not found
     """
     _validate_article(article_id)
-    
+
+    # Check ownership
+    article = get_article(article_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    article_user_id = article.get('user_id')
+    if article_user_id != current_user.id:
+        logger.warning(
+            "Unauthorized delete attempt",
+            extra={
+                "articleId": article_id,
+                "articleUserId": article_user_id,
+                "requestUserId": current_user.id
+            }
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="You don't have permission to delete this article"
+        )
+
     success = delete_article(article_id)
     if not success:
         raise HTTPException(status_code=503, detail="Failed to delete article")
-    
-    logger.info("Article deleted via API", extra={"articleId": article_id})
-    
+
+    logger.info("Article deleted via API", extra={"articleId": article_id, "userId": current_user.id})
+
     return {
         "success": True,
         "article_id": article_id,
