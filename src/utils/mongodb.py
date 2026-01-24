@@ -287,24 +287,46 @@ def _ensure_articles_indexes() -> bool:
                 logger.info(f"Created/verified index: {name}")
             except PyMongoError as e:
                 error_str = str(e)
-                # Check if error is due to index name conflict
-                if 'Index already exists with a different name' in error_str or 'IndexOptionsConflict' in error_str:
+                # Check if error is due to index conflict (name or key spec mismatch)
+                if any(conflict in error_str for conflict in [
+                    'Index already exists with a different name',
+                    'IndexOptionsConflict',
+                    'IndexKeySpecsConflict'  # Index name same but keys different (e.g., owner_id -> user_id)
+                ]):
                     # Find and drop conflicting index
                     # Get all existing indexes
                     existing_indexes = list(collection.list_indexes())
                     keys_dict = dict(keys)  # Convert list of tuples to dict for comparison
-                    
+
                     for idx in existing_indexes:
                         idx_name = idx.get('name')
                         idx_keys = idx.get('key', {})
-                        
-                        # Skip _id index and the target index name
-                        if idx_name == '_id_' or idx_name == name:
+
+                        # Skip _id index
+                        if idx_name == '_id_':
                             continue
-                        
-                        # Compare keys: convert both to dict and compare
-                        # Note: MongoDB preserves key order, so we compare as dict
-                        if isinstance(idx_keys, dict) and keys_dict == idx_keys:
+
+                        # Check if this index has the target name (regardless of keys)
+                        # This handles schema migrations where field names change (e.g., owner_id -> user_id)
+                        if idx_name == name:
+                            # Check if keys are different
+                            if isinstance(idx_keys, dict) and keys_dict != idx_keys:
+                                logger.warning(
+                                    f"Dropping index with same name but different keys: {idx_name} "
+                                    f"(old keys: {idx_keys}, new keys: {keys_dict})"
+                                )
+                                try:
+                                    collection.drop_index(idx_name)
+                                    # Retry creating index with new key specification
+                                    collection.create_index(keys, name=name, **kwargs)
+                                    logger.info(f"Created index: {name} with updated key specification")
+                                    return
+                                except PyMongoError as drop_error:
+                                    logger.error(f"Failed to drop conflicting index {idx_name}", extra={"error": str(drop_error)})
+                                    raise
+
+                        # Check if keys match but name is different
+                        elif isinstance(idx_keys, dict) and keys_dict == idx_keys:
                             logger.warning(f"Dropping conflicting index: {idx_name} (replacing with {name})")
                             try:
                                 collection.drop_index(idx_name)
@@ -315,7 +337,7 @@ def _ensure_articles_indexes() -> bool:
                             except PyMongoError as drop_error:
                                 logger.error(f"Failed to drop conflicting index {idx_name}", extra={"error": str(drop_error)})
                                 raise
-                    
+
                     # If we get here, couldn't resolve conflict
                     logger.error(f"Failed to resolve index conflict for {name}", extra={"error": error_str})
                     raise
@@ -378,24 +400,46 @@ def _ensure_users_indexes() -> bool:
                 logger.info(f"Created/verified index: {name}")
             except PyMongoError as e:
                 error_str = str(e)
-                # Check if error is due to index name conflict
-                if 'Index already exists with a different name' in error_str or 'IndexOptionsConflict' in error_str:
+                # Check if error is due to index conflict (name or key spec mismatch)
+                if any(conflict in error_str for conflict in [
+                    'Index already exists with a different name',
+                    'IndexOptionsConflict',
+                    'IndexKeySpecsConflict'  # Index name same but keys different (e.g., owner_id -> user_id)
+                ]):
                     # Find and drop conflicting index
                     # Get all existing indexes
                     existing_indexes = list(collection.list_indexes())
                     keys_dict = dict(keys)  # Convert list of tuples to dict for comparison
-                    
+
                     for idx in existing_indexes:
                         idx_name = idx.get('name')
                         idx_keys = idx.get('key', {})
-                        
-                        # Skip _id index and the target index name
-                        if idx_name == '_id_' or idx_name == name:
+
+                        # Skip _id index
+                        if idx_name == '_id_':
                             continue
-                        
-                        # Compare keys: convert both to dict and compare
-                        # Note: MongoDB preserves key order, so we compare as dict
-                        if isinstance(idx_keys, dict) and keys_dict == idx_keys:
+
+                        # Check if this index has the target name (regardless of keys)
+                        # This handles schema migrations where field names change (e.g., owner_id -> user_id)
+                        if idx_name == name:
+                            # Check if keys are different
+                            if isinstance(idx_keys, dict) and keys_dict != idx_keys:
+                                logger.warning(
+                                    f"Dropping index with same name but different keys: {idx_name} "
+                                    f"(old keys: {idx_keys}, new keys: {keys_dict})"
+                                )
+                                try:
+                                    collection.drop_index(idx_name)
+                                    # Retry creating index with new key specification
+                                    collection.create_index(keys, name=name, **kwargs)
+                                    logger.info(f"Created index: {name} with updated key specification")
+                                    return
+                                except PyMongoError as drop_error:
+                                    logger.error(f"Failed to drop conflicting index {idx_name}", extra={"error": str(drop_error)})
+                                    raise
+
+                        # Check if keys match but name is different
+                        elif isinstance(idx_keys, dict) and keys_dict == idx_keys:
                             logger.warning(f"Dropping conflicting index: {idx_name} (replacing with {name})")
                             try:
                                 collection.drop_index(idx_name)
@@ -406,7 +450,7 @@ def _ensure_users_indexes() -> bool:
                             except PyMongoError as drop_error:
                                 logger.error(f"Failed to drop conflicting index {idx_name}", extra={"error": str(drop_error)})
                                 raise
-                    
+
                     # If we get here, couldn't resolve conflict
                     logger.error(f"Failed to resolve index conflict for {name}", extra={"error": error_str})
                     raise
