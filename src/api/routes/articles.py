@@ -15,7 +15,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 import sys
 from pathlib import Path
 
@@ -25,7 +25,8 @@ from pathlib import Path
 _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse, ArticleListResponse
+from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse, ArticleListResponse, User
+from api.middleware.auth import get_current_user
 from api.job_queue import enqueue_job, update_job_status, get_job_status
 from utils.mongodb import (
     save_article_metadata, 
@@ -287,28 +288,40 @@ async def list_articles_endpoint(
 
 
 @router.post("/generate", response_model=GenerateResponse)
-async def generate_article(request: GenerateRequest, force: bool = False):
+async def generate_article(
+    request: GenerateRequest,
+    force: bool = False,
+    current_user: Optional[User] = Depends(get_current_user)
+):
     """Create article and start generation (unified endpoint).
     
     This endpoint combines article creation and job enqueueing to prevent
     creating empty articles when duplicates are detected.
     
     Args:
+        request: Article generation parameters
         force: If True, skip duplicate check and create new article + job
+        current_user: Authenticated user (optional)
     
     Returns 409 Conflict if duplicate job exists (with existing_job info for user decision).
     
-    Note: user_id is currently set to None. When authentication is implemented,
-    extract user_id from JWT token in Authorization header.
+    Note: If user is authenticated, user_id is extracted from JWT token.
+    Otherwise, user_id is None (anonymous user).
     """
     _check_mongodb_connection()
     inputs = _prepare_inputs(request)
     
-    # TODO: Extract user_id from JWT token when authentication is implemented
-    # from fastapi import Header
-    # authorization: str = Header(None)
-    # user_id = extract_user_id_from_jwt(authorization)
-    user_id = None  # Currently no authentication
+    # Extract user_id from JWT token if authenticated, otherwise None
+    user_id: Optional[str] = current_user.id if current_user else None
+    
+    logger.info(
+        "Article generation requested",
+        extra={
+            "userId": user_id,
+            "topic": request.topic,
+            "language": request.language
+        }
+    )
     
     # Step 1: Check for duplicate BEFORE creating article (user-specific)
     _check_duplicate(inputs, force, user_id)  # Raises HTTPException(409) if duplicate - ceased here

@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.routes import articles, jobs, health, endpoints, stats, dictionary
+from api.routes import articles, jobs, health, endpoints, stats, dictionary, auth
 from utils.logging import setup_structured_logging
 from utils.mongodb import ensure_indexes
 
@@ -55,6 +55,7 @@ app.include_router(health.router)
 app.include_router(endpoints.router)
 app.include_router(stats.router)
 app.include_router(dictionary.router)
+app.include_router(auth.router)
 
 
 @app.on_event("startup")

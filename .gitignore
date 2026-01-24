@@ -2,5 +2,6 @@
 __pycache__/
 .DS_Store
 memory/
-.cursor/
-.cursorrules
+.vscode/
+.idea/
+.github/agents/
