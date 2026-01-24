@@ -13,25 +13,46 @@ _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
 from api.middleware.auth import create_access_token
-from utils.mongodb import get_user, create_user
-from passlib.context import CryptContext
+from utils.mongodb import get_user, create_user, update_last_login
+import bcrypt
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt configuration
+# Using 12 rounds (2^12 = 4096 iterations) for secure password hashing
+BCRYPT_ROUNDS = 12
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password against hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verify password against hash.
+
+    Args:
+        plain_password: Plain text password
+        hashed_password: Bcrypt hashed password (string format)
+
+    Returns:
+        True if password matches, False otherwise
+    """
+    return bcrypt.checkpw(
+        plain_password.encode('utf-8'),
+        hashed_password.encode('utf-8')
+    )
 
 
 def get_password_hash(password: str) -> str:
-    """Hash password using bcrypt."""
-    return pwd_context.hash(password)
+    """Hash password using bcrypt.
+
+    Args:
+        password: Plain text password
+
+    Returns:
+        Bcrypt hashed password as string
+    """
+    salt = bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
 
 
 def validate_password(password: str) -> tuple[bool, str]:
@@ -76,21 +97,21 @@ class AuthResponse(BaseModel):
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register(request: RegisterRequest):
     """Register a new user.
-    
+
     Args:
         request: Registration request with email, password, name
-        
+
     Returns:
         JWT token and user info
-        
+
     Raises:
-        HTTPException: 400 if email already exists or validation fails
+        HTTPException: 409 Conflict if email already exists, 400 Bad Request if validation fails
     """
     # Check if user already exists
     existing_user = get_user(request.email)
     if existing_user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered"
         )
     
@@ -157,10 +178,12 @@ async def login(request: LoginRequest):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
-    
-    # Update last_login (optional - can be done in background)
-    # For now, we'll skip this to keep it simple
-    
+
+    # Update last_login timestamp
+    # Note: We don't check the return value - login succeeds even if update fails
+    # This is intentional to prevent login failures due to database issues
+    update_last_login(user['id'])
+
     # Generate JWT token
     token = create_access_token(user['id'])
     

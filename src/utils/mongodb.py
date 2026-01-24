@@ -1221,3 +1221,35 @@ def get_user_by_id(user_id: str) -> dict | None:
     except PyMongoError as e:
         logger.error("Failed to get user by ID", extra={"userId": user_id, "error": str(e)})
         return None
+
+
+def update_last_login(user_id: str) -> bool:
+    """Update user's last_login timestamp.
+
+    Args:
+        user_id: User ID (MongoDB _id)
+
+    Returns:
+        True if update was successful, False otherwise
+    """
+    client = get_mongodb_client()
+    if not client:
+        return False
+
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[USERS_COLLECTION_NAME]
+
+        now = datetime.now(timezone.utc)
+        result = collection.update_one(
+            {'_id': user_id},
+            {'$set': {'last_login': now, 'updated_at': now}}
+        )
+
+        if result.modified_count > 0:
+            logger.debug("Updated last_login", extra={"userId": user_id})
+            return True
+        return False
+    except PyMongoError as e:
+        logger.error("Failed to update last_login", extra={"userId": user_id, "error": str(e)})
+        return False

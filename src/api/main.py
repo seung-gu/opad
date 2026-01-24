@@ -6,6 +6,11 @@ import logging
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+# Must be called before importing modules that read env vars (like auth middleware)
+load_dotenv()
 
 # Add src to path
 # main.py is at /app/src/api/main.py
