@@ -12,6 +12,16 @@ API_BASE_URL=https://your-api-service.railway.app  # 외부 URL
 
 ### API 서비스 (FastAPI)
 ```bash
+# JWT 인증 (필수!)
+# 보안을 위해 강력한 랜덤 문자열 사용
+# 생성 방법: openssl rand -hex 32
+JWT_SECRET_KEY=your-secure-random-secret-key-here
+
+# CORS 설정 (선택사항, 기본값: "*")
+# 프로덕션에서는 반드시 명시적 도메인 설정 권장
+# 예: CORS_ORIGINS=https://app.example.com,https://www.example.com
+CORS_ORIGINS=*  # 개발 환경에서만 사용
+
 # Redis 연결
 REDIS_URL=redis://localhost:6379
 # 또는 Railway Redis add-on

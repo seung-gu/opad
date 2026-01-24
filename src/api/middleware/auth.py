@@ -22,8 +22,10 @@ logger = logging.getLogger(__name__)
 # JWT Configuration
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 if not JWT_SECRET_KEY:
-    logger.warning("JWT_SECRET_KEY not set in environment, using insecure default")
-    JWT_SECRET_KEY = "your-secret-key-change-in-production"
+    raise ValueError(
+        "JWT_SECRET_KEY environment variable is required. "
+        "Generate a secure key with: openssl rand -hex 32"
+    )
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_DAYS = 7
 

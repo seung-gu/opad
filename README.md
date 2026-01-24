@@ -62,6 +62,13 @@ For detailed architecture documentation, see [ARCHITECTURE.md](./ARCHITECTURE.md
    export MONGO_URL=mongodb://localhost:27017/
    export OPENAI_API_KEY=your-key
    export SERPER_API_KEY=your-key
+
+   # JWT Authentication (Required)
+   # Generate a secure key: openssl rand -hex 32
+   export JWT_SECRET_KEY=your-secure-random-secret-key-here
+
+   # CORS (Optional, default: "*")
+   export CORS_ORIGINS=http://localhost:8000
    ```
 
 4. **Run services** (in separate terminals):
@@ -98,7 +105,15 @@ For detailed local setup instructions, see [SETUP.md](./SETUP.md).
    ```
    API_BASE_URL=https://${{ api.RAILWAY_PUBLIC_DOMAIN }}
    ```
-   
+
+   **API service:**
+   ```
+   JWT_SECRET_KEY=<generate-with-openssl-rand-hex-32>
+   CORS_ORIGINS=https://${{ web.RAILWAY_PUBLIC_DOMAIN }}
+   OPENAI_API_KEY=your-key
+   SERPER_API_KEY=your-key
+   ```
+
    **Worker service:**
    ```
    REDIS_URL=${{ api.REDIS_URL }}
