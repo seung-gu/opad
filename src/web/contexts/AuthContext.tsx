@@ -45,14 +45,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const userData = await response.json()
             setUser(userData)
           } else {
-            // Token is invalid (expired or malformed)
+            // Token is invalid (expired or malformed) - silently clear it
             removeToken()
             setUser(null)
-
-            // Notify user only if response indicates token expiration (401)
-            if (response.status === 401) {
-              alert('Your session has expired. Please log in again.')
-            }
           }
         } catch (error) {
           console.error('Failed to verify token:', error)
@@ -84,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await response.json()
     saveToken(data.token)
     setUser(data.user)
-    router.push('/articles')
+    router.push('/')
   }
 
   const register = async (email: string, password: string, name: string) => {
@@ -104,13 +99,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await response.json()
     saveToken(data.token)
     setUser(data.user)
-    router.back()
+    router.push('/')
   }
 
   const logout = () => {
     removeToken()
     setUser(null)
-    router.push('/login')
+    router.push('/')
   }
 
   return (
@@ -124,7 +119,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
       }}
     >
-      {children}
+      {loading ? (
+        <div className="min-h-screen flex items-center justify-center bg-white">
+          <div className="text-xl text-gray-900">Loading...</div>
+        </div>
+      ) : (
+        children
+      )}
     </AuthContext.Provider>
   )
 }

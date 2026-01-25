@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation'
 import MarkdownViewer from '@/components/MarkdownViewer'
 import InputForm from '@/components/InputForm'
 import { fetchWithAuth } from '@/lib/api'
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function Home() {
   const router = useRouter()
+  const { isAuthenticated, user, logout } = useAuth()
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
@@ -239,6 +241,12 @@ Choose a topic you're interested in and start learning with content that matches
     length: string
     topic: string
   }, force: boolean = false) => {
+    // Check authentication
+    if (!isAuthenticated) {
+      alert('You need to log in to generate articles. Please log in first.')
+      return
+    }
+
     setGenerating(true)
     try {
       const response = await fetchWithAuth('/api/generate', {
@@ -349,21 +357,57 @@ Choose a topic you're interested in and start learning with content that matches
     )
   }
 
+  const handleArticlesClick = () => {
+    if (!isAuthenticated) {
+      alert('You need to log in to view articles. Please log in first.')
+      return
+    }
+    router.push('/articles')
+  }
+
+  const handleGenerateClick = () => {
+    setShowForm(!showForm)
+  }
+
   return (
     <main className="min-h-screen p-8 max-w-4xl mx-auto bg-white rounded-lg shadow-2xl my-8">
-      <div className="flex justify-end items-center mb-8 gap-3">
-        <button
-          onClick={() => router.push('/articles')}
-          className="bg-gray-700 text-white px-6 py-2.5 rounded-lg hover:bg-gray-600 transition-colors font-medium"
-        >
-          Articles
-        </button>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="bg-emerald-600 text-white px-6 py-2.5 rounded-lg hover:bg-emerald-500 transition-colors font-medium"
-        >
-          {showForm ? 'Hide Form' : 'Generate New Article'}
-        </button>
+      <div className="flex justify-between items-center mb-8">
+        <div className="flex items-center gap-3">
+          {isAuthenticated ? (
+            <>
+              <span className="text-gray-700 font-medium">
+                {user?.name || user?.email}
+              </span>
+              <button
+                onClick={logout}
+                className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors font-medium text-sm"
+              >
+                Logout
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => router.push('/login')}
+              className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            >
+              Login
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleArticlesClick}
+            className="bg-gray-700 text-white px-6 py-2.5 rounded-lg hover:bg-gray-600 transition-colors font-medium"
+          >
+            Articles
+          </button>
+          <button
+            onClick={handleGenerateClick}
+            className="bg-emerald-600 text-white px-6 py-2.5 rounded-lg hover:bg-emerald-500 transition-colors font-medium"
+          >
+            {showForm ? 'Hide Form' : 'Generate New Article'}
+          </button>
+        </div>
       </div>
 
       {showForm && (
