@@ -47,6 +47,9 @@ export async function GET(request: NextRequest) {
     const queryString = queryParams.toString()
     const url = `${apiBaseUrl}/articles${queryString ? `?${queryString}` : ''}`
 
+    // Get Authorization header from client request
+    const authorization = request.headers.get('authorization')
+
     console.log(JSON.stringify({
       source: 'web',
       level: 'info',
@@ -58,13 +61,14 @@ export async function GET(request: NextRequest) {
     // Call FastAPI to get article list with timeout
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
-    
+
     let response: Response
     try {
       response = await fetch(url, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          ...(authorization ? { 'Authorization': authorization } : {}),
         },
         signal: controller.signal,
       })

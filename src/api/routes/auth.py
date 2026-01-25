@@ -12,8 +12,10 @@ from pathlib import Path
 _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.middleware.auth import create_access_token
+from api.middleware.auth import create_access_token, get_current_user_required
 from utils.mongodb import get_user, create_user, update_last_login
+from api.models import User
+from fastapi import Depends
 import bcrypt
 
 logger = logging.getLogger(__name__)
@@ -191,5 +193,25 @@ async def login(request: LoginRequest):
     user_response = {k: v for k, v in user.items() if k != 'password_hash'}
     
     logger.info("User logged in", extra={"userId": user['id'], "email": request.email})
-    
+
     return AuthResponse(token=token, user=user_response)
+
+
+@router.get("/me")
+async def get_me(current_user: User = Depends(get_current_user_required)):
+    """Get current authenticated user info.
+
+    Args:
+        current_user: Current authenticated user from JWT token
+
+    Returns:
+        User info (without password_hash)
+
+    Raises:
+        HTTPException: 401 if not authenticated
+    """
+    # Convert User model to dict and remove password_hash
+    user_dict = current_user.model_dump()
+    user_response = {k: v for k, v in user_dict.items() if k != 'password_hash'}
+
+    return user_response

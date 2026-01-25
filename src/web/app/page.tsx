@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import MarkdownViewer from '@/components/MarkdownViewer'
 import InputForm from '@/components/InputForm'
+import { fetchWithAuth } from '@/lib/api'
 
 export default function Home() {
   const router = useRouter()
@@ -80,7 +81,7 @@ Choose a topic you're interested in and start learning with content that matches
     // Add timestamp to bypass cache
     const timestamp = new Date().getTime()
     // Call FastAPI through web API route
-    fetch(`/api/articles/${targetArticleId}/content?t=${timestamp}`, {
+    fetchWithAuth(`/api/articles/${targetArticleId}/content?t=${timestamp}`, {
       signal: abortController.signal
     })
       .then(res => {
@@ -164,7 +165,7 @@ Choose a topic you're interested in and start learning with content that matches
         return
       }
       
-      fetch(`/api/status?job_id=${currentJobId}`)
+      fetchWithAuth(`/api/status?job_id=${currentJobId}`)
         .then(res => res.json())
         .then(data => {
           // Only update progress if it actually changed
@@ -240,7 +241,7 @@ Choose a topic you're interested in and start learning with content that matches
   }, force: boolean = false) => {
     setGenerating(true)
     try {
-      const response = await fetch('/api/generate', {
+      const response = await fetchWithAuth('/api/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
