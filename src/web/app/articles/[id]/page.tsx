@@ -118,10 +118,10 @@ export default function ArticleDetailPage() {
   // Handle vocabulary deletion
   const handleDeleteVocabulary = async (vocabId: string) => {
     try {
-      const response = await fetch(`/api/dictionary/vocabularies/${vocabId}`, {
+      const response = await fetchWithAuth(`/api/dictionary/vocabularies/${vocabId}`, {
         method: 'DELETE'
       })
-      
+
       if (response.ok) {
         setVocabularies(prev => prev.filter(v => v.id !== vocabId))
       }
@@ -147,8 +147,8 @@ export default function ArticleDetailPage() {
       if (!currentJobId) {
         return
       }
-      
-      fetch(`/api/status?job_id=${currentJobId}`)
+
+      fetchWithAuth(`/api/status?job_id=${currentJobId}`)
         .then(res => res.json())
         .then(data => {
           // Only update progress if it actually changed
@@ -174,13 +174,13 @@ export default function ArticleDetailPage() {
             // Reload article metadata and content
             const fetchArticle = async () => {
               try {
-                const metadataResponse = await fetch(`/api/articles/${articleId}`)
+                const metadataResponse = await fetchWithAuth(`/api/articles/${articleId}`)
                 if (metadataResponse.ok) {
                   const articleData: Article = await metadataResponse.json()
                   setArticle(articleData)
                 }
 
-                const contentResponse = await fetch(`/api/articles/${articleId}/content`)
+                const contentResponse = await fetchWithAuth(`/api/articles/${articleId}/content`)
                 if (contentResponse.ok) {
                   const contentText = await contentResponse.text()
                   setContent(contentText)
@@ -200,7 +200,7 @@ export default function ArticleDetailPage() {
             // Reload article metadata to reflect failed status
             const fetchArticle = async () => {
               try {
-                const metadataResponse = await fetch(`/api/articles/${articleId}`)
+                const metadataResponse = await fetchWithAuth(`/api/articles/${articleId}`)
                 if (metadataResponse.ok) {
                   const articleData: Article = await metadataResponse.json()
                   setArticle(articleData)
