@@ -7,6 +7,7 @@ import MarkdownViewer from '@/components/MarkdownViewer'
 import ArticleStatusBadge from '@/components/ArticleStatusBadge'
 import VocabularyList from '@/components/VocabularyList'
 import { Article, Vocabulary } from '@/types/article'
+import { fetchWithAuth } from '@/lib/api'
 
 /**
  * Article detail page.
@@ -40,7 +41,7 @@ export default function ArticleDetailPage() {
         setError(null)
 
         // Fetch article metadata via Next.js API route
-        const metadataResponse = await fetch(`/api/articles/${articleId}`)
+        const metadataResponse = await fetchWithAuth(`/api/articles/${articleId}`)
         if (metadataResponse.ok) {
           const articleData: Article = await metadataResponse.json()
           setArticle(articleData)
@@ -53,7 +54,7 @@ export default function ArticleDetailPage() {
         }
 
         // Fetch article content
-        const contentResponse = await fetch(`/api/articles/${articleId}/content`)
+        const contentResponse = await fetchWithAuth(`/api/articles/${articleId}/content`)
         
         if (!contentResponse.ok) {
           if (contentResponse.status === 404) {
@@ -68,7 +69,7 @@ export default function ArticleDetailPage() {
         
         // Load vocabularies for this article
         try {
-          const vocabResponse = await fetch(`/api/dictionary/vocabularies?article_id=${articleId}`)
+          const vocabResponse = await fetchWithAuth(`/api/dictionary/vocabularies?article_id=${articleId}`)
           if (vocabResponse.ok) {
             const vocabData = await vocabResponse.json()
             console.log('[Vocab] Loaded vocabularies:', vocabData.map((v: Vocabulary) => ({ word: v.word, span_id: v.span_id })))

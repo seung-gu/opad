@@ -38,6 +38,9 @@ export async function POST(request: NextRequest) {
       message: `Calling FastAPI at ${apiBaseUrl}`
     }))
 
+    // Get Authorization header from client request
+    const authorization = request.headers.get('authorization')
+
     // Call unified endpoint: duplicate check + article creation + job enqueue
     const force = body.force === true
     const generateUrl = `${apiBaseUrl}/articles/generate${force ? '?force=true' : ''}`
@@ -45,6 +48,7 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(authorization ? { 'Authorization': authorization } : {}),
       },
       body: JSON.stringify({
         language,
