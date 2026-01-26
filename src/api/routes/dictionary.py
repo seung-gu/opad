@@ -6,13 +6,21 @@ This module handles word definition requests using OpenAI API:
 """
 
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 
-from api.models import DefineRequest, DefineResponse, VocabularyRequest, VocabularyResponse
+from api.middleware.auth import get_current_user_required
+from api.models import DefineRequest, DefineResponse, User, VocabularyRequest, VocabularyResponse
 from utils.llm import call_openai_chat, parse_json_from_content, get_llm_error_response
 from utils.prompts import build_word_definition_prompt
-from utils.mongodb import save_vocabulary, get_vocabularies, delete_vocabulary, get_mongodb_client, get_vocabulary_word_counts
+from utils.mongodb import (
+    delete_vocabulary,
+    get_mongodb_client,
+    get_vocabularies,
+    get_vocabulary_by_id,
+    get_vocabulary_word_counts,
+    save_vocabulary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,12 +87,16 @@ async def define_word(request: DefineRequest):
 
 
 @router.post("/vocabularies", response_model=VocabularyResponse)
-async def add_vocabulary(request: VocabularyRequest):
+async def add_vocabulary(
+    request: VocabularyRequest,
+    current_user: User = Depends(get_current_user_required)
+):
     """Add a word to vocabulary list.
-    
+
     Args:
         request: Vocabulary request with word, lemma, definition, etc.
-    
+        current_user: Authenticated user
+
     Returns:
         VocabularyResponse with saved vocabulary data
     """
@@ -96,65 +108,88 @@ async def add_vocabulary(request: VocabularyRequest):
         sentence=request.sentence,
         language=request.language,
         related_words=request.related_words,
-        span_id=request.span_id
+        span_id=request.span_id,
+        user_id=current_user.id
     )
-    
+
     if not vocabulary_id:
         raise HTTPException(status_code=500, detail="Failed to save vocabulary")
-    
+
     # Get the saved vocabulary to return
-    vocabularies = get_vocabularies(article_id=request.article_id)
+    vocabularies = get_vocabularies(article_id=request.article_id, user_id=current_user.id)
     vocabulary = next((v for v in vocabularies if v['id'] == vocabulary_id), None)
-    
+
     if not vocabulary:
         raise HTTPException(status_code=500, detail="Vocabulary saved but not found")
-    
+
     logger.info("Vocabulary added", extra={
         "vocabularyId": vocabulary_id,
         "articleId": request.article_id,
-        "lemma": request.lemma
+        "lemma": request.lemma,
+        "userId": current_user.id
     })
-    
+
     return VocabularyResponse(**vocabulary)
 
 
 @router.get("/vocabularies", response_model=list[VocabularyResponse])
-async def get_vocabularies_list(article_id: str | None = None):
-    """Get vocabulary list.
-    
+async def get_vocabularies_list(
+    article_id: str | None = None,
+    current_user: User = Depends(get_current_user_required)
+):
+    """Get vocabulary list for the current user.
+
     Args:
         article_id: Optional article ID to filter vocabularies
-    
+        current_user: Authenticated user
+
     Returns:
-        List of vocabularies
+        List of vocabularies owned by the current user
     """
-    vocabularies = get_vocabularies(article_id=article_id)
-    
+    vocabularies = get_vocabularies(article_id=article_id, user_id=current_user.id)
+
     logger.info("Vocabularies retrieved", extra={
         "count": len(vocabularies),
-        "articleId": article_id
+        "articleId": article_id,
+        "userId": current_user.id
     })
-    
+
     return [VocabularyResponse(**v) for v in vocabularies]
 
 
 @router.delete("/vocabularies/{vocabulary_id}")
-async def delete_vocabulary_word(vocabulary_id: str):
+async def delete_vocabulary_word(
+    vocabulary_id: str,
+    current_user: User = Depends(get_current_user_required)
+):
     """Delete a vocabulary word.
-    
+
     Args:
         vocabulary_id: Vocabulary ID to delete
-    
+        current_user: Authenticated user
+
     Returns:
         Success message
     """
-    success = delete_vocabulary(vocabulary_id)
-    
-    if not success:
+    # Check if vocabulary exists and verify ownership
+    vocabulary = get_vocabulary_by_id(vocabulary_id)
+    if not vocabulary:
         raise HTTPException(status_code=404, detail="Vocabulary not found")
-    
-    logger.info("Vocabulary deleted", extra={"vocabularyId": vocabulary_id})
-    
+
+    # Verify ownership
+    if vocabulary.get('user_id') != current_user.id:
+        raise HTTPException(status_code=403, detail="You don't have permission to delete this vocabulary")
+
+    success = delete_vocabulary(vocabulary_id)
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete vocabulary")
+
+    logger.info("Vocabulary deleted", extra={
+        "vocabularyId": vocabulary_id,
+        "userId": current_user.id
+    })
+
     return {"message": "Vocabulary deleted successfully"}
 
 
