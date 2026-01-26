@@ -78,11 +78,11 @@ export default function VocabularyPage() {
           <div className="flex items-center justify-between mb-2">
             <h1 className="text-3xl font-bold text-gray-900">My Vocabulary</h1>
             <Link
-              href="/"
+              href="/articles"
               className="text-xl font-medium text-gray-700 hover:text-gray-900 transition-colors"
-              title="Go to Home"
+              title="Go to Articles"
             >
-              &#9664; Home
+              ◀ Articles
             </Link>
           </div>
           <p className="text-gray-600">
