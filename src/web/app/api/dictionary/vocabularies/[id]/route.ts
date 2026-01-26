@@ -15,16 +15,23 @@ export async function DELETE(
     const vocabularyId = params.id
 
     // Get FastAPI URL from environment
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 
-                   process.env.API_BASE_URL || 
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ||
+                   process.env.API_BASE_URL ||
                    'http://localhost:8001'
-    
+
+    // Forward Authorization header from client
+    const authHeader = request.headers.get('Authorization')
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    }
+    if (authHeader) {
+      headers['Authorization'] = authHeader
+    }
+
     // Forward request to FastAPI
     const response = await fetch(`${apiUrl}/dictionary/vocabularies/${vocabularyId}`, {
       method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json'
-      }
+      headers
     })
 
     if (!response.ok) {

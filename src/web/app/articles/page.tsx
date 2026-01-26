@@ -106,11 +106,17 @@ export default function ArticlesPage() {
         </div>
 
         {/* Filter */}
-        <div className="mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <ArticleFilter
             selectedStatus={selectedStatus}
             onStatusChange={handleStatusChange}
           />
+          <Link
+            href="/vocabulary"
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 transition-colors font-medium text-sm"
+          >
+            Vocabulary
+          </Link>
         </div>
 
         {/* Error State */}
