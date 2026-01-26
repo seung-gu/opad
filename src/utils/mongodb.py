@@ -470,17 +470,98 @@ def _ensure_users_indexes() -> bool:
         return False
 
 
+def _ensure_vocabularies_indexes() -> bool:
+    """Ensure MongoDB indexes exist for vocabularies collection.
+
+    Creates indexes if they don't exist:
+    - user_id: sparse index (for user-specific queries)
+    - (user_id, article_id): compound index (for user's vocabularies in article)
+
+    Returns:
+        True if indexes were created/verified successfully, False otherwise
+    """
+    client = get_mongodb_client()
+    if not client:
+        return False
+
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[VOCABULARY_COLLECTION_NAME]
+
+        def _ensure_index(keys: list, name: str, **kwargs) -> None:
+            """Create index if it doesn't exist, handle conflicts."""
+            try:
+                collection.create_index(keys, name=name, **kwargs)
+                logger.info(f"Ensured index exists: {name}")
+            except PyMongoError as e:
+                error_str = str(e)
+                if "already exists with different options" in error_str or "index already exists with a different name" in error_str:
+                    # Try to find and drop conflicting index
+                    existing_indexes = collection.index_information()
+                    keys_dict = {k: v for k, v in keys}
+
+                    for idx_name, idx_info in existing_indexes.items():
+                        if idx_name == '_id_':
+                            continue
+                        idx_keys = {k: v for k, v in idx_info.get('key', [])} if isinstance(idx_info.get('key'), list) else idx_info.get('key', {})
+
+                        if idx_name == name and idx_keys != keys_dict:
+                            logger.warning(f"Dropping index with mismatched keys: {idx_name}")
+                            try:
+                                collection.drop_index(idx_name)
+                                collection.create_index(keys, name=name, **kwargs)
+                                logger.info(f"Created index: {name} with updated key specification")
+                                return
+                            except PyMongoError as drop_error:
+                                logger.error(f"Failed to drop conflicting index {idx_name}", extra={"error": str(drop_error)})
+                                raise
+
+                        elif isinstance(idx_keys, dict) and keys_dict == idx_keys:
+                            logger.warning(f"Dropping conflicting index: {idx_name} (replacing with {name})")
+                            try:
+                                collection.drop_index(idx_name)
+                                collection.create_index(keys, name=name, **kwargs)
+                                logger.info(f"Created index: {name} (replaced {idx_name})")
+                                return
+                            except PyMongoError as drop_error:
+                                logger.error(f"Failed to drop conflicting index {idx_name}", extra={"error": str(drop_error)})
+                                raise
+
+                    logger.error(f"Failed to resolve index conflict for {name}", extra={"error": error_str})
+                    raise
+                else:
+                    raise
+
+        # Create sparse index on user_id (for user-specific vocabulary queries)
+        _ensure_index([('user_id', 1)], 'idx_vocab_user_id', sparse=True)
+
+        # Create compound index for user's vocabularies in an article
+        _ensure_index([
+            ('user_id', 1),
+            ('article_id', 1)
+        ], 'idx_vocab_user_article')
+
+        # Create index on created_at (descending) for latest vocabularies
+        _ensure_index([('created_at', -1)], 'idx_vocab_created_at')
+
+        return True
+    except PyMongoError as e:
+        logger.error("Failed to create vocabularies indexes", extra={"error": str(e)})
+        return False
+
+
 def ensure_indexes() -> bool:
     """Ensure all MongoDB indexes exist for all collections.
-    
+
     This function is idempotent - safe to call multiple times.
-    
+
     Returns:
         True if all indexes were created/verified successfully, False otherwise
     """
     articles_ok = _ensure_articles_indexes()
     users_ok = _ensure_users_indexes()
-    return articles_ok and users_ok
+    vocabularies_ok = _ensure_vocabularies_indexes()
+    return articles_ok and users_ok and vocabularies_ok
 
 
 def find_duplicate_article(inputs: dict, user_id: Optional[str] = None, hours: int = 24) -> Optional[dict]:
@@ -744,10 +825,11 @@ def save_vocabulary(
     sentence: str,
     language: str,
     related_words: list[str] | None = None,
-    span_id: str | None = None
+    span_id: str | None = None,
+    user_id: str | None = None
 ) -> str | None:
     """Save vocabulary word to MongoDB.
-    
+
     Args:
         article_id: Article ID where the word was found
         word: Original word clicked
@@ -757,23 +839,27 @@ def save_vocabulary(
         language: Language
         related_words: All words in sentence belonging to this lemma (e.g., for separable verbs)
         span_id: Span ID of the clicked word
-        
+        user_id: User ID for multi-user support
+
     Returns:
         Vocabulary ID if successful, None otherwise
     """
     client = get_mongodb_client()
     if not client:
         return None
-    
+
     try:
         db = client[DATABASE_NAME]
         collection = db[VOCABULARY_COLLECTION_NAME]
-        
-        # Check if vocabulary already exists (same article_id and lemma)
-        existing = collection.find_one({
+
+        # Check if vocabulary already exists (same user_id, article_id, and lemma)
+        query = {
             'article_id': article_id,
             'lemma': lemma.lower()
-        })
+        }
+        if user_id:
+            query['user_id'] = user_id
+        existing = collection.find_one(query)
         
         # Normalize span_id: convert empty string to None
         normalized_span_id = span_id if span_id and span_id.strip() else None
@@ -799,6 +885,7 @@ def save_vocabulary(
             'language': language,
             'related_words': [w.lower() for w in (related_words or [])],  # Store lowercase for case-insensitive lookup
             'span_id': normalized_span_id,
+            'user_id': user_id,
             'created_at': datetime.now(timezone.utc),
             'updated_at': datetime.now(timezone.utc)
         }
@@ -821,27 +908,30 @@ def save_vocabulary(
         return None
 
 
-def get_vocabularies(article_id: str | None = None) -> list[dict]:
+def get_vocabularies(article_id: str | None = None, user_id: str | None = None) -> list[dict]:
     """Get vocabularies from MongoDB.
-    
+
     Args:
         article_id: Optional article ID to filter by
-        
+        user_id: Optional user ID to filter by
+
     Returns:
         List of vocabulary documents
     """
     client = get_mongodb_client()
     if not client:
         return []
-    
+
     try:
         db = client[DATABASE_NAME]
         collection = db[VOCABULARY_COLLECTION_NAME]
-        
+
         query = {}
         if article_id:
             query['article_id'] = article_id
-        
+        if user_id:
+            query['user_id'] = user_id
+
         # Convert ObjectId to string and format for API response
         result = []
         for vocab in collection.find(query).sort('created_at', -1):
@@ -855,9 +945,10 @@ def get_vocabularies(article_id: str | None = None) -> list[dict]:
                 'span_id': vocab.get('span_id'),  # Include span_id in response
                 'language': vocab['language'],
                 'related_words': vocab.get('related_words', None),  # May not exist for old entries
-                'created_at': vocab['created_at']
+                'created_at': vocab['created_at'],
+                'user_id': vocab.get('user_id')
             })
-        
+
         return result
     except PyMongoError as e:
         logger.error("Failed to get vocabularies", extra={
@@ -867,9 +958,51 @@ def get_vocabularies(article_id: str | None = None) -> list[dict]:
         return []
 
 
+def get_vocabulary_by_id(vocabulary_id: str) -> dict | None:
+    """Get a single vocabulary by ID.
+
+    Args:
+        vocabulary_id: Vocabulary ID to retrieve
+
+    Returns:
+        Vocabulary document or None if not found
+    """
+    client = get_mongodb_client()
+    if not client:
+        return None
+
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[VOCABULARY_COLLECTION_NAME]
+
+        vocab = collection.find_one({'_id': vocabulary_id})
+        if not vocab:
+            return None
+
+        return {
+            'id': vocab['_id'],
+            'article_id': vocab['article_id'],
+            'word': vocab['word'],
+            'lemma': vocab['lemma'],
+            'definition': vocab['definition'],
+            'sentence': vocab['sentence'],
+            'span_id': vocab.get('span_id'),
+            'language': vocab['language'],
+            'related_words': vocab.get('related_words', None),
+            'created_at': vocab['created_at'],
+            'user_id': vocab.get('user_id')
+        }
+    except PyMongoError as e:
+        logger.error("Failed to get vocabulary", extra={
+            "vocabularyId": vocabulary_id,
+            "error": str(e)
+        })
+        return None
+
+
 def delete_vocabulary(vocabulary_id: str) -> bool:
     """Delete vocabulary from MongoDB.
-    
+
     Args:
         vocabulary_id: Vocabulary ID to delete
         
