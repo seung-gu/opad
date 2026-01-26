@@ -50,8 +50,8 @@ IMPORTANT for German language:
      über-, um-, unter-, vor-, weg-, weiter-, zu-, zurück-, zusammen-, etc.
    - If the clicked word is a verb conjugation (findet, fand, finde, etc.), ALWAYS scan 
      the ENTIRE sentence for the separated prefix that belongs to it.
-   - Examples: "findet statt" → lemma="stattfinden", related_words=["findet", "statt"]
-   - Example: "haben ... gefunden" → lemma="finden", related_words=["haben", "gefunden"]
+   - Example 1: "findet statt" → lemma="stattfinden", related_words=["findet", "statt"]
+   - Example 2: "haben ... gefunden" → lemma="finden", related_words=["haben", "gefunden"]
    - The lemma must include the complete separable prefix combined with the stem.
 
 2. Reflexive verbs (reflexive Verben): 
