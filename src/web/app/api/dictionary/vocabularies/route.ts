@@ -14,16 +14,23 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Get FastAPI URL from environment
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 
-                   process.env.API_BASE_URL || 
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ||
+                   process.env.API_BASE_URL ||
                    'http://localhost:8001'
-    
+
+    // Forward Authorization header from client
+    const authHeader = request.headers.get('Authorization')
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    }
+    if (authHeader) {
+      headers['Authorization'] = authHeader
+    }
+
     // Forward request to FastAPI
     const response = await fetch(`${apiUrl}/dictionary/vocabularies`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers,
       body: JSON.stringify(body)
     })
 
@@ -52,24 +59,31 @@ export async function GET(request: NextRequest) {
     const articleId = searchParams.get('article_id')
 
     // Get FastAPI URL from environment
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 
-                   process.env.API_BASE_URL || 
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ||
+                   process.env.API_BASE_URL ||
                    'http://localhost:8001'
-    
+
     // Build query string
     const queryParams = new URLSearchParams()
     if (articleId) {
       queryParams.append('article_id', articleId)
     }
-    
+
     const url = `${apiUrl}/dictionary/vocabularies${queryParams.toString() ? '?' + queryParams.toString() : ''}`
-    
+
+    // Forward Authorization header from client
+    const authHeader = request.headers.get('Authorization')
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    }
+    if (authHeader) {
+      headers['Authorization'] = authHeader
+    }
+
     // Forward request to FastAPI
     const response = await fetch(url, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      }
+      headers
     })
 
     if (!response.ok) {

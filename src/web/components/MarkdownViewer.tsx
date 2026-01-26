@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { split } from 'sentence-splitter'
 import { Vocabulary } from '@/types/article'
+import { fetchWithAuth } from '@/lib/api'
 
 interface MarkdownViewerProps {
   content: string
@@ -129,7 +130,7 @@ export default function MarkdownViewer({
     }
 
     try {
-      const response = await fetch('/api/dictionary/vocabularies', {
+      const response = await fetchWithAuth('/api/dictionary/vocabularies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -160,7 +161,7 @@ export default function MarkdownViewer({
     
     if (vocab) {
       try {
-        const response = await fetch(`/api/dictionary/vocabularies/${vocab.id}`, {
+        const response = await fetchWithAuth(`/api/dictionary/vocabularies/${vocab.id}`, {
           method: 'DELETE'
         })
 
