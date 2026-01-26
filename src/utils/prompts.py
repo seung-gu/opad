@@ -45,10 +45,27 @@ IMPORTANT: related_words must contain ONLY the grammatical parts of the lemma (e
         prompt += """
         
 IMPORTANT for German language:
-1. Separable verbs (trennbare Verben): If the clicked word is part of a separable verb with separable prefixes (ab-, aus-, ein-, mit-, vor-, etc.), identify ALL components including the prefix and any associated prepositions. The lemma must include the complete separable prefix.
-2. Reflexive verbs (reflexive Verben): If the clicked word is part of a reflexive verb construction requiring "sich", include "sich" in the related_words array. The lemma should be the complete reflexive form.
-3. Prepositional verbs (Präpositionalverben): If the verb requires a specific preposition (e.g., "von", "mit", "auf"), include that preposition in the related_words array.
+1. Separable verbs (trennbare Verben): 
+   - Common prefixes: ab-, an-, auf-, aus-, ein-, fest-, fort-, hin-, los-, mit-, nach-, 
+     über-, um-, unter-, vor-, weg-, weiter-, zu-, zurück-, zusammen-, etc.
+   - If the clicked word is a verb conjugation (findet, fand, finde, etc.), ALWAYS scan 
+     the ENTIRE sentence for the separated prefix that belongs to it.
+   - Examples: "findet statt" → lemma="stattfinden", related_words=["findet", "statt"]
+   - Example: "haben ... gefunden" → lemma="finden", related_words=["haben", "gefunden"]
+   - The lemma must include the complete separable prefix combined with the stem.
 
-For all these cases, scan the ENTIRE sentence to find ALL words that belong to the same lexical unit and include them in related_words.
+2. Reflexive verbs (reflexive Verben): 
+   - If the clicked word is part of a reflexive verb, include "sich" in the related_words array.
+   - Example: "sich erinnert" → lemma="sich erinnern", related_words=["sich", "erinnert"]
+   - The lemma should be the complete reflexive form with "sich".
+
+3. Prepositional verbs (Präpositionalverben): 
+   - If the verb requires a specific preposition (e.g., "auf", "mit", "von", "an", "für"), 
+     include that preposition in the related_words array.
+   - Example: "wartet auf" → lemma="warten auf", related_words=["wartet", "auf"]
+
+CRITICAL: For ALL these cases, regardless of which word the user clicked, scan the ENTIRE 
+sentence to find ALL words that belong to the same lexical unit and include them in related_words 
+in the order they appear in the sentence.
         """
     return prompt
