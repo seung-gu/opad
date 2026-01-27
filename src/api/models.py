@@ -37,7 +37,7 @@ class JobResponse(BaseModel):
     created_at: Optional[datetime] = Field(None, description="Job creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     error: Optional[str] = Field(None, description="Error message if failed")
-    # Note: started_at and finished_at are not currently tracked in Redis
+    # Note: started_at is not currently tracked in Redis
 
 
 class GenerateResponse(BaseModel):

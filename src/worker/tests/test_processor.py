@@ -119,9 +119,10 @@ class TestWorkerErrorHandling(unittest.TestCase):
         self.assertTrue(result)
         # Should update status to completed
         mock_update_status.assert_called()
-        call_args = mock_update_status.call_args
-        self.assertEqual(call_args[1]['status'], 'completed')
-        self.assertEqual(call_args[1]['progress'], 100)
+        args, kwargs = mock_update_status.call_args
+        self.assertEqual(args[1], 'completed')
+        self.assertEqual(args[2], 100)
+        self.assertEqual(kwargs.get('article_id'), 'test-article')
     
     @patch('worker.processor.update_job_status')
     @patch('worker.processor.save_article')
@@ -160,7 +161,8 @@ class TestWorkerErrorHandling(unittest.TestCase):
         # Save should have been attempted
         mock_save_article.assert_called_once_with(
             article_id='test-article',
-            content="# Test Article"
+            content="# Test Article",
+            started_at=unittest.mock.ANY
         )
 
 

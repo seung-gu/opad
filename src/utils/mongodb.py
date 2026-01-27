@@ -103,7 +103,7 @@ def get_mongodb_client() -> Optional[MongoClient]:
         return None
 
 
-def save_article(article_id: str, content: str) -> bool:
+def save_article(article_id: str, content: str, started_at: Optional[datetime] = None) -> bool:
     """Save article content to MongoDB.
     
     This function updates only the content and status fields.
@@ -113,6 +113,7 @@ def save_article(article_id: str, content: str) -> bool:
     Args:
         article_id: Unique article identifier
         content: Markdown content (includes all information: title, source, URL, date, author, body)
+        started_at: Optional timestamp for when worker started processing (for timing tracking)
         
     Returns:
         True if successful, False otherwise
@@ -134,6 +135,10 @@ def save_article(article_id: str, content: str) -> bool:
             'status': 'completed',
             'updated_at': datetime.now(timezone.utc)
         }
+        
+        # Add started_at if provided (for timing/observability tracking)
+        if started_at:
+            update_data['started_at'] = started_at
         
         result = collection.update_one(
             {'_id': article_id},

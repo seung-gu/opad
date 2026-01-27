@@ -14,6 +14,7 @@ Architecture:
 
 import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Add src to path for imports
@@ -22,9 +23,8 @@ from pathlib import Path
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
-from crew.main import run as run_crew
-
 # Import from src
+from crew.main import run as run_crew
 from api.job_queue import update_job_status, dequeue_job
 from utils.mongodb import save_article, update_article_status
 
@@ -78,6 +78,8 @@ def process_job(job_data: dict) -> bool:
         return False
     
     logger.info("Processing job", extra={"jobId": job_id, "articleId": article_id})
+    
+    started_at = datetime.now(timezone.utc)
     
     # Update status to 'running' (initial state)
     update_job_status(
@@ -138,7 +140,8 @@ def process_job(job_data: dict) -> bool:
             # result.raw contains markdown text with all information (title, source, url, date, author, body)
             success = save_article(
                 article_id=article_id,
-                content=result.raw
+                content=result.raw,
+                started_at=started_at
             )
             if not success:
                 raise Exception("Failed to save article to MongoDB")

@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import sys
 import warnings
-import json
 import logging
 from pathlib import Path
 
