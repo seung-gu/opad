@@ -191,14 +191,15 @@ Choose a topic you're interested in and start learning with content that matches
           if (data.status === 'completed') {
             setGenerating(false)
             setCurrentJobId(null) // Clear jobId
-            // Show success message instead of loading article
-            const successMessage = `# ✅ Article Generation Complete!\n\nYour article has been successfully generated.\n\nPlease go to **Articles** page to view and read your new article.`
-            setContent(successMessage)
-            setCurrentArticleId(null) // Clear articleId so it doesn't auto-load
             // Clear interval immediately
             if (statusPollIntervalRef.current) {
               clearInterval(statusPollIntervalRef.current)
               statusPollIntervalRef.current = null
+            }
+            // Redirect to article page
+            const articleId = data.article_id || currentArticleId
+            if (articleId) {
+              router.push(`/articles/${articleId}`)
             }
           } else if (data.status === 'error') {
             setGenerating(false)

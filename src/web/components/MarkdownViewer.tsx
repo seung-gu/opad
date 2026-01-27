@@ -198,17 +198,17 @@ export default function MarkdownViewer({
         .map(node => node.raw.trim())
         .filter(s => s)
       
-      // Find sentence containing the clicked word
-      const found = sentences.find(s => 
-        new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(s)
+      // Find sentence containing the clicked word (use includes for Korean/Unicode support)
+      const found = sentences.find(s =>
+        s.toLowerCase().includes(word.toLowerCase())
       )
-      
+
       return found || text
     } catch (error) {
       // Fallback to simple split if sentence-splitter fails
       console.warn('sentence-splitter failed, using fallback:', error)
       const sentences = text.split(/([.!?]+\s+)/).filter(s => s.trim())
-      const found = sentences.find(s => new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(s))
+      const found = sentences.find(s => s.toLowerCase().includes(word.toLowerCase()))
       return found ? found.trim() : text
     }
   }
@@ -407,36 +407,32 @@ export default function MarkdownViewer({
         const fragment = document.createDocumentFragment()
         
         // Helper: make words in text clickable (skip whitespace-only and punctuation-only)
-        const parts = text.split(/(\s+|[.,;:!?()[\]{}""''—–-]+)/)
+        // Note: hyphen (-) is NOT included so "long-standing" stays as one word
+        const parts = text.split(/(\s+|[.,;:!?()[\]{}""''—–]+)/)
         
         parts.forEach(part => {
           if (!part) return
           
-          // If it's whitespace or punctuation, just add as text
-          if (/^(\s+|[.,;:!?()[\]{}""''—–-]+)$/.test(part)) {
+          // If it's whitespace, punctuation, or standalone hyphen, just add as text
+          if (/^(\s+|[.,;:!?()[\]{}""''—–]+|-+)$/.test(part)) {
             fragment.appendChild(document.createTextNode(part))
             return
           }
           
-          // If it's a word (alphanumeric), make it clickable
-          if (/[a-zA-Z0-9]/.test(part)) {
-            const spanId = `vocab-${spanIdCounterRef.current++}`
-            const wordSpan = document.createElement('span')
-            wordSpan.textContent = part
-            wordSpan.setAttribute('data-word', part)
-            wordSpan.setAttribute('data-span-id', spanId)
-            if ((parent as HTMLElement).tagName === 'P'){
-              wordSpan.className = 'vocab-word user-clickable'
-              wordSpan.onclick = (e) => {
-                e.stopPropagation()
-                handleWordClick(spanId, part)
-              }
+          // Make word clickable (already filtered whitespace/punctuation above)
+          const spanId = `vocab-${spanIdCounterRef.current++}`
+          const wordSpan = document.createElement('span')
+          wordSpan.textContent = part
+          wordSpan.setAttribute('data-word', part)
+          wordSpan.setAttribute('data-span-id', spanId)
+          if ((parent as HTMLElement).tagName === 'P'){
+            wordSpan.className = 'vocab-word user-clickable'
+            wordSpan.onclick = (e) => {
+              e.stopPropagation()
+              handleWordClick(spanId, part)
             }
-            fragment.appendChild(wordSpan)
-          } else {
-            // Otherwise, just add as text
-            fragment.appendChild(document.createTextNode(part))
           }
+          fragment.appendChild(wordSpan)
         })
         
         if (fragment.childNodes.length > 0) {
