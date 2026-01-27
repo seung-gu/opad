@@ -12,6 +12,16 @@ API_BASE_URL=https://your-api-service.railway.app  # 외부 URL
 
 ### API 서비스 (FastAPI)
 ```bash
+# JWT 인증 (필수!)
+# 보안을 위해 강력한 랜덤 문자열 사용
+# 생성 방법: openssl rand -hex 32
+JWT_SECRET_KEY=your-secure-random-secret-key-here
+
+# CORS 설정 (선택사항, 기본값: "*")
+# 프로덕션에서는 반드시 명시적 도메인 설정 권장
+# 예: CORS_ORIGINS=https://app.example.com,https://www.example.com
+CORS_ORIGINS=*  # 개발 환경에서만 사용
+
 # Redis 연결
 REDIS_URL=redis://localhost:6379
 # 또는 Railway Redis add-on
@@ -79,8 +89,18 @@ export SERPER_API_KEY=your-key
 ### 3. Python 의존성 설치
 ```bash
 # 프로젝트 루트에서
+# uv를 사용하여 의존성 설치 (권장)
+uv sync
+
+# 또는 pip 사용 (uv가 없는 경우)
 pip install -e .
 ```
+
+**참고**: 이 프로젝트는 `uv`를 사용합니다. Python 명령어 실행 시 항상 `uv run`을 사용하세요:
+- ✅ `uv run python -m unittest ...`
+- ✅ `uv run python script.py`
+- ❌ `python3 ...` (사용하지 않음)
+- ❌ `python ...` (사용하지 않음)
 
 ### 4. API 서비스 실행 (터미널 1)
 ```bash
@@ -91,7 +111,7 @@ PYTHONPATH=src uvicorn api.main:app --reload --port 8001
 ### 5. Worker 서비스 실행 (터미널 2)
 ```bash
 cd /Users/seung-gu/projects/opad
-PYTHONPATH=src python -m worker.main
+PYTHONPATH=src uv run python -m worker.main
 ```
 
 ### 6. Web 서비스 실행 (터미널 3)

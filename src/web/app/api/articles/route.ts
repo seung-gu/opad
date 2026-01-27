@@ -13,7 +13,7 @@ export const fetchCache = 'force-no-store'
  * - status: Filter by status (optional)
  * - language: Filter by language (optional)
  * - level: Filter by level (optional)
- * - owner_id: Filter by owner_id (optional)
+ * - user_id: Filter by user_id (optional)
  * 
  * Flow:
  * 1. Extract query parameters
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') || undefined
     const language = searchParams.get('language') || undefined
     const level = searchParams.get('level') || undefined
-    const owner_id = searchParams.get('owner_id') || undefined
+    const user_id = searchParams.get('user_id') || undefined
 
     // FastAPI base URL
     const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
@@ -42,10 +42,13 @@ export async function GET(request: NextRequest) {
     if (status) queryParams.set('status', status)
     if (language) queryParams.set('language', language)
     if (level) queryParams.set('level', level)
-    if (owner_id) queryParams.set('owner_id', owner_id)
+    if (user_id) queryParams.set('user_id', user_id)
 
     const queryString = queryParams.toString()
     const url = `${apiBaseUrl}/articles${queryString ? `?${queryString}` : ''}`
+
+    // Get Authorization header from client request
+    const authorization = request.headers.get('authorization')
 
     console.log(JSON.stringify({
       source: 'web',
@@ -58,13 +61,14 @@ export async function GET(request: NextRequest) {
     // Call FastAPI to get article list with timeout
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
-    
+
     let response: Response
     try {
       response = await fetch(url, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          ...(authorization ? { 'Authorization': authorization } : {}),
         },
         signal: controller.signal,
       })

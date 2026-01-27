@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import sys
 import warnings
-import json
 import logging
 from pathlib import Path
 
@@ -22,35 +21,25 @@ if __name__ == "__main__":
 logger = logging.getLogger(__name__)
 
 
-def run(inputs=None):
+def run(inputs):
     """
     Run the reading material creator crew.
-    
+
     This function simply executes CrewAI and returns the result.
     Progress tracking is handled by JobProgressListener in worker/processor.py
     when called through the worker service.
-    
+
     Args:
-        inputs: Dictionary with language, level, length, topic.
-                If None, reads from input.json file or uses defaults.
-    
+        inputs: Dictionary with:
+            - language: Target language for the article
+            - level: Language proficiency level (A1-C2)
+            - length: Target word count
+            - topic: Article topic/subject
+            - vocabulary_list: (Optional) List of vocabulary words to incorporate
+
     Returns:
         CrewOutput: Result from crew execution
-    """
-    if inputs is None:
-        # Try to read from input.json file
-        input_file = Path('input.json')
-        if input_file.exists():
-            with open(input_file, 'r') as f:
-                inputs = json.load(f)
-        else:
-            # Default values
-            inputs = {
-                'language': 'German',
-                'level': 'B2',
-                'length': '500',
-                'topic': 'Estimation of group A in football World-Cup 2026'
-            }
+    """   
 
     try:
         logger.info("Starting crew execution...")
@@ -71,4 +60,10 @@ def run(inputs=None):
         raise
 
 if __name__ == "__main__":
-    run()
+    inputs = {
+        'language': 'German',
+        'level': 'B2',
+        'length': '500',
+        'topic': 'Estimation of group A in football World-Cup 2026'
+    }
+    run(inputs)

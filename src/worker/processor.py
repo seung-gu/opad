@@ -3,11 +3,11 @@
 This module contains the worker's main processing logic:
 1. Dequeue jobs from Redis queue (FIFO order)
 2. Execute CrewAI to generate articles
-3. Upload results to Cloudflare R2
+3. Save results to MongoDB
 4. Update job status in Redis
 
 Architecture:
-    Redis Queue → dequeue_job() → process_job() → CrewAI → R2 Upload
+    Redis Queue → dequeue_job() → process_job() → CrewAI → MongoDB
                                         ↓
                                   update_job_status() → Redis Status
 """
@@ -16,198 +16,72 @@ import logging
 import sys
 from pathlib import Path
 
-# Add src to path for imports
-# processor.py is at /app/src/worker/processor.py
-# src is at /app/src, so we go up 2 levels
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
 from crew.main import run as run_crew
-
-# Import from src
-from api.job_queue import update_job_status, dequeue_job
-from utils.mongodb import save_article, update_article_status
+from api.job_queue import dequeue_job
+from utils.mongodb import save_article, update_article_status, get_user_vocabulary_for_generation
+from worker.context import JobContext, translate_error
 
 logger = logging.getLogger(__name__)
 
 
 def process_job(job_data: dict) -> bool:
     """Process a single job from the queue.
-    
-    Processing flow:
-        1. Extract job parameters (job_id, article_id, inputs)
-        2. Update status to 'running' (progress=0)
-        3. Create JobProgressListener for real-time progress tracking
-        4. Execute CrewAI (calls crew.main.run_crew)
-           - CrewAI generates article content
-           - Progress updates happen automatically via JobProgressListener
-        5. Upload result to Cloudflare R2 (progress=95)
-        6. Update status to 'completed' (progress=100)
-        7. Handle success/failure
-    
-    Progress tracking:
-        - JobProgressListener catches CrewAI events and updates Redis in real-time
-        - Worker handles initial 'running', R2 upload progress, and final 'completed'/'failed' states
-        - Event-based tracking provides accurate progress (not estimated)
-    
-    Error handling:
-        - Translates technical errors to user-friendly messages
-        - Preserves progress on failure (e.g., 95% stays 95%, not reset to 0%)
-        - Logs detailed error for debugging
-        - R2 upload failures don't fail the entire job (content is still generated)
-    
+
     Args:
-        job_data: Job data from queue
-            {
-                'job_id': 'uuid',
-                'article_id': 'uuid',
-                'inputs': {'language', 'level', 'length', 'topic'},
-                'created_at': 'ISO timestamp'
-            }
-        
+        job_data: Job data from queue (job_id, article_id, user_id, inputs, created_at)
+
     Returns:
         True if job completed, False if failed
     """
-    job_id = job_data.get('job_id')
-    article_id = job_data.get('article_id')
-    inputs = job_data.get('inputs', {})
-    
-    # Validate required fields
-    if not job_id or not inputs:
-        logger.error(f"Invalid job data: {job_data}")
+    ctx = JobContext.from_dict(job_data)
+    if not ctx:
         return False
-    
-    logger.info("Processing job", extra={"jobId": job_id, "articleId": article_id})
-    
-    # Update status to 'running' (initial state)
-    update_job_status(
-        job_id=job_id,
-        status='running',
-        progress=0,
-        message='Starting CrewAI execution...',
-        article_id=article_id
-    )
-    
+
+    logger.info("Processing job", extra=ctx.log_extra)
+    ctx.update_status('running', 0, 'Starting CrewAI execution...')
+
     try:
-        # ✅ Create JobProgressListener for real-time progress tracking
-        # Use CrewAI's scoped_handlers() to ensure handlers are isolated per job
-        # This prevents cross-job state corruption from lingering handlers
         from crew.progress_listener import JobProgressListener
         from crewai.events.event_bus import crewai_event_bus
-        
-        # Use scoped_handlers() to create an isolated event handler scope for this job
-        # All handlers registered within this scope are automatically cleared when exiting
+
         with crewai_event_bus.scoped_handlers():
-            # Create listener - handlers will be registered in the current scope
-            listener = JobProgressListener(job_id=job_id, article_id=article_id)
-            logger.info("Event listener registered", extra={"jobId": job_id})
-            
-            # ✅ Execute CrewAI
-            # During execution, CrewAI emits TaskStartedEvent/TaskCompletedEvent
-            # Our progress_listener automatically catches these events and updates Redis
-            logger.info("Executing CrewAI", extra={"jobId": job_id})
-            result = run_crew(inputs=inputs)
-            
-            logger.info("CrewAI execution completed", extra={"jobId": job_id})
-            
-            # ✅ Check if any task failed during execution
-            # If TaskFailedEvent was emitted, listener.task_failed will be True
-            # In this case, the job status is already set to 'failed' by the event handler
-            # We should not overwrite it with 'completed'
+            listener = JobProgressListener(job_id=ctx.job_id, article_id=ctx.article_id)
+
+            # Fetch vocabulary for personalized generation
+            if ctx.user_id and ctx.inputs.get('language'):
+                vocab = get_user_vocabulary_for_generation(ctx.user_id, ctx.inputs['language'], 50)
+                if vocab:
+                    ctx.inputs['vocabulary_list'] = vocab
+
+            # Execute CrewAI
+            logger.info("Executing CrewAI", extra=ctx.log_extra)
+            result = run_crew(inputs=ctx.inputs)
+            logger.info("CrewAI completed", extra=ctx.log_extra)
+
+            # Check for task failures
             if listener.task_failed:
-                logger.warning(
-                    "Job had task failures but CrewAI didn't raise exception. Job status already set to 'failed' by event handler.",
-                    extra={"jobId": job_id}
-                )
-                # Update MongoDB Article status to 'failed'
-                # Note: Job status is already 'failed' from event handler
-                if article_id:
-                    update_article_status(article_id, 'failed')
+                logger.warning("Task failed during execution", extra=ctx.log_extra)
+                if ctx.article_id:
+                    update_article_status(ctx.article_id, 'failed')
                 return False
-        # ✅ Event handlers are automatically cleared here (scoped_handlers exit)
-        
-        # ✅ Save to MongoDB
-        # CRITICAL: Save is required for article to be accessible to users
-        # If save fails, the generated content is lost (only exists in memory)
-        # Therefore, save failure = job failure
-        logger.info("Saving article to MongoDB", extra={"jobId": job_id, "articleId": article_id})
-        try:
-            # Save article content to MongoDB
-            # Note: Only content and status are updated. Metadata (language, level, length, topic)
-            # was set during article creation and remains immutable.
-            # result.raw contains markdown text with all information (title, source, url, date, author, body)
-            success = save_article(
-                article_id=article_id,
-                content=result.raw
-            )
-            if not success:
-                raise Exception("Failed to save article to MongoDB")
-            logger.info("Successfully saved article to MongoDB", extra={"jobId": job_id, "articleId": article_id})
-        except Exception as save_error:
-            logger.error("MongoDB save failed", extra={"jobId": job_id, "articleId": article_id, "error": str(save_error)})
-            # Save failure means content is lost - mark job and article as failed
-            update_job_status(
-                job_id=job_id,
-                status='failed',
-                progress=0,
-                message='Failed to save article to database',
-                error=f'MongoDB save error: {str(save_error)[:200]}',
-                article_id=article_id
-            )
-            # Update MongoDB Article status to 'failed'
-            if article_id:
-                update_article_status(article_id, 'failed')
+
+        # Save to MongoDB
+        logger.info("Saving article", extra=ctx.log_extra)
+        if not save_article(ctx.article_id, result.raw, ctx.started_at):
+            ctx.mark_failed('Failed to save article to database', 'MongoDB save error')
             return False
-        
-        # ✅ Update final status to 'completed'
-        if not update_job_status(job_id, 'completed', 100, 'Article generated successfully!', article_id=article_id):
-            logger.error("Failed to update final status, marking as failed", extra={"jobId": job_id})
-            update_job_status(
-                job_id, 'failed', 100, 
-                'Article saved but status update failed', 
-                error='Redis status update failed',
-                article_id=article_id
-            )
-            return False
-        
-        logger.info("Job completed successfully", extra={"jobId": job_id, "articleId": article_id})
+
+        # Mark completed
+        ctx.update_status('completed', 100, 'Article generated successfully!')
+        logger.info("Job completed", extra=ctx.log_extra)
         return True
-        
+
     except Exception as e:
-        error_msg = str(e)
-        error_type = type(e).__name__
-        
-        # Translate technical errors to user-friendly messages
-        # This improves UX by hiding implementation details
-        if "json" in error_msg.lower() or "JSON" in error_msg:
-            user_message = "AI model returned invalid response. This may be a temporary issue. Please try again."
-            logger.error("Job failed: JSON parsing error", extra={"jobId": job_id, "articleId": article_id, "error": error_msg, "errorType": "JSONParsingError"})
-        elif "timeout" in error_msg.lower():
-            user_message = "Request timed out. The AI model may be overloaded. Please try again."
-            logger.error("Job failed: Timeout", extra={"jobId": job_id, "articleId": article_id, "error": error_msg, "errorType": "Timeout"})
-        elif "rate limit" in error_msg.lower() or "429" in error_msg:
-            user_message = "Rate limit exceeded. Please wait a moment and try again."
-            logger.error("Job failed: Rate limit", extra={"jobId": job_id, "articleId": article_id, "error": error_msg, "errorType": "RateLimit"})
-        else:
-            user_message = f"Job failed: {error_type}"
-            logger.error("Job failed", extra={"jobId": job_id, "articleId": article_id, "error": error_msg, "errorType": error_type})
-        
-        # Update job status to 'failed'
-        # Note: progress=0 is passed, but update_job_status will preserve existing progress
-        # if it's higher (e.g., 95% from R2 upload failure won't be reset to 0%)
-        update_job_status(
-            job_id=job_id,
-            status='failed',
-            progress=0,  # Preserved by update_job_status if existing progress > 0
-            message=user_message,
-            error=f"{error_type}: {error_msg[:200]}",  # Truncate long errors
-            article_id=article_id
-        )
-        
-        # Update MongoDB Article status to 'failed'
-        if article_id:
-            update_article_status(article_id, 'failed')
-        
+        logger.error(f"Job failed: {e}", extra={**ctx.log_extra, "error": str(e)})
+        ctx.mark_failed(translate_error(e), f"{type(e).__name__}: {str(e)[:200]}")
         return False
 
 

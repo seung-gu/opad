@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Article, ArticleListResponse, ArticleStatus } from '@/types/article'
 import ArticleList from '@/components/ArticleList'
 import ArticleFilter from '@/components/ArticleFilter'
+import { fetchWithAuth } from '@/lib/api'
 
 /**
  * Article list page.
@@ -37,7 +38,7 @@ export default function ArticlesPage() {
       params.set('skip', skip.toString())
       params.set('limit', limit.toString())
 
-      const response = await fetch(`/api/articles?${params.toString()}`)
+      const response = await fetchWithAuth(`/api/articles?${params.toString()}`)
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
@@ -105,11 +106,17 @@ export default function ArticlesPage() {
         </div>
 
         {/* Filter */}
-        <div className="mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <ArticleFilter
             selectedStatus={selectedStatus}
             onStatusChange={handleStatusChange}
           />
+          <Link
+            href="/vocabulary"
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 transition-colors font-medium text-sm"
+          >
+            Vocabulary
+          </Link>
         </div>
 
         {/* Error State */}

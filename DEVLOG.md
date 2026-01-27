@@ -17,7 +17,7 @@
 
 ### Completed Issues
 - ✅ [#11](https://github.com/seung-gu/opad/issues/11) - [M1] DB schema: articles + jobs (user optional) *(2026-01-15)*
-- ✅ [#12](https://github.com/seung-gu/opad/issues/12) - Article CRUD Operations *(Check issue for closed date)*
+- ✅ [#12](https://github.com/seung-gu/opad/issues/12) - Article CRUD Operations *(2026-01-17)*
 
 ### In Progress / Planned
 - [#14](https://github.com/seung-gu/opad/issues/14) - Remove input.json shared file (pass inputs per job)
@@ -28,11 +28,10 @@
 ## Milestone M2
 
 ### Completed Issues
-- ✅ [#16](https://github.com/seung-gu/opad/issues/16) - FE: /articles list page *(Check issue for closed date)*
-
+- ✅ [#16](https://github.com/seung-gu/opad/issues/16) - FE: /articles list page *(2026-01-17)*
+- [#17](https://github.com/seung-gu/opad/issues/17) - FE: /articles/[id] detail page *(2026-01-17)*
 
 ### In Progress / Planned
-- [#17](https://github.com/seung-gu/opad/issues/17) - FE: /articles/[id] detail page *(Check issue for closed date)*
 - [#18](https://github.com/seung-gu/opad/issues/18) - FE: /jobs/[jobId] page (polling + redirect)
 - [#19](https://github.com/seung-gu/opad/issues/19) - Web -> API integration (stop Next spawning python)
 
@@ -49,6 +48,13 @@
 ---
 
 ## Other Issues
+
+### Completed
+- ✅ LLM 유틸리티 리팩토링 *(2026-01-19)*
+  - `utils/llm.py`: 공통 OpenAI API 호출 함수 분리 (`call_openai_chat`, `parse_json_from_content`, `get_llm_error_response`)
+  - `utils/prompts.py`: 프롬프트 템플릿 분리 (`build_word_definition_prompt`)
+  - `api/routes/dictionary.py`: Dictionary endpoint 간소화 (에러 처리 및 프롬프트 분리)
+  - Python 3.11+ 스타일 타입 힌트 적용 (`Optional[X]` → `X | None`, `Tuple[X, Y]` → `tuple[X, Y]`)
 
 ### Open
 - [#24](https://github.com/seung-gu/opad/issues/24) - Roadmap: 3-service split (web/api/worker)

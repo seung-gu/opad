@@ -14,7 +14,7 @@ class ArticleResponse(BaseModel):
     topic: str
     status: str = Field(..., description="Article status")
     created_at: datetime
-    owner_id: Optional[str] = Field(None, description="Owner ID for multi-user support")
+    user_id: Optional[str] = Field(None, description="User ID for multi-user support")
     job_id: Optional[str] = Field(None, description="Job ID for progress tracking")
     inputs: Optional[dict] = Field(None, description="Structured input parameters")
 
@@ -37,7 +37,7 @@ class JobResponse(BaseModel):
     created_at: Optional[datetime] = Field(None, description="Job creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     error: Optional[str] = Field(None, description="Error message if failed")
-    # Note: started_at and finished_at are not currently tracked in Redis
+    # Note: started_at is not currently tracked in Redis
 
 
 class GenerateResponse(BaseModel):
@@ -53,3 +53,55 @@ class ArticleListResponse(BaseModel):
     total: int = Field(..., description="Total number of articles matching filters")
     skip: int = Field(..., description="Number of articles skipped")
     limit: int = Field(..., description="Maximum number of articles returned")
+
+
+class DefineRequest(BaseModel):
+    """Request model for word definition."""
+    word: str
+    sentence: str
+    language: str
+
+
+class DefineResponse(BaseModel):
+    """Response model for word definition."""
+    lemma: str
+    definition: str
+    related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma (e.g., for separable verbs)")
+
+
+class VocabularyRequest(BaseModel):
+    """Request model for adding vocabulary."""
+    article_id: str = Field(..., description="Article ID")
+    word: str = Field(..., description="Original word clicked")
+    lemma: str = Field(..., description="Dictionary form (lemma)")
+    definition: str = Field(..., description="Word definition")
+    sentence: str = Field(..., description="Sentence context")
+    language: str = Field(..., description="Language")
+    related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma")
+    span_id: Optional[str] = Field(None, description="Span ID of the clicked word")
+
+
+class VocabularyResponse(BaseModel):
+    """Response model for vocabulary."""
+    id: str = Field(..., description="Vocabulary ID")
+    article_id: str = Field(..., description="Article ID")
+    word: str = Field(..., description="Original word clicked")
+    lemma: str = Field(..., description="Dictionary form (lemma)")
+    definition: str = Field(..., description="Word definition")
+    sentence: str = Field(..., description="Sentence context")
+    language: str = Field(..., description="Language")
+    related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma")
+    span_id: Optional[str] = Field(None, description="Span ID of the clicked word")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    user_id: Optional[str] = Field(None, description="User ID for multi-user support")
+
+
+class User(BaseModel):
+    """User model for authentication."""
+    id: str = Field(..., description="User ID (MongoDB _id)")
+    email: str = Field(..., description="User email")
+    name: str = Field(..., description="Display name")
+    created_at: datetime = Field(..., description="Account creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+    last_login: Optional[datetime] = Field(None, description="Last login timestamp")
+    provider: str = Field("email", description="Authentication provider")

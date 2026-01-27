@@ -16,7 +16,7 @@ Architecture:
 import json
 import logging
 import os
-from typing import Optional, Tuple
+from typing import Optional
 from datetime import datetime, timezone
 import redis
 from redis.exceptions import RedisError
@@ -107,25 +107,26 @@ def get_redis_client() -> Optional[redis.Redis]:
         return None
 
 
-def enqueue_job(job_id: str, article_id: str, inputs: dict) -> bool:
+def enqueue_job(job_id: str, article_id: str, inputs: dict, user_id: str | None = None) -> bool:
     """Add a job to the Redis queue for worker processing.
-    
+
     Queue structure (FIFO):
         [oldest ← ... ← newest]
          ↑ BLPOP        ↑ RPUSH
          (Worker)       (API)
-    
+
     Flow:
         1. API calls this function when user requests article generation
         2. Job data is serialized to JSON and pushed to queue
         3. Worker picks up job with BLPOP (blocking pop from left)
         4. First-in, first-out order ensures fair processing
-    
+
     Args:
         job_id: Unique job identifier (UUID)
         article_id: Associated article ID
         inputs: Job parameters (language, level, length, topic)
-        
+        user_id: Owner user ID (for vocabulary-aware generation)
+
     Returns:
         True if enqueued successfully, False if Redis unavailable
     """
@@ -133,11 +134,12 @@ def enqueue_job(job_id: str, article_id: str, inputs: dict) -> bool:
     if not client:
         # Error already logged in get_redis_client (only once)
         return False
-    
+
     # Prepare job data for queue
     job_data = {
         'job_id': job_id,
         'article_id': article_id,
+        'user_id': user_id,
         'inputs': inputs,
         'created_at': datetime.now(timezone.utc).isoformat()
     }
@@ -179,6 +181,7 @@ def dequeue_job() -> Optional[dict]:
     """
     client = get_redis_client()
     if not client:
+        logger.debug("[DEQUEUE] Redis client unavailable, cannot dequeue job")
         return None
     
     try:
@@ -189,11 +192,14 @@ def dequeue_job() -> Optional[dict]:
         result = client.blpop(QUEUE_NAME, timeout=1)
         if result:
             _, job_data_str = result  # Unpack (queue_name, data)
-            return json.loads(job_data_str)
-        return None  # Timeout (queue was empty for 1 second)
+            job_data = json.loads(job_data_str)
+            logger.debug("[DEQUEUE] Successfully dequeued job", extra={"jobId": job_data.get('job_id')})
+            return job_data
+        # Timeout (queue was empty for 1 second) - this is normal, don't log
+        return None
     except (RedisError, json.JSONDecodeError) as e:
-        # Don't log every dequeue failure (worker polls continuously)
-        # Initial connection errors already logged in get_redis_client
+        # Log dequeue errors (these indicate real problems)
+        logger.warning("[DEQUEUE] Failed to dequeue job", extra={"error": str(e), "errorType": type(e).__name__})
         return None
 
 
@@ -344,3 +350,70 @@ def update_job_status(
         # Don't log every update failure (called frequently during job execution)
         # Initial connection errors already logged in get_redis_client
         return False
+
+
+def get_job_stats() -> Optional[dict]:
+    """Get job statistics from Redis.
+    
+    Scans all job status keys and counts jobs by status.
+    Similar structure to get_database_stats() for consistency.
+    
+    Returns:
+        Dictionary with job statistics:
+        {
+            'queued': 0,
+            'running': 0,
+            'completed': 0,
+            'failed': 0,
+            'total': 0
+        }
+        Returns None if Redis connection fails.
+    """
+    client = get_redis_client()
+    if not client:
+        return None
+    
+    stats = {
+        'queued': 0,
+        'running': 0,
+        'completed': 0,
+        'failed': 0,
+        'total': 0
+    }
+    
+    try:
+        # Scan all job status keys (pattern: opad:job:*)
+        cursor = 0
+        pattern = 'opad:job:*'
+        
+        while True:
+            cursor, keys = client.scan(cursor, match=pattern, count=100)
+            
+            for key in keys:
+                try:
+                    status_data = client.get(key)
+                    if status_data:
+                        job_data = json.loads(status_data)
+                        status = job_data.get('status', 'unknown')
+                        if status in stats:
+                            stats[status] += 1
+                        stats['total'] += 1
+                except (json.JSONDecodeError, KeyError):
+                    # Skip invalid job data
+                    continue
+            
+            if cursor == 0:
+                break
+                
+        logger.info("Job statistics retrieved", extra={
+            "totalJobs": stats['total'],
+            "queued": stats['queued'],
+            "running": stats['running'],
+            "completed": stats['completed'],
+            "failed": stats['failed']
+        })
+        
+        return stats
+    except RedisError as e:
+        logger.error("Failed to get job stats", extra={"error": str(e)})
+        return None

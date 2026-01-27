@@ -14,7 +14,7 @@ export interface Article {
   topic: string
   status: ArticleStatus
   created_at: string // ISO datetime string
-  owner_id: string | null
+  user_id: string | null
   job_id?: string | null // Job ID for progress tracking
   inputs?: {
     language: string
@@ -35,4 +35,18 @@ export interface ArticleListFilters {
   status?: ArticleStatus
   skip?: number
   limit?: number
+}
+
+export interface Vocabulary {
+  id: string
+  article_id: string
+  word: string
+  lemma: string
+  definition: string
+  sentence: string
+  language: string
+  related_words?: string[] // All words in sentence belonging to this lemma (e.g., for separable verbs)
+  span_id?: string // Span ID of the clicked word in the article
+  created_at: string // ISO datetime string
+  user_id?: string | null // User ID for multi-user support
 }

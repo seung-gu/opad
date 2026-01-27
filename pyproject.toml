@@ -12,7 +12,12 @@ dependencies = [
     "uvicorn[standard]>=0.24.0",
     "redis>=5.0.0",
     "pydantic>=2.0.0",
-    "pymongo>=4.6.0"
+    "email-validator>=2.0.0",
+    "pymongo>=4.6.0",
+    "httpx>=0.25.0",
+    "python-jose[cryptography]>=3.3.0",
+    "bcrypt>=4.0.0",
+    "python-multipart>=0.0.6"
 ]
 
 [build-system]
