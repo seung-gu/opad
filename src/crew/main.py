@@ -24,14 +24,19 @@ logger = logging.getLogger(__name__)
 def run(inputs):
     """
     Run the reading material creator crew.
-    
+
     This function simply executes CrewAI and returns the result.
     Progress tracking is handled by JobProgressListener in worker/processor.py
     when called through the worker service.
-    
+
     Args:
-        inputs: Dictionary with language, level, length, topic.
-    
+        inputs: Dictionary with:
+            - language: Target language for the article
+            - level: Language proficiency level (A1-C2)
+            - length: Target word count
+            - topic: Article topic/subject
+            - vocabulary_list: (Optional) List of vocabulary words to incorporate
+
     Returns:
         CrewOutput: Result from crew execution
     """   

@@ -546,6 +546,12 @@ def _ensure_vocabularies_indexes() -> bool:
             ('article_id', 1)
         ], 'idx_vocab_user_article')
 
+        # Create compound index for user's vocabularies by language (for vocabulary-aware generation)
+        _ensure_index([
+            ('user_id', 1),
+            ('language', 1)
+        ], 'idx_vocab_user_language')
+
         # Create index on created_at (descending) for latest vocabularies
         _ensure_index([('created_at', -1)], 'idx_vocab_created_at')
 
@@ -1245,6 +1251,100 @@ def get_vocabulary_word_counts(language: str | None = None) -> list[dict]:
         return result
     except PyMongoError as e:
         logger.error("Failed to get vocabulary word counts", extra={"error": str(e)})
+        return []
+
+
+def get_user_vocabulary_for_generation(
+    user_id: str,
+    language: str,
+    limit: int = 50
+) -> list[str]:
+    """Get user's vocabulary for article generation, sorted by frequency then recency.
+
+    Used by worker to inject vocabulary into CrewAI prompts.
+    Retrieves lemmas that the user has learned, prioritizing:
+    1. Higher frequency (more occurrences) first
+    2. More recent (latest created_at) for same frequency
+
+    Args:
+        user_id: User ID to filter vocabularies
+        language: Language to filter (must match exactly)
+        limit: Maximum number of lemmas to return (default: 50, max: 1000)
+
+    Returns:
+        List of lemma strings sorted by frequency (desc), then recency (desc).
+        Empty list if no vocabularies found or on error.
+    """
+    # Validate limit to prevent unreasonably large values
+    if limit < 1 or limit > 1000:
+        logger.warning(
+            f"Invalid limit value {limit}, clamping to range [1, 1000]",
+            extra={"userId": user_id, "language": language, "requestedLimit": limit}
+        )
+        limit = max(1, min(limit, 1000))
+
+    client = get_mongodb_client()
+    if not client:
+        return []
+
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[VOCABULARY_COLLECTION_NAME]
+
+        # Aggregation pipeline:
+        # 1. Match user_id and language
+        # 2. Group by lemma, count occurrences, get max created_at
+        # 3. Sort by count desc, then max_created_at desc
+        # 4. Limit results
+        # 5. Project only lemma
+        pipeline = [
+            {
+                '$match': {
+                    'user_id': user_id,
+                    'language': language
+                }
+            },
+            {
+                '$group': {
+                    '_id': '$lemma',
+                    'count': {'$sum': 1},
+                    'max_created_at': {'$max': '$created_at'}
+                }
+            },
+            {
+                '$sort': {
+                    'count': -1,
+                    'max_created_at': -1
+                }
+            },
+            {
+                '$limit': limit
+            },
+            {
+                '$project': {
+                    '_id': 0,
+                    'lemma': '$_id'
+                }
+            }
+        ]
+
+        result = [doc['lemma'] for doc in collection.aggregate(pipeline)]
+
+        logger.info(
+            "Retrieved vocabulary for generation",
+            extra={
+                "userId": user_id,
+                "language": language,
+                "count": len(result)
+            }
+        )
+
+        return result
+    except PyMongoError as e:
+        logger.error(
+            "Failed to get vocabulary for generation",
+            extra={"userId": user_id, "language": language, "error": str(e)}
+        )
         return []
 
 
