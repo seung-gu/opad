@@ -212,7 +212,7 @@ def _create_and_enqueue_job(article_id: str, inputs: dict, job_id: str, user_id:
     
     # Step 2: Enqueue job to Redis queue
     # If this fails, status exists but job won't be processed (visible failure state)
-    if not enqueue_job(job_id, article_id, inputs):
+    if not enqueue_job(job_id, article_id, inputs, user_id):
         update_job_status(job_id, 'failed', 0, 'Failed to enqueue job', 'Queue service unavailable', article_id=article_id)
         # Update MongoDB Article status to 'failed'
         update_article_status(article_id, 'failed')

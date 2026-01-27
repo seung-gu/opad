@@ -64,13 +64,20 @@ adapt_news_article:
     Ensure the final text is approximately {length} words.
     Make the content engaging and educational, suitable for language learning reading materials.
     Preserve the main facts, context, and important details from the original article.
-    
+
+    **Vocabulary Reinforcement:**
+    The learner has previously studied these words: {vocabulary_list}
+    When rewriting the article, prioritize using words from this list where they fit naturally in the context.
+    This helps reinforce vocabulary the learner has already encountered.
+    Do not force words that don't fit - only use them when contextually appropriate.
+    If the vocabulary list is empty, ignore this instruction and proceed normally.
+
     At the beginning of the output, before the article content, include a source section with:
     - Source name (publication/news outlet name)
     - Source URL as a clickable markdown link
     - Publication date
     - Author name (only if it was verified in the previous step)
-    
+
     Structure the output with clear markdown sections and headings for better readability.
   expected_output: >
     A rewritten version of the selected news article adapted for {level} level learners in {language}.

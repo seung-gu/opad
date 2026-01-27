@@ -54,12 +54,14 @@ class TestQueueBasics(unittest.TestCase):
         self.assertIsNotNone(status)
         self.assertEqual(status['status'], 'running')
     
-    @patch('worker.processor.update_job_status')
+    @patch('worker.context.update_job_status')
     @patch('worker.processor.run_crew')
-    @patch('worker.processor.upload_to_cloud')
+    @patch('worker.processor.save_article')
+    @patch('worker.processor.get_user_vocabulary_for_generation')
     @patch('api.job_queue.get_redis_client')
     def test_end_to_end_job_processing(self, mock_get_redis,
-                                        mock_upload, mock_run_crew, mock_update_status):
+                                        mock_get_vocab, mock_save_article,
+                                        mock_run_crew, mock_update_status):
         """Test end-to-end job processing flow."""
         # Setup
         mock_redis = MagicMock()
@@ -68,6 +70,7 @@ class TestQueueBasics(unittest.TestCase):
         job_data = {
             'job_id': 'e2e-test-job',
             'article_id': 'e2e-test-article',
+            'user_id': 'test-user-789',
             'inputs': {'language': 'German', 'level': 'B2', 'length': '500', 'topic': 'AI'}
         }
         
@@ -75,7 +78,8 @@ class TestQueueBasics(unittest.TestCase):
         mock_result = MagicMock()
         mock_result.raw = "# Test Article\n\nContent"
         mock_run_crew.return_value = mock_result
-        mock_upload.return_value = True
+        mock_save_article.return_value = True
+        mock_get_vocab.return_value = ['word1', 'word2']
         
         # Execute
         result = process_job(job_data)
@@ -85,10 +89,11 @@ class TestQueueBasics(unittest.TestCase):
         # Should update status multiple times: running -> completed
         self.assertGreaterEqual(mock_update_status.call_count, 2)
         
-        # Check final status update
+        # Check final status update (positional args: job_id, status, progress, message)
         final_call = mock_update_status.call_args_list[-1]
-        self.assertEqual(final_call[1]['status'], 'completed')
-        self.assertEqual(final_call[1]['progress'], 100)
+        args, kwargs = final_call
+        self.assertEqual(args[1], 'completed')  # status
+        self.assertEqual(args[2], 100)  # progress
 
 
 class TestRedisReconnection(unittest.TestCase):

@@ -107,25 +107,26 @@ def get_redis_client() -> Optional[redis.Redis]:
         return None
 
 
-def enqueue_job(job_id: str, article_id: str, inputs: dict) -> bool:
+def enqueue_job(job_id: str, article_id: str, inputs: dict, user_id: str | None = None) -> bool:
     """Add a job to the Redis queue for worker processing.
-    
+
     Queue structure (FIFO):
         [oldest ← ... ← newest]
          ↑ BLPOP        ↑ RPUSH
          (Worker)       (API)
-    
+
     Flow:
         1. API calls this function when user requests article generation
         2. Job data is serialized to JSON and pushed to queue
         3. Worker picks up job with BLPOP (blocking pop from left)
         4. First-in, first-out order ensures fair processing
-    
+
     Args:
         job_id: Unique job identifier (UUID)
         article_id: Associated article ID
         inputs: Job parameters (language, level, length, topic)
-        
+        user_id: Owner user ID (for vocabulary-aware generation)
+
     Returns:
         True if enqueued successfully, False if Redis unavailable
     """
@@ -133,11 +134,12 @@ def enqueue_job(job_id: str, article_id: str, inputs: dict) -> bool:
     if not client:
         # Error already logged in get_redis_client (only once)
         return False
-    
+
     # Prepare job data for queue
     job_data = {
         'job_id': job_id,
         'article_id': article_id,
+        'user_id': user_id,
         'inputs': inputs,
         'created_at': datetime.now(timezone.utc).isoformat()
     }
