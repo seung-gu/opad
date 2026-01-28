@@ -25,17 +25,18 @@ from pathlib import Path
 _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse, ArticleListResponse, User
+from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse, ArticleListResponse, User, VocabularyResponse
 from api.middleware.auth import get_current_user_required
 from api.job_queue import enqueue_job, update_job_status, get_job_status
 from utils.mongodb import (
-    save_article_metadata, 
-    get_article, 
-    get_mongodb_client, 
+    save_article_metadata,
+    get_article,
+    get_mongodb_client,
     find_duplicate_article,
     list_articles,
     delete_article,
-    update_article_status
+    update_article_status,
+    get_vocabularies
 )
 
 logger = logging.getLogger(__name__)
@@ -466,6 +467,63 @@ async def get_article_content(
         raise HTTPException(status_code=404, detail="Article content not found")
 
     return Response(content=content, media_type='text/markdown')
+
+
+@router.get("/{article_id}/vocabularies", response_model=list[VocabularyResponse])
+async def get_article_vocabularies(
+    article_id: str,
+    current_user: User = Depends(get_current_user_required)
+):
+    """Get vocabularies for a specific article.
+
+    Requires authentication - users can only access vocabularies for their own articles.
+
+    Args:
+        article_id: ID of the article
+        current_user: Authenticated user (required)
+
+    Returns:
+        List of vocabulary items for this article
+
+    Raises:
+        HTTPException: 401 if user is not authenticated
+        HTTPException: 403 if user doesn't own the article
+        HTTPException: 404 if article not found
+    """
+    _validate_article(article_id)
+
+    # Check ownership
+    article = get_article(article_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    article_user_id = article.get('user_id')
+    if article_user_id != current_user.id:
+        logger.warning(
+            "Unauthorized vocabulary access attempt",
+            extra={
+                "articleId": article_id,
+                "articleUserId": article_user_id,
+                "requestUserId": current_user.id
+            }
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="You don't have permission to access this article's vocabularies"
+        )
+
+    vocabularies = get_vocabularies(
+        article_id=article_id,
+        user_id=current_user.id
+    )
+
+    logger.info("Article vocabularies retrieved", extra={
+        "articleId": article_id,
+        "count": len(vocabularies),
+        "userId": current_user.id
+    })
+
+    return vocabularies
 
 
 @router.delete("/{article_id}")

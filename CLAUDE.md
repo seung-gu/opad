@@ -10,22 +10,39 @@ OPAD (One Paragraph A Day) is an AI-powered system that transforms news articles
 
 **For Advisory/Questioning Intent:**
 ```
-code-suggester (model: sonnet)
+code-suggester
     ↓ Analyzes and suggests improvements
     ↓ When ready to implement → code-modifier
 ```
 
 **For Direct Code Modification Commands:**
 ```
-code-modifier (model: opus)
+code-modifier
     ↓ Modifies code directly
-code-reviewer (model: opus)
+    ↓
+code-reviewer
     ↓ Reviews for quality, security, performance
-unittest-agent (model: sonnet)
+    ↓
+unittest-agent
     ↓ Creates test files (test_{filename}.py)
-qa-agent (model: haiku)
+    ↓
+qa-agent
     ↓ Runs tests and validates quality
+    ↓
+    ├─→ version-release-agent (parallel)
+    │   └─ Updates version, creates git tag
+    │
+    ├─→ changelog-agent (parallel)
+    │   └─ Updates CHANGELOG.md with changes
+    │
+    └─→ docs-agent (parallel)
+        └─ Updates REFERENCE.md, ARCHITECTURE.md, SETUP.md
 ```
+
+**Post-QA Agents** (Run in parallel after qa-agent passes):
+- **version-release-agent**: Semantic versioning, git tagging, version sync across services
+- **changelog-agent**: Automatic CHANGELOG.md updates with categorized changes
+- **docs-agent**: Updates API docs, architecture, setup guides, JSDoc comments
 
 See `.claude/agents/` for detailed agent instructions.
 

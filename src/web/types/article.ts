@@ -50,3 +50,8 @@ export interface Vocabulary {
   created_at: string // ISO datetime string
   user_id?: string | null // User ID for multi-user support
 }
+
+export interface VocabularyCount extends Vocabulary {
+  count: number // Number of times this lemma was saved
+  article_ids: string[] // Article IDs where this lemma appears
+}

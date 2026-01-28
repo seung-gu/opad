@@ -31,15 +31,19 @@ async def list_endpoints(request: Request):
     
     # Group by category
     articles = [ep for ep in endpoints if ep['path'].startswith('/articles')]
+    dictionary = [ep for ep in endpoints if ep['path'].startswith('/dictionary')]
+    auth = [ep for ep in endpoints if ep['path'].startswith('/auth')]
     jobs = [ep for ep in endpoints if ep['path'].startswith('/jobs')]
     health = [ep for ep in endpoints if ep['path'].startswith('/health')]
-    other = [ep for ep in endpoints if not any(ep['path'].startswith(p) for p in ['/articles', '/jobs', '/health', '/docs', '/openapi', '/redoc'])]
+    other = [ep for ep in endpoints if not any(ep['path'].startswith(p) for p in ['/articles', '/dictionary', '/jobs', '/auth', '/health', '/docs', '/openapi', '/redoc'])]
     
     def format_endpoint(ep):
         summary_html = f'<div class="summary">{ep["summary"]}</div>' if ep["summary"] else ""
         return f'<div class="endpoint"><span class="method {ep["method"]}">{ep["method"]}</span><span class="path">{ep["path"]}</span>{summary_html}</div>'
     
     articles_html = ''.join([format_endpoint(ep) for ep in sorted(articles, key=lambda x: (x["path"], x["method"]))])
+    dictionary_html = ''.join([format_endpoint(ep) for ep in sorted(dictionary, key=lambda x: (x["path"], x["method"]))])
+    auth_html = ''.join([format_endpoint(ep) for ep in sorted(auth, key=lambda x: (x["path"], x["method"]))])
     jobs_html = ''.join([format_endpoint(ep) for ep in sorted(jobs, key=lambda x: (x["path"], x["method"]))])
     health_html = ''.join([format_endpoint(ep) for ep in sorted(health, key=lambda x: (x["path"], x["method"]))])
     other_html = ''.join([format_endpoint(ep) for ep in sorted(other, key=lambda x: (x["path"], x["method"]))])
@@ -70,10 +74,16 @@ async def list_endpoints(request: Request):
         
         <h2>Articles Endpoints</h2>
         {articles_html}
+
+        <h2>Dictionary Endpoints</h2>
+        {dictionary_html}
+
+        <h2>Authentication Endpoints</h2>
+        {auth_html}
         
         <h2>Jobs Endpoints</h2>
         {jobs_html}
-        
+
         <h2>Health Endpoints</h2>
         {health_html}
         

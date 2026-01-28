@@ -57,9 +57,9 @@ class ArticleListResponse(BaseModel):
 
 class DefineRequest(BaseModel):
     """Request model for word definition."""
-    word: str
-    sentence: str
-    language: str
+    word: str = Field(..., min_length=1, max_length=100, description="Word to define")
+    sentence: str = Field(..., min_length=1, max_length=2000, description="Sentence containing the word")
+    language: str = Field(..., min_length=2, max_length=50, description="Language of the sentence")
 
 
 class DefineResponse(BaseModel):
@@ -94,6 +94,23 @@ class VocabularyResponse(BaseModel):
     span_id: Optional[str] = Field(None, description="Span ID of the clicked word")
     created_at: datetime = Field(..., description="Creation timestamp")
     user_id: Optional[str] = Field(None, description="User ID for multi-user support")
+
+
+class VocabularyCount(BaseModel):
+    """Response model for vocabulary with count (grouped by lemma)."""
+    id: str = Field(..., description="Most recent vocabulary ID")
+    article_id: str = Field(..., description="Most recent article ID")
+    word: str = Field(..., description="Most recent word form")
+    lemma: str = Field(..., description="Dictionary form (lemma)")
+    definition: str = Field(..., description="Most recent definition")
+    sentence: str = Field(..., description="Most recent sentence context")
+    language: str = Field(..., description="Language")
+    related_words: Optional[list[str]] = Field(None, description="Related words from most recent entry")
+    span_id: Optional[str] = Field(None, description="Span ID from most recent entry")
+    created_at: datetime = Field(..., description="Most recent entry timestamp")
+    user_id: Optional[str] = Field(None, description="User ID")
+    count: int = Field(..., description="Number of times this lemma was saved")
+    article_ids: list[str] = Field(..., description="Article IDs where this lemma appears")
 
 
 class User(BaseModel):

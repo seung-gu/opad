@@ -1194,60 +1194,112 @@ def get_vocabulary_stats() -> Optional[dict]:
         return None
 
 
-def get_vocabulary_word_counts(language: str | None = None) -> list[dict]:
-    """Get vocabulary word counts grouped by language and lemma.
-    
+def get_vocabulary_counts(
+    language: str | None = None,
+    user_id: str | None = None,
+    skip: int = 0,
+    limit: int = 100
+) -> list[dict]:
+    """Get vocabulary counts grouped by language and lemma.
+
     Args:
         language: Optional language filter
-        
+        user_id: Optional user ID filter
+        skip: Number of entries to skip (for pagination)
+        limit: Maximum number of entries to return
+
     Returns:
-        List of dictionaries with language, lemma, count, and article_ids:
+        List of dictionaries with language, lemma, count, article_ids, and latest item info:
         [
-            {'language': 'English', 'lemma': 'agent', 'count': 5, 'article_ids': ['id1', 'id2']},
+            {
+                'language': 'English',
+                'lemma': 'agent',
+                'count': 5,
+                'article_ids': ['id1', 'id2'],
+                'definition': '...',  # from most recent
+                'sentence': '...',    # from most recent
+                'word': 'agents',     # from most recent
+                'created_at': '...'   # most recent timestamp
+            },
             ...
         ]
     """
     client = get_mongodb_client()
     if not client:
         return []
-    
+
     try:
         db = client[DATABASE_NAME]
         collection = db[VOCABULARY_COLLECTION_NAME]
-        
+
         # Build aggregation pipeline
         pipeline = []
-        
-        # Filter by language if provided
+
+        # Build match conditions
+        match_conditions = {}
         if language:
-            pipeline.append({'$match': {'language': language}})
-        
+            match_conditions['language'] = language
+        if user_id:
+            match_conditions['user_id'] = user_id
+
+        # Filter if any conditions
+        if match_conditions:
+            pipeline.append({'$match': match_conditions})
+
+        # Sort by created_at descending (newest first) before grouping
+        pipeline.append({'$sort': {'created_at': -1}})
+
         # Group by language and lemma
-        pipeline.extend([
-            {
-                '$group': {
-                    '_id': {
-                        'language': '$language',
-                        'lemma': '$lemma'
-                    },
-                    'count': {'$sum': 1},
-                    'article_ids': {'$addToSet': '$article_id'}
-                }
-            },
-            {
-                '$sort': {'count': -1, '_id.lemma': 1}
+        pipeline.append({
+            '$group': {
+                '_id': {
+                    'language': '$language',
+                    'lemma': '$lemma'
+                },
+                'count': {'$sum': 1},
+                'article_ids': {'$addToSet': '$article_id'},
+                # Get fields from most recent (first after sort)
+                'vocabulary_id': {'$first': '$_id'},
+                'article_id': {'$first': '$article_id'},
+                'definition': {'$first': '$definition'},
+                'sentence': {'$first': '$sentence'},
+                'word': {'$first': '$word'},
+                'created_at': {'$first': '$created_at'},
+                'related_words': {'$first': '$related_words'},
+                'span_id': {'$first': '$span_id'},
+                'user_id': {'$first': '$user_id'}
             }
-        ])
-        
+        })
+
+        # Sort groups by count descending, then by lemma
+        pipeline.append({
+            '$sort': {'count': -1, '_id.lemma': 1}
+        })
+
+        # Add pagination
+        if skip > 0:
+            pipeline.append({'$skip': skip})
+        if limit > 0:
+            pipeline.append({'$limit': limit})
+
         result = []
         for doc in collection.aggregate(pipeline):
             result.append({
+                'id': str(doc.get('vocabulary_id', '')),
+                'article_id': doc.get('article_id', ''),
                 'language': doc['_id']['language'],
                 'lemma': doc['_id']['lemma'],
                 'count': doc['count'],
-                'article_ids': doc['article_ids']
+                'article_ids': doc['article_ids'],
+                'definition': doc.get('definition', ''),
+                'sentence': doc.get('sentence', ''),
+                'word': doc.get('word', ''),
+                'created_at': doc.get('created_at'),
+                'related_words': doc.get('related_words'),
+                'span_id': doc.get('span_id'),
+                'user_id': doc.get('user_id')
             })
-        
+
         return result
     except PyMongoError as e:
         logger.error("Failed to get vocabulary word counts", extra={"error": str(e)})
