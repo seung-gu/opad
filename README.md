@@ -27,7 +27,7 @@ OPAD uses a **3-service architecture** (Web/API/Worker) with asynchronous job pr
 - **MongoDB**: Article metadata and content storage
 - **Redis**: Job queue and status tracking
 
-For detailed architecture documentation, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+For detailed architecture documentation, see [ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ## Installation & Deployment
 
@@ -86,7 +86,7 @@ For detailed architecture documentation, see [ARCHITECTURE.md](./ARCHITECTURE.md
 
 5. **Access**: Open [http://localhost:8000](http://localhost:8000)
 
-For detailed local setup instructions, see [SETUP.md](./SETUP.md).
+For detailed local setup instructions, see [SETUP.md](./docs/SETUP.md).
 
 ### Railway Deployment
 
@@ -124,14 +124,16 @@ For detailed local setup instructions, see [SETUP.md](./SETUP.md).
 
 4. **Deploy**: Railway automatically builds and deploys from your repository
 
-For detailed Railway deployment instructions, see [SETUP.md](./SETUP.md).
+For detailed Railway deployment instructions, see [SETUP.md](./docs/SETUP.md).
 
 ## Documentation
 
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)**: Detailed system architecture and design
-- **[SETUP.md](./SETUP.md)**: Comprehensive setup and deployment guide
-- **[DEVLOG.md](./DEVLOG.md)**: Development log and milestones
-- **[REFERENCE.md](./REFERENCE.md)**: API flow diagrams and reference documentation
+- **[ARCHITECTURE.md](./docs/ARCHITECTURE.md)**: Detailed system architecture and design
+- **[SETUP.md](./docs/SETUP.md)**: Comprehensive setup and deployment guide
+- **[DEVLOG.md](./docs/DEVLOG.md)**: Development log and milestones
+- **[REFERENCE.md](./docs/REFERENCE.md)**: API flow diagrams and reference documentation
+- **[CLAUDE.md](./CLAUDE.md)**: AI agent pipeline and development guidelines
+- **[CHANGELOG.md](./docs/CHANGELOG.md)**: Version history and release notes
 
 ## License
 

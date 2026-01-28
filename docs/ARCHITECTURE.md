@@ -254,6 +254,70 @@ queued → running → completed / failed
 
 ---
 
+## 📚 Vocabulary-Aware Article Generation
+
+### Overview
+The system now supports vocabulary-aware article generation, where CrewAI adjusts content difficulty based on words the user has already learned.
+
+### Vocabulary Features
+
+#### 1. Dictionary API - Word Definition
+- **POST /dictionary/search**: Get word definition and lemma using OpenAI API
+- **Returns**: lemma, definition, and related_words (for complex structures like separable verbs)
+- **Auth**: Required (JWT) to prevent API abuse
+
+#### 2. Vocabulary Storage
+- **POST /dictionary/vocabulary**: Add a word to user's vocabulary
+- **GET /dictionary/vocabularies**: Get aggregated vocabulary grouped by lemma with counts
+- **DELETE /dictionary/vocabularies/{id}**: Delete a vocabulary word
+- **Auth**: All vocabulary operations require authentication and are user-specific
+
+#### 3. Article-Specific Vocabularies
+- **GET /articles/{article_id}/vocabularies**: Get all vocabularies for a specific article
+- **Response**: List of VocabularyResponse objects with word, lemma, definition, context, and metadata
+- **Auth**: Users can only access vocabularies from their own articles
+
+### Data Model
+
+#### Vocabulary Collection (MongoDB)
+```json
+{
+  "_id": "ObjectId",
+  "article_id": "uuid",
+  "user_id": "uuid",
+  "word": "string",              // Original word clicked
+  "lemma": "string",             // Dictionary form
+  "definition": "string",        // Word definition
+  "sentence": "string",          // Sentence context
+  "language": "string",
+  "related_words": ["string"],   // All forms in sentence (e.g., verbs with particles)
+  "span_id": "string",           // Span ID from markdown for linking
+  "created_at": "datetime"
+}
+```
+
+#### VocabularyCount Model (Aggregated Response)
+- Groups vocabularies by lemma
+- Returns count of how many times a lemma appears across articles
+- Includes most recent definition and example sentence
+- Lists all article_ids where lemma appears
+
+### Vocabulary-Aware Generation Flow
+1. User saves vocabulary words from articles (POST /dictionary/vocabulary)
+2. Words stored with article context (sentence, span_id)
+3. When generating new article, worker retrieves user's vocabulary list
+4. CrewAI receives vocabulary list as constraint for content difficulty
+5. Generated article uses different words/complexity for learned vocabulary
+6. User can access article-specific vocabularies (GET /articles/{id}/vocabularies)
+
+### Authentication
+All vocabulary endpoints require JWT authentication. Users can only:
+- Add/delete their own vocabulary
+- View their own vocabulary lists
+- Access vocabularies from their own articles
+
+---
+
 ## 📁 디렉토리 구조
 
 ```

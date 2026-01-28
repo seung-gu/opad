@@ -69,22 +69,34 @@ SERPER_API_KEY=your-key
 
 ## 🚀 로컬 개발 환경 실행
 
-### 1. Redis 시작
+### 1. Database Services 시작
 ```bash
-# Docker로 Redis 실행
+# Docker Compose로 MongoDB + Redis 실행 (권장)
+docker-compose -f docker-compose.local.yml up -d
+
+# 또는 각각 실행:
+
+# Redis 단독 실행
 docker run -d -p 6379:6379 --name opad-redis redis:7-alpine
 
-# 또는 로컬 Redis 설치
-redis-server
+# MongoDB 단독 실행 (로컬 설치 필요)
+mongod --dbpath /path/to/data
 ```
 
 ### 2. 환경변수 설정
 ```bash
 # 프로젝트 루트에서
 export REDIS_URL=redis://localhost:6379
+export MONGO_URL=mongodb://localhost:27017/
+export MONGODB_DATABASE=opad
 export OPENAI_API_KEY=your-key
 export SERPER_API_KEY=your-key
+export JWT_SECRET_KEY=$(openssl rand -hex 32)  # Generate secure JWT secret
 ```
+
+**MongoDB 환경변수:**
+- `MONGO_URL`: MongoDB connection string (default: `mongodb://localhost:27017/`)
+- `MONGODB_DATABASE`: Database name (default: 'opad')
 
 ### 3. Python 의존성 설치
 ```bash
@@ -120,6 +132,21 @@ cd /Users/seung-gu/projects/opad/src/web
 npm install
 API_BASE_URL=http://localhost:8001 npm run dev
 ```
+
+### 7. 테스트 (Optional)
+```bash
+# Python 테스트 실행
+uv run pytest src/api/tests/ -v
+uv run pytest src/worker/tests/ -v
+
+# 커버리지와 함께 실행
+uv run pytest --cov=src --cov-report=term-missing
+```
+
+### 8. API 확인
+- FastAPI Swagger UI: http://localhost:8001/docs
+- API 엔드포인트 목록: http://localhost:8001/endpoints
+- Web UI: http://localhost:8000
 
 ---
 
