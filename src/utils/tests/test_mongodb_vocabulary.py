@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime, timezone
 from pymongo.errors import PyMongoError
 
-from src.utils.mongodb import get_user_vocabulary_for_generation
+from utils.mongodb import get_user_vocabulary_for_generation
 
 
 class TestGetUserVocabularyForGeneration(unittest.TestCase):
@@ -19,7 +19,7 @@ class TestGetUserVocabularyForGeneration(unittest.TestCase):
         self.test_date_2 = datetime(2025, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
         self.test_date_3 = datetime(2025, 1, 3, 12, 0, 0, tzinfo=timezone.utc)
 
-    @patch('src.utils.mongodb.get_mongodb_client')
+    @patch('utils.mongodb.get_mongodb_client')
     def test_returns_lemmas_sorted_by_frequency_desc(self, mock_get_client):
         """Test that lemmas are returned sorted by frequency (descending)."""
         # Setup mock MongoDB client and collection
@@ -55,7 +55,7 @@ class TestGetUserVocabularyForGeneration(unittest.TestCase):
         # Verify limit stage (default 50)
         self.assertEqual(pipeline[3]['$limit'], 50)
 
-    @patch('src.utils.mongodb.get_mongodb_client')
+    @patch('utils.mongodb.get_mongodb_client')
     def test_same_frequency_sorted_by_recency_desc(self, mock_get_client):
         """Test that lemmas with same frequency are sorted by recency (most recent first)."""
         # Setup mock MongoDB client and collection
@@ -76,7 +76,7 @@ class TestGetUserVocabularyForGeneration(unittest.TestCase):
         # Verify correct order: most recent first for same frequency
         self.assertEqual(result, ['zebra', 'yellow', 'xray'])
 
-    @patch('src.utils.mongodb.get_mongodb_client')
+    @patch('utils.mongodb.get_mongodb_client')
     def test_language_filtering_works_correctly(self, mock_get_client):
         """Test that language filter works correctly."""
         # Setup mock MongoDB client and collection
@@ -109,7 +109,7 @@ class TestGetUserVocabularyForGeneration(unittest.TestCase):
         pipeline_call_2 = mock_collection.aggregate.call_args_list[1][0][0]
         self.assertEqual(pipeline_call_2[0]['$match']['language'], "German")
 
-    @patch('src.utils.mongodb.get_mongodb_client')
+    @patch('utils.mongodb.get_mongodb_client')
     def test_limit_parameter_works(self, mock_get_client):
         """Test that limit parameter correctly limits results."""
         # Setup mock MongoDB client and collection
@@ -141,7 +141,7 @@ class TestGetUserVocabularyForGeneration(unittest.TestCase):
         pipeline = mock_collection.aggregate.call_args[0][0]
         self.assertEqual(pipeline[3]['$limit'], 5)
 
-    @patch('src.utils.mongodb.get_mongodb_client')
+    @patch('utils.mongodb.get_mongodb_client')
     def test_default_limit_is_50(self, mock_get_client):
         """Test that default limit is 50 when not specified."""
         # Setup mock MongoDB client and collection
@@ -158,7 +158,7 @@ class TestGetUserVocabularyForGeneration(unittest.TestCase):
         pipeline = mock_collection.aggregate.call_args[0][0]
         self.assertEqual(pipeline[3]['$limit'], 50)
 
-    @patch('src.utils.mongodb.get_mongodb_client')
+    @patch('utils.mongodb.get_mongodb_client')
     def test_empty_result_when_no_vocabularies_found(self, mock_get_client):
         """Test that empty list is returned when no vocabularies match filters."""
         # Setup mock MongoDB client and collection
@@ -176,7 +176,7 @@ class TestGetUserVocabularyForGeneration(unittest.TestCase):
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 0)
 
-    @patch('src.utils.mongodb.get_mongodb_client')
+    @patch('utils.mongodb.get_mongodb_client')
     def test_returns_empty_list_when_mongodb_client_fails(self, mock_get_client):
         """Test that empty list is returned when MongoDB client connection fails."""
         # Mock get_mongodb_client returning None (connection failure)
@@ -188,7 +188,7 @@ class TestGetUserVocabularyForGeneration(unittest.TestCase):
         self.assertEqual(result, [])
         self.assertIsInstance(result, list)
 
-    @patch('src.utils.mongodb.get_mongodb_client')
+    @patch('utils.mongodb.get_mongodb_client')
     def test_returns_empty_list_on_pymongo_error(self, mock_get_client):
         """Test that empty list is returned when PyMongoError occurs during aggregation."""
         # Setup mock MongoDB client and collection
@@ -205,7 +205,7 @@ class TestGetUserVocabularyForGeneration(unittest.TestCase):
         self.assertEqual(result, [])
         self.assertIsInstance(result, list)
 
-    @patch('src.utils.mongodb.get_mongodb_client')
+    @patch('utils.mongodb.get_mongodb_client')
     def test_aggregation_pipeline_structure(self, mock_get_client):
         """Test that aggregation pipeline has correct structure and stages."""
         # Setup mock MongoDB client and collection
@@ -249,7 +249,7 @@ class TestGetUserVocabularyForGeneration(unittest.TestCase):
         self.assertEqual(pipeline[4]['$project']['_id'], 0)
         self.assertEqual(pipeline[4]['$project']['lemma'], '$_id')
 
-    @patch('src.utils.mongodb.get_mongodb_client')
+    @patch('utils.mongodb.get_mongodb_client')
     def test_mixed_frequency_and_recency_sorting(self, mock_get_client):
         """Test complex scenario with mixed frequencies and recencies."""
         # Setup mock MongoDB client and collection
@@ -273,7 +273,7 @@ class TestGetUserVocabularyForGeneration(unittest.TestCase):
         # Verify correct sorting: frequency first, then recency
         self.assertEqual(result, ['popular', 'recent1', 'recent2', 'old'])
 
-    @patch('src.utils.mongodb.get_mongodb_client')
+    @patch('utils.mongodb.get_mongodb_client')
     def test_handles_special_characters_in_lemmas(self, mock_get_client):
         """Test that function handles lemmas with special characters correctly."""
         # Setup mock MongoDB client and collection
@@ -294,7 +294,7 @@ class TestGetUserVocabularyForGeneration(unittest.TestCase):
         # Verify special characters are preserved
         self.assertEqual(result, ["it's", 'über', 'café', 'naïve'])
 
-    @patch('src.utils.mongodb.get_mongodb_client')
+    @patch('utils.mongodb.get_mongodb_client')
     def test_different_users_get_different_vocabularies(self, mock_get_client):
         """Test that different user_ids retrieve different vocabularies."""
         # Setup mock MongoDB client and collection
@@ -327,8 +327,8 @@ class TestGetUserVocabularyForGeneration(unittest.TestCase):
         # Verify results are different
         self.assertNotEqual(result1, result2)
 
-    @patch('src.utils.mongodb.get_mongodb_client')
-    @patch('src.utils.mongodb.logger')
+    @patch('utils.mongodb.get_mongodb_client')
+    @patch('utils.mongodb.logger')
     def test_logs_success_with_correct_info(self, mock_logger, mock_get_client):
         """Test that function logs success with correct information."""
         # Setup mock MongoDB client and collection
@@ -354,8 +354,8 @@ class TestGetUserVocabularyForGeneration(unittest.TestCase):
             }
         )
 
-    @patch('src.utils.mongodb.get_mongodb_client')
-    @patch('src.utils.mongodb.logger')
+    @patch('utils.mongodb.get_mongodb_client')
+    @patch('utils.mongodb.logger')
     def test_logs_error_on_pymongo_exception(self, mock_logger, mock_get_client):
         """Test that function logs error when PyMongoError occurs."""
         # Setup mock MongoDB client and collection
