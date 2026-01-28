@@ -236,7 +236,7 @@ export default function MarkdownViewer({
     }
     
     try {
-      const response = await fetch('/api/dictionary/define', {
+      const response = await fetchWithAuth('/api/dictionary/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

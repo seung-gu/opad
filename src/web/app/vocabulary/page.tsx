@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Vocabulary } from '@/types/article'
+import { VocabularyCount } from '@/types/article'
 import { fetchWithAuth } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -11,15 +11,16 @@ import { useAuth } from '@/contexts/AuthContext'
  * Vocabulary list page.
  *
  * Features:
- * - Display vocabulary words grouped by language
- * - Show word count and definition
- * - Link to article where word was saved
+ * - Display vocabulary words grouped by language and lemma
+ * - Show word count for each lemma
+ * - Display definition and sentence from most recent entry
+ * - Link to all articles where word was saved
  * - Requires authentication
  */
 export default function VocabularyPage() {
   const router = useRouter()
   const { isAuthenticated } = useAuth()
-  const [vocabularies, setVocabularies] = useState<Vocabulary[]>([])
+  const [vocabularies, setVocabularies] = useState<VocabularyCount[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -39,7 +40,7 @@ export default function VocabularyPage() {
         throw new Error(errorData.error || errorData.detail || 'Failed to load vocabularies')
       }
 
-      const data: Vocabulary[] = await response.json()
+      const data: VocabularyCount[] = await response.json()
       setVocabularies(data)
     } catch (err: any) {
       setError(err.message || 'Failed to load vocabularies')
@@ -60,15 +61,18 @@ export default function VocabularyPage() {
     fetchVocabularies()
   }, [isAuthenticated, router, fetchVocabularies])
 
-  // Group vocabularies by language
-  const vocabulariesByLanguage = vocabularies.reduce((acc, vocab) => {
-    const lang = vocab.language
-    if (!acc[lang]) {
-      acc[lang] = []
+  // Group by language for display (data is already aggregated by backend)
+  const groupsByLanguage = vocabularies.reduce((acc, vocab) => {
+    if (!acc[vocab.language]) {
+      acc[vocab.language] = []
     }
-    acc[lang].push(vocab)
+    acc[vocab.language].push(vocab)
     return acc
-  }, {} as Record<string, Vocabulary[]>)
+  }, {} as Record<string, VocabularyCount[]>)
+
+  // Calculate total and unique counts from pre-aggregated data
+  const totalCount = vocabularies.reduce((sum, v) => sum + v.count, 0)
+  const uniqueCount = vocabularies.length
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -86,7 +90,7 @@ export default function VocabularyPage() {
             </Link>
           </div>
           <p className="text-gray-600">
-            {loading ? 'Loading...' : `${vocabularies.length} word${vocabularies.length !== 1 ? 's' : ''} saved`}
+            {loading ? 'Loading...' : `${totalCount} saved (${uniqueCount} unique)`}
           </p>
         </div>
 
@@ -127,46 +131,59 @@ export default function VocabularyPage() {
         )}
 
         {/* Vocabulary List by Language */}
-        {!loading && Object.keys(vocabulariesByLanguage).length > 0 && (
+        {!loading && Object.keys(groupsByLanguage).length > 0 && (
           <div className="space-y-6">
-            {Object.entries(vocabulariesByLanguage)
+            {Object.entries(groupsByLanguage)
               .sort(([a], [b]) => a.localeCompare(b))
-              .map(([language, words]) => (
+              .map(([language, groups]) => (
                 <div key={language} className="bg-white rounded-lg shadow-lg overflow-hidden">
                   {/* Language Header */}
                   <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white p-4">
                     <h2 className="text-2xl font-semibold">{language}</h2>
-                    <p className="text-emerald-100">{words.length} word{words.length !== 1 ? 's' : ''}</p>
+                    <p className="text-emerald-100">
+                      {groups.reduce((sum, g) => sum + g.count, 0)} saved ({groups.length} unique)
+                    </p>
                   </div>
 
                   {/* Words Grid */}
                   <div className="p-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {words.map((vocab) => (
+                      {groups.map((group) => (
                         <div
-                          key={vocab.id}
-                          className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:border-emerald-300 transition-colors"
+                          key={`${group.language}-${group.lemma}`}
+                          className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:border-emerald-300 transition-colors flex flex-col"
                         >
                           <div className="flex items-start justify-between mb-2">
-                            <span className="text-lg font-semibold text-gray-900">{vocab.lemma}</span>
-                            {vocab.word !== vocab.lemma && (
-                              <span className="text-sm text-gray-500 italic">({vocab.word})</span>
+                            <span className="text-lg font-semibold text-gray-900">{group.lemma}</span>
+                            {group.count > 1 && (
+                              <span className="text-sm font-medium text-emerald-600 bg-emerald-100 px-2 py-1 rounded">
+                                {group.count}×
+                              </span>
                             )}
                           </div>
-                          <p className="text-sm text-gray-700 mb-2">{vocab.definition}</p>
+                          {group.word !== group.lemma && (
+                            <p className="text-xs text-gray-500 italic mb-1">({group.word})</p>
+                          )}
+                          <p className="text-sm text-gray-700 mb-2">{group.definition}</p>
                           <p className="text-xs text-gray-500 italic mb-2 line-clamp-2">
-                            &ldquo;{vocab.sentence}&rdquo;
+                            &ldquo;{group.sentence}&rdquo;
                           </p>
-                          <div className="flex items-center justify-between text-xs text-gray-400">
-                            <Link
-                              href={`/articles/${vocab.article_id}`}
-                              className="text-blue-600 hover:text-blue-800 underline"
-                            >
-                              View Article
-                            </Link>
+                          <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
                             <span>
-                              {new Date(vocab.created_at).toLocaleDateString()}
+                              {new Date(group.created_at).toLocaleDateString()}
                             </span>
+                            <span>
+                              {group.article_ids.length} article{group.article_ids.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          {/* Article link - most recent only, fixed at bottom */}
+                          <div className="mt-auto">
+                            <Link
+                              href={`/articles/${group.article_id}`}
+                              className="text-xs text-blue-600 hover:text-blue-800 underline"
+                            >
+                              View in Article
+                            </Link>
                           </div>
                         </div>
                       ))}

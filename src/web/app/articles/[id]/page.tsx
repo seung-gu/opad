@@ -69,7 +69,7 @@ export default function ArticleDetailPage() {
         
         // Load vocabularies for this article
         try {
-          const vocabResponse = await fetchWithAuth(`/api/dictionary/vocabularies?article_id=${articleId}`)
+          const vocabResponse = await fetchWithAuth(`/api/articles/${articleId}/vocabularies`)
           if (vocabResponse.ok) {
             const vocabData = await vocabResponse.json()
             console.log('[Vocab] Loaded vocabularies:', vocabData.map((v: Vocabulary) => ({ word: v.word, span_id: v.span_id })))

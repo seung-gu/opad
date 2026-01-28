@@ -1,24 +1,24 @@
 """Dictionary API routes for word definitions.
 
 This module handles word definition requests using OpenAI API:
-- POST /dictionary/define: Get word definition and lemma from sentence context
-- GET /dictionary/stats: Get vocabulary collection statistics
+- POST /dictionary/search: Search for word definition and lemma from sentence context
+- POST /dictionary/vocabulary: Add a word to vocabulary list
+- GET /dictionary/vocabularies: Get aggregated vocabulary list
+- DELETE /dictionary/vocabularies/{id}: Delete a vocabulary word
 """
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import HTMLResponse
 
 from api.middleware.auth import get_current_user_required
-from api.models import DefineRequest, DefineResponse, User, VocabularyRequest, VocabularyResponse
+from api.models import DefineRequest, DefineResponse, User, VocabularyRequest, VocabularyResponse, VocabularyCount
 from utils.llm import call_openai_chat, parse_json_from_content, get_llm_error_response
 from utils.prompts import build_word_definition_prompt
 from utils.mongodb import (
     delete_vocabulary,
-    get_mongodb_client,
     get_vocabularies,
     get_vocabulary_by_id,
-    get_vocabulary_word_counts,
+    get_vocabulary_counts,
     save_vocabulary,
 )
 
@@ -27,15 +27,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dictionary", tags=["dictionary"])
 
 
-@router.post("/define", response_model=DefineResponse)
-async def define_word(request: DefineRequest):
-    """Get word definition and lemma using OpenAI API.
-    
+@router.post("/search", response_model=DefineResponse)
+async def search_word(
+    request: DefineRequest,
+    current_user: User = Depends(get_current_user_required)
+):
+    """Search for word definition and lemma using OpenAI API.
+
+    Requires authentication to prevent API abuse.
+
     Args:
-        word: The word to define
-        sentence: The sentence containing the word (for context)
-        language: The language of the sentence
-    
+        request: Define request with word, sentence, and language
+        current_user: Authenticated user (required)
+
     Returns:
         DefineResponse with lemma and definition
     """
@@ -86,7 +90,7 @@ async def define_word(request: DefineRequest):
         raise HTTPException(status_code=status_code, detail=detail)
 
 
-@router.post("/vocabularies", response_model=VocabularyResponse)
+@router.post("/vocabulary", response_model=VocabularyResponse)
 async def add_vocabulary(
     request: VocabularyRequest,
     current_user: User = Depends(get_current_user_required)
@@ -132,29 +136,43 @@ async def add_vocabulary(
     return VocabularyResponse(**vocabulary)
 
 
-@router.get("/vocabularies", response_model=list[VocabularyResponse])
+@router.get("/vocabularies", response_model=list[VocabularyCount])
 async def get_vocabularies_list(
-    article_id: str | None = None,
+    language: str | None = None,
+    skip: int = 0,
+    limit: int = 100,
     current_user: User = Depends(get_current_user_required)
 ):
-    """Get vocabulary list for the current user.
+    """Get aggregated vocabulary list grouped by lemma with counts.
 
     Args:
-        article_id: Optional article ID to filter vocabularies
+        language: Optional language filter
+        skip: Number of entries to skip (for pagination)
+        limit: Maximum number of entries to return (default: 100, max: 1000)
         current_user: Authenticated user
 
     Returns:
-        List of vocabularies owned by the current user
+        List of vocabulary groups with counts (VocabularyCount)
     """
-    vocabularies = get_vocabularies(article_id=article_id, user_id=current_user.id)
+    # Enforce maximum limit
+    limit = min(limit, 1000)
 
-    logger.info("Vocabularies retrieved", extra={
-        "count": len(vocabularies),
-        "articleId": article_id,
+    word_counts = get_vocabulary_counts(
+        language=language,
+        user_id=current_user.id,
+        skip=skip,
+        limit=limit
+    )
+
+    logger.info("Grouped vocabularies retrieved", extra={
+        "groupCount": len(word_counts),
+        "language": language,
+        "skip": skip,
+        "limit": limit,
         "userId": current_user.id
     })
 
-    return [VocabularyResponse(**v) for v in vocabularies]
+    return word_counts
 
 
 @router.delete("/vocabularies/{vocabulary_id}")
@@ -191,110 +209,3 @@ async def delete_vocabulary_word(
     })
 
     return {"message": "Vocabulary deleted successfully"}
-
-
-def _check_mongodb_connection() -> None:
-    """Check MongoDB connection and raise if unavailable."""
-    if not get_mongodb_client():
-        raise HTTPException(status_code=503, detail="Database service unavailable")
-
-
-@router.get("/stats")
-async def get_vocabulary_list_endpoint(language: str | None = None):
-    """Get vocabulary word list grouped by language.
-    
-    Args:
-        language: Optional language filter
-        
-    Returns HTML page showing vocabulary words grouped by language.
-    """
-    _check_mongodb_connection()
-    
-    word_counts = get_vocabulary_word_counts(language=language)
-    
-    return _render_vocabulary_list_html(word_counts, language=language)
-
-
-def _render_vocabulary_list_html(word_counts: list[dict], language: str | None = None) -> HTMLResponse:
-    """Render vocabulary word list as HTML page."""
-    # Group by language
-    by_language: dict[str, list[dict]] = {}
-    for item in word_counts:
-        lang = item['language']
-        if lang not in by_language:
-            by_language[lang] = []
-        by_language[lang].append(item)
-    
-    html = f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Vocabulary List - OPAD</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-    </head>
-    <body class="bg-gray-50 p-8">
-        <div class="max-w-6xl mx-auto">
-            <div class="mb-6">
-                <h1 class="text-3xl font-bold text-gray-900 mb-2">Vocabulary List</h1>
-                <p class="text-gray-600">Words saved by users, grouped by language</p>
-            </div>
-
-            <div class="mb-4">
-                <a href="/stats" class="text-blue-600 hover:text-blue-800 underline">← Back to Statistics</a>
-            </div>
-"""
-    
-    if not by_language:
-        html += """
-            <div class="bg-white rounded-lg shadow-lg p-8 text-center">
-                <p class="text-gray-500 text-lg">No vocabulary words found.</p>
-            </div>
-        """
-    else:
-        for lang, words in sorted(by_language.items()):
-            html += f"""
-            <div class="bg-white rounded-lg shadow-lg overflow-hidden mb-6">
-                <div class="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white p-4">
-                    <h2 class="text-2xl font-semibold">{lang}</h2>
-                    <p class="text-emerald-100">{len(words)} unique words</p>
-                </div>
-                <div class="p-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-"""
-            for word in words:
-                count = word['count']
-                lemma = word['lemma']
-                article_count = len(word['article_ids'])
-                html += f"""
-                        <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="text-lg font-semibold text-gray-900">{lemma}</span>
-                                <span class="text-sm font-medium text-emerald-600 bg-emerald-100 px-2 py-1 rounded">
-                                    {count} time{'s' if count > 1 else ''}
-                                </span>
-                            </div>
-                            <div class="text-xs text-gray-500">
-                                in {article_count} article{'s' if article_count > 1 else ''}
-                            </div>
-                        </div>
-"""
-            html += """
-                    </div>
-                </div>
-            </div>
-"""
-    
-    html += """
-            <div class="mt-6 text-center">
-                <button onclick="window.location.reload()" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                    Refresh List
-                </button>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    
-    return HTMLResponse(content=html)

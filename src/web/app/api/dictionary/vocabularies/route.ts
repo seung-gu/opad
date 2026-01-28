@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Forward request to FastAPI
-    const response = await fetch(`${apiUrl}/dictionary/vocabularies`, {
+    const response = await fetch(`${apiUrl}/dictionary/vocabulary`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body)
@@ -56,17 +56,17 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const articleId = searchParams.get('article_id')
+    const language = searchParams.get('language')
 
     // Get FastAPI URL from environment
     const apiUrl = process.env.NEXT_PUBLIC_API_URL ||
                    process.env.API_BASE_URL ||
                    'http://localhost:8001'
 
-    // Build query string
+    // Build query string for aggregated vocabulary list
     const queryParams = new URLSearchParams()
-    if (articleId) {
-      queryParams.append('article_id', articleId)
+    if (language) {
+      queryParams.append('language', language)
     }
 
     const url = `${apiUrl}/dictionary/vocabularies${queryParams.toString() ? '?' + queryParams.toString() : ''}`

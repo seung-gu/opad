@@ -6,3 +6,10 @@ memory/
 .idea/
 .github/agents/
 .clinerules
+
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+*.cover
+.pytest_cache/
