@@ -37,7 +37,15 @@ Return ONLY valid JSON:
 {{
   "lemma": "complete dictionary form with all parts combined",
   "definition": "meaning in this sentence context",
-  "related_words": ["list", "of", "all", "words", "in", "sentence", "belonging", "to", "this", "lemma"]
+  "related_words": ["list", "of", "all", "words", "in", "sentence", "belonging", "to", "this", "lemma"],
+  "pos": "part of speech (noun/verb/adjective/adverb/preposition/conjunction/etc)",
+  "gender": "grammatical gender if applicable (der/die/das for German, le/la for French, el/la for Spanish nouns). Use null if not applicable.",
+  "conjugations": {{
+    "present": "present tense form (for verbs, use null for non-verbs)",
+    "past": "past tense form (for verbs, use null for non-verbs)",
+    "perfect": "perfect/participle form (for verbs, use null for non-verbs)"
+  }},
+  "level": "CEFR level of this word (A1/A2/B1/B2/C1/C2)"
 }}
 
 IMPORTANT: related_words must contain ONLY the grammatical parts of the lemma (e.g., separable verb prefix + stem, reflexive pronoun for reflexive verbs). The order in related_words must match the exact order these words appear in the provided sentence :{sentence}."""

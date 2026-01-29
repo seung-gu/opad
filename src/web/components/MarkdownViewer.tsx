@@ -96,18 +96,26 @@ export default function MarkdownViewer({
     sentence: string,
     relatedWords: string[] | undefined,
     spanId: string,
-    isInVocabulary: boolean
+    isInVocabulary: boolean,
+    pos?: string,
+    gender?: string,
+    conjugations?: { present?: string, past?: string, perfect?: string },
+    level?: string
   ): string => {
     const relatedWordsStr = relatedWords ? JSON.stringify(relatedWords).replace(/"/g, '&quot;') : ''
     const sentenceEscaped = sentence.replace(/"/g, '&quot;')
+    const posStr = pos || ''
+    const genderStr = gender || ''
+    const conjugationsStr = conjugations ? JSON.stringify(conjugations).replace(/"/g, '&quot;') : ''
+    const levelStr = level || ''
     const baseStyle = 'margin-left: 6px; padding: 1px 4px; font-size: 0.7rem; color: white; border: none; border-radius: 3px; cursor: pointer; min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;'
-    
+
     if (isInVocabulary) {
       const style = `${baseStyle} background: #ef4444;`
-      return ` <button class="vocab-btn vocab-remove" data-word="${word}" data-lemma="${lemma}" data-definition="${definition}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanId}" style="${style}" title="Remove from vocabulary">−</button>`
+      return ` <button class="vocab-btn vocab-remove" data-word="${word}" data-lemma="${lemma}" data-definition="${definition}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanId}" data-pos="${posStr}" data-gender="${genderStr}" data-conjugations="${conjugationsStr}" data-level="${levelStr}" style="${style}" title="Remove from vocabulary">−</button>`
     } else {
       const style = `${baseStyle} background: #10b981;`
-      return ` <button class="vocab-btn vocab-add" data-word="${word}" data-lemma="${lemma}" data-definition="${definition}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanId}" style="${style}" title="Add to vocabulary">+</button>`
+      return ` <button class="vocab-btn vocab-add" data-word="${word}" data-lemma="${lemma}" data-definition="${definition}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanId}" data-pos="${posStr}" data-gender="${genderStr}" data-conjugations="${conjugationsStr}" data-level="${levelStr}" style="${style}" title="Add to vocabulary">+</button>`
     }
   }, [])
 
@@ -119,11 +127,24 @@ export default function MarkdownViewer({
     const sentence = btn.getAttribute('data-sentence') || ''
     const relatedWordsStr = btn.getAttribute('data-related-words') || ''
     const spanId = btn.getAttribute('data-span-id') || ''
+    const pos = btn.getAttribute('data-pos') || undefined
+    const gender = btn.getAttribute('data-gender') || undefined
+    const conjugationsStr = btn.getAttribute('data-conjugations') || ''
+    const level = btn.getAttribute('data-level') || undefined
 
     let relatedWords: string[] | undefined = undefined
     if (relatedWordsStr) {
       try {
         relatedWords = JSON.parse(relatedWordsStr.replace(/&quot;/g, '"'))
+      } catch (e) {
+        // Ignore parse error
+      }
+    }
+
+    let conjugations: { present?: string, past?: string, perfect?: string } | undefined = undefined
+    if (conjugationsStr) {
+      try {
+        conjugations = JSON.parse(conjugationsStr.replace(/&quot;/g, '"'))
       } catch (e) {
         // Ignore parse error
       }
@@ -141,7 +162,11 @@ export default function MarkdownViewer({
           sentence,
           language,
           related_words: relatedWords,
-          span_id: spanId || undefined
+          span_id: spanId || undefined,
+          pos: pos || undefined,
+          gender: gender || undefined,
+          conjugations: conjugations || undefined,
+          level: level || undefined
         })
       })
 
@@ -214,7 +239,15 @@ export default function MarkdownViewer({
   }
 
   // Get word definition and lemma from LLM using sentence context
-  const getWordDefinitionFromLLM = async (word: string, sentence: string): Promise<{ lemma: string, definition: string, related_words?: string[] } | null> => {
+  const getWordDefinitionFromLLM = async (word: string, sentence: string): Promise<{
+    lemma: string,
+    definition: string,
+    related_words?: string[],
+    pos?: string,
+    gender?: string,
+    conjugations?: { present?: string, past?: string, perfect?: string },
+    level?: string
+  } | null> => {
     if (!language) {
       return null
     }
@@ -225,16 +258,16 @@ export default function MarkdownViewer({
       const cached = lemmaCacheRef.current.get(wordCacheKey)
       if (cached) {
         try {
-          const { lemma, definition, related_words } = JSON.parse(cached)
+          const { lemma, definition, related_words, pos, gender, conjugations, level } = JSON.parse(cached)
           console.log('[Dictionary] Using word-only cache for:', word)
-          return { lemma, definition, related_words }
+          return { lemma, definition, related_words, pos, gender, conjugations, level }
         } catch (e) {
           console.warn('[Dictionary] Failed to parse cached value, clearing cache')
           lemmaCacheRef.current.delete(wordCacheKey)
         }
       }
     }
-    
+
     try {
       const response = await fetchWithAuth('/api/dictionary/search', {
         method: 'POST',
@@ -245,36 +278,40 @@ export default function MarkdownViewer({
           language: language
         })
       })
-      
+
       if (!response.ok) {
         const errorText = await response.text()
         console.error('[Dictionary] LLM API error:', response.status, errorText)
         return null
       }
-      
+
       const data = await response.json()
       console.log('[Dictionary] LLM response:', data)
-      
+
       if (data.error) {
         console.error('[Dictionary] LLM API returned error:', data.error)
         return null
       }
-      
+
       const lemma = data.lemma?.trim() || word
       const definition = data.definition?.trim()
       const related_words = data.related_words || undefined
-      
+      const pos = data.pos || undefined
+      const gender = data.gender || undefined
+      const conjugations = data.conjugations || undefined
+      const level = data.level || undefined
+
       if (definition) {
         // Cache: store word-only cache (same word = same definition, regardless of sentence)
         const wordCacheKey = `${language}:${word.toLowerCase()}`
-        const cacheValue = JSON.stringify({ lemma, definition, related_words })
-        
+        const cacheValue = JSON.stringify({ lemma, definition, related_words, pos, gender, conjugations, level })
+
         lemmaCacheRef.current.set(wordCacheKey, cacheValue)
-        
-        console.log('[Dictionary] Cached definition for:', word, 'lemma:', lemma, 'related_words:', related_words)
-        return { lemma, definition, related_words }
+
+        console.log('[Dictionary] Cached definition for:', word, 'lemma:', lemma, 'pos:', pos, 'gender:', gender, 'level:', level)
+        return { lemma, definition, related_words, pos, gender, conjugations, level }
       }
-      
+
       return null
     } catch (err) {
       console.error('[Dictionary] LLM error:', err)
@@ -373,14 +410,15 @@ export default function MarkdownViewer({
       }))
       
       // Store word -> lemma mapping (so we can find same lemma variants later)
-      wordToLemmaRef.current.set(word.toLowerCase(), lemma.toLowerCase())
+      // Preserve lemma capitalization (important for German nouns: Hund, not hund)
+      wordToLemmaRef.current.set(word.toLowerCase(), lemma)
       
       // Note: lemmaCacheRef is already set in getWordDefinitionFromLLM, no need to set again here
       
       // Store related_words mapping for all related words
       if (result.related_words && result.related_words.length > 0) {
         result.related_words.forEach(relatedWord => {
-          wordToLemmaRef.current.set(relatedWord.toLowerCase(), lemma.toLowerCase())
+          wordToLemmaRef.current.set(relatedWord.toLowerCase(), lemma)
         })
       }
     } else {
@@ -584,11 +622,33 @@ export default function MarkdownViewer({
           const isInVocabulary = vocabularies.some(v => v.lemma.toLowerCase() === displayLemma.toLowerCase())
           const sentence = extractSentence(span)
           const relatedWords = getRelatedWords(word)
-          
+
+          // Get additional fields from cache
+          const wordCacheKey = language ? `${language}:${word.toLowerCase()}` : null
+          let pos: string | undefined
+          let gender: string | undefined
+          let conjugations: { present?: string, past?: string, perfect?: string } | undefined
+          let level: string | undefined
+
+          if (wordCacheKey && lemmaCacheRef.current.has(wordCacheKey)) {
+            const cached = lemmaCacheRef.current.get(wordCacheKey)
+            if (cached) {
+              try {
+                const parsedCache = JSON.parse(cached)
+                pos = parsedCache.pos
+                gender = parsedCache.gender
+                conjugations = parsedCache.conjugations
+                level = parsedCache.level
+              } catch (e) {
+                // Ignore parse error
+              }
+            }
+          }
+
           let defHtml = `<strong>${displayLemma}</strong>: ${meaning}`
-          
+
           if (articleId && onAddVocabulary) {
-            defHtml += createVocabularyButtonHTML(word, displayLemma, meaning, sentence, relatedWords, spanId, isInVocabulary)
+            defHtml += createVocabularyButtonHTML(word, displayLemma, meaning, sentence, relatedWords, spanId, isInVocabulary, pos, gender, conjugations, level)
           }
           
           defSpan.innerHTML = defHtml

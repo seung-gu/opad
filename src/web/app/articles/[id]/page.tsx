@@ -8,6 +8,7 @@ import ArticleStatusBadge from '@/components/ArticleStatusBadge'
 import VocabularyList from '@/components/VocabularyList'
 import { Article, Vocabulary } from '@/types/article'
 import { fetchWithAuth } from '@/lib/api'
+import { useVocabularyDelete } from '@/hooks/useVocabularyDelete'
 
 /**
  * Article detail page.
@@ -23,6 +24,7 @@ export default function ArticleDetailPage() {
   const params = useParams()
   const router = useRouter()
   const articleId = params.id as string
+  const { deleteVocabulary } = useVocabularyDelete()
 
   const [article, setArticle] = useState<Article | null>(null)
   const [content, setContent] = useState<string>('')
@@ -118,13 +120,8 @@ export default function ArticleDetailPage() {
   // Handle vocabulary deletion
   const handleDeleteVocabulary = async (vocabId: string) => {
     try {
-      const response = await fetchWithAuth(`/api/dictionary/vocabularies/${vocabId}`, {
-        method: 'DELETE'
-      })
-
-      if (response.ok) {
-        setVocabularies(prev => prev.filter(v => v.id !== vocabId))
-      }
+      await deleteVocabulary(vocabId)
+      setVocabularies(prev => prev.filter(v => v.id !== vocabId))
     } catch (error) {
       console.error('Failed to delete vocabulary:', error)
     }
