@@ -4,9 +4,12 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { VocabularyCount } from '@/types/article'
-import { fetchWithAuth } from '@/lib/api'
+import { fetchWithAuth, parseErrorResponse } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import { useVocabularyDelete } from '@/hooks/useVocabularyDelete'
+import { getLevelColor } from '@/lib/styleHelpers'
+import ErrorAlert from '@/components/ErrorAlert'
+import EmptyState from '@/components/EmptyState'
 
 /**
  * Vocabulary list page.
@@ -38,14 +41,15 @@ export default function VocabularyPage() {
           router.push('/login')
           return
         }
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || errorData.detail || 'Failed to load vocabularies')
+        const errorMsg = await parseErrorResponse(response, 'Failed to load vocabularies')
+        throw new Error(errorMsg)
       }
 
       const data: VocabularyCount[] = await response.json()
       setVocabularies(data)
-    } catch (err: any) {
-      setError(err.message || 'Failed to load vocabularies')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load vocabularies'
+      setError(message)
       console.error('Error fetching vocabularies:', err)
     } finally {
       setLoading(false)
@@ -57,9 +61,10 @@ export default function VocabularyPage() {
       await deleteVocabulary(vocabId)
       // Remove from state on success
       setVocabularies(prev => prev.filter(v => v.id !== vocabId))
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to delete vocabulary'
       console.error('Failed to delete vocabulary:', err)
-      setError(err.message || 'Failed to delete vocabulary')
+      setError(message)
     }
   }
 
@@ -108,17 +113,7 @@ export default function VocabularyPage() {
         </div>
 
         {/* Error State */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-800">{error}</p>
-            <button
-              onClick={fetchVocabularies}
-              className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
-            >
-              Try again
-            </button>
-          </div>
-        )}
+        <ErrorAlert error={error} onRetry={fetchVocabularies} />
 
         {/* Loading State */}
         {loading && (
@@ -129,18 +124,14 @@ export default function VocabularyPage() {
 
         {/* Empty State */}
         {!loading && vocabularies.length === 0 && !error && (
-          <div className="bg-white rounded-lg shadow-lg p-8 text-center">
-            <p className="text-gray-500 text-lg mb-4">No vocabulary words found.</p>
-            <p className="text-gray-400">
-              Click on words while reading articles to save them to your vocabulary.
-            </p>
-            <Link
-              href="/articles"
-              className="inline-block mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Go to Articles
-            </Link>
-          </div>
+          <EmptyState
+            title="No vocabulary words found."
+            description="Click on words while reading articles to save them to your vocabulary."
+            action={{
+              label: 'Go to Articles',
+              onClick: () => router.push('/articles')
+            }}
+          />
         )}
 
         {/* Vocabulary List by Language */}
@@ -162,14 +153,6 @@ export default function VocabularyPage() {
                   <div className="p-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {groups.map((group) => {
-                        // Helper function for CEFR level badge color
-                        const getLevelColor = (level?: string) => {
-                          if (!level) return 'bg-gray-100 text-gray-600'
-                          if (level.startsWith('A')) return 'bg-green-100 text-green-700'
-                          if (level.startsWith('B')) return 'bg-yellow-100 text-yellow-700'
-                          return 'bg-red-100 text-red-700' // C1, C2
-                        }
-
                         return (
                           <div
                             key={`${group.language}-${group.lemma}`}
