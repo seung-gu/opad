@@ -25,8 +25,8 @@ graph TB
         FE --> API__api_stats
         API__api_articles_id["GET /api/articles/[id]"]
         FE --> API__api_articles_id
-        API__api_dictionary_define["POST /api/dictionary/define"]
-        FE --> API__api_dictionary_define
+        API__api_dictionary_search["POST /api/dictionary/search"]
+        FE --> API__api_dictionary_search
         API__api_dictionary_vocabularies["POST/GET /api/dictionary/vocabularies"]
         FE --> API__api_dictionary_vocabularies
         API__api_dictionary_vocabularies_id["DELETE /api/dictionary/vocabularies/[id]"]
@@ -415,7 +415,7 @@ generateResponse.status === 409  ← Response handling!
 
 #### GET /articles/{article_id}/vocabularies
 
-**Description**: Get vocabularies for a specific article.
+**Description**: Get vocabularies for a specific article with grammatical metadata.
 
 **Auth**: Required (JWT) - Users can only access their own articles' vocabularies
 
@@ -433,7 +433,15 @@ generateResponse.status === 409  ← Response handling!
     "related_words": ["string"],
     "span_id": "string",
     "created_at": "2025-01-28T12:34:56+00:00",
-    "user_id": "uuid"
+    "user_id": "uuid",
+    "pos": "noun|verb|adjective|etc",
+    "gender": "der|die|das|le|la|el|la",
+    "conjugations": {
+      "present": "string",
+      "past": "string",
+      "perfect": "string"
+    },
+    "level": "A1|A2|B1|B2|C1|C2"
   }
 ]
 ```
@@ -567,7 +575,7 @@ generateResponse.status === 409  ← Response handling!
 
 #### POST /dictionary/search
 
-**Description**: Search for word definition and lemma using OpenAI API.
+**Description**: Search for word definition, lemma, and grammatical metadata using OpenAI API.
 
 **Auth**: Required (JWT) - Prevents API abuse
 
@@ -585,15 +593,32 @@ generateResponse.status === 409  ← Response handling!
 {
   "lemma": "string",
   "definition": "string",
-  "related_words": ["string"]
+  "related_words": ["string"],
+  "pos": "noun|verb|adjective|adverb|etc",
+  "gender": "der|die|das|le|la|el|la (null if not applicable)",
+  "conjugations": {
+    "present": "string",
+    "past": "string",
+    "perfect": "string"
+  },
+  "level": "A1|A2|B1|B2|C1|C2"
 }
 ```
+
+**Field Descriptions**:
+- `lemma`: Dictionary form of the word
+- `definition`: Context-aware definition
+- `related_words`: All words in sentence belonging to this lemma (e.g., for separable verbs)
+- `pos`: Part of speech (noun, verb, adjective, adverb, preposition, etc.)
+- `gender`: Grammatical gender for nouns in gendered languages (German: der/die/das, French: le/la, Spanish: el/la)
+- `conjugations`: Verb conjugations (present, past, perfect forms). Null for non-verbs.
+- `level`: CEFR difficulty level (A1-C2)
 
 ---
 
 #### POST /dictionary/vocabulary
 
-**Description**: Add a word to vocabulary list.
+**Description**: Add a word to vocabulary list with grammatical metadata.
 
 **Auth**: Required (JWT)
 
@@ -607,7 +632,15 @@ generateResponse.status === 409  ← Response handling!
   "sentence": "string",
   "language": "string",
   "related_words": ["string"],
-  "span_id": "string"
+  "span_id": "string",
+  "pos": "noun|verb|adjective|etc",
+  "gender": "der|die|das|le|la|el|la",
+  "conjugations": {
+    "present": "string",
+    "past": "string",
+    "perfect": "string"
+  },
+  "level": "A1|A2|B1|B2|C1|C2"
 }
 ```
 
@@ -624,7 +657,15 @@ generateResponse.status === 409  ← Response handling!
   "related_words": ["string"],
   "span_id": "string",
   "created_at": "2025-01-28T12:34:56+00:00",
-  "user_id": "uuid"
+  "user_id": "uuid",
+  "pos": "noun|verb|adjective|etc",
+  "gender": "der|die|das|le|la|el|la",
+  "conjugations": {
+    "present": "string",
+    "past": "string",
+    "perfect": "string"
+  },
+  "level": "A1|A2|B1|B2|C1|C2"
 }
 ```
 
@@ -632,7 +673,7 @@ generateResponse.status === 409  ← Response handling!
 
 #### GET /dictionary/vocabularies
 
-**Description**: Get aggregated vocabulary list grouped by lemma with counts.
+**Description**: Get aggregated vocabulary list grouped by lemma with counts and grammatical metadata.
 
 **Auth**: Required (JWT) - Returns only vocabularies owned by authenticated user
 
@@ -657,10 +698,20 @@ generateResponse.status === 409  ← Response handling!
     "created_at": "2025-01-28T12:34:56+00:00",
     "user_id": "uuid",
     "count": 5,
-    "article_ids": ["uuid1", "uuid2", "uuid3"]
+    "article_ids": ["uuid1", "uuid2", "uuid3"],
+    "pos": "noun|verb|adjective|etc",
+    "gender": "der|die|das|le|la|el|la",
+    "conjugations": {
+      "present": "string",
+      "past": "string",
+      "perfect": "string"
+    },
+    "level": "A1|A2|B1|B2|C1|C2"
   }
 ]
 ```
+
+**Note**: All grammatical metadata fields (`pos`, `gender`, `conjugations`, `level`) are from the most recent vocabulary entry for each lemma.
 
 ---
 
@@ -696,8 +747,8 @@ generateResponse.status === 409  ← Response handling!
   - File: `src/web/app/api/stats/route.ts`
 - **GET** `/api/articles/[id]`
   - File: `src/web/app/api/articles/[id]/route.ts`
-- **POST** `/api/dictionary/define`
-  - File: `src/web/app/api/dictionary/define/route.ts`
+- **POST** `/api/dictionary/search`
+  - File: `src/web/app/api/dictionary/search/route.ts`
 - **POST** `/api/dictionary/vocabularies`
   - File: `src/web/app/api/dictionary/vocabularies/route.ts`
 - **GET** `/api/dictionary/vocabularies`

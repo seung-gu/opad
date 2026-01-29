@@ -292,15 +292,30 @@ The system now supports vocabulary-aware article generation, where CrewAI adjust
   "language": "string",
   "related_words": ["string"],   // All forms in sentence (e.g., verbs with particles)
   "span_id": "string",           // Span ID from markdown for linking
-  "created_at": "datetime"
+  "created_at": "datetime",
+  "pos": "string",               // Part of speech (noun, verb, adjective, etc.)
+  "gender": "string",            // Grammatical gender (der/die/das for German, le/la for French, etc.)
+  "conjugations": {              // Verb conjugations (null for non-verbs)
+    "present": "string",
+    "past": "string",
+    "perfect": "string"
+  },
+  "level": "string"              // CEFR level (A1, A2, B1, B2, C1, C2)
 }
 ```
+
+**New Grammatical Metadata Fields:**
+- `pos`: Part of speech classification (noun, verb, adjective, adverb, preposition, etc.)
+- `gender`: Grammatical gender for nouns in gendered languages (German: der/die/das, French: le/la, Spanish: el/la). Null for non-gendered languages.
+- `conjugations`: Verb conjugation forms across tenses (present, past, perfect). Null for non-verbs.
+- `level`: CEFR difficulty level (A1-C2) for vocabulary tracking and adaptive learning.
 
 #### VocabularyCount Model (Aggregated Response)
 - Groups vocabularies by lemma
 - Returns count of how many times a lemma appears across articles
 - Includes most recent definition and example sentence
 - Lists all article_ids where lemma appears
+- Includes grammatical metadata (pos, gender, conjugations, level) from most recent entry
 
 ### Vocabulary-Aware Generation Flow
 1. User saves vocabulary words from articles (POST /dictionary/vocabulary)
@@ -416,9 +431,9 @@ prompt = build_word_definition_prompt(
 
 ### Word Definition Endpoint
 
-**Endpoint**: `POST /dictionary/define`
+**Endpoint**: `POST /dictionary/search`
 
-**목적**: 문장 컨텍스트에서 단어의 lemma 및 정의를 추출
+**목적**: 문장 컨텍스트에서 단어의 lemma, 정의 및 문법적 메타데이터를 추출
 
 **요청:**
 ```json
@@ -434,7 +449,15 @@ prompt = build_word_definition_prompt(
 {
   "lemma": "abhängen",
   "definition": "의존하다, ~에 달려있다",
-  "related_words": ["hängt", "ab"]
+  "related_words": ["hängt", "ab"],
+  "pos": "verb",
+  "gender": null,
+  "conjugations": {
+    "present": "hängt ab",
+    "past": "hing ab",
+    "perfect": "hat abgehangen"
+  },
+  "level": "B1"
 }
 ```
 
@@ -442,33 +465,35 @@ prompt = build_word_definition_prompt(
 - **분리동사 처리**: 독일어 등에서 동사가 분리된 경우 전체 lemma 반환 (예: `hängt ... ab` → `abhängen`)
 - **복합어 처리**: 단어가 복합어의 일부인 경우 전체 형태 반환
 - **related_words**: 문장에서 같은 lemma에 속하는 모든 단어들을 배열로 반환 (예: 분리 동사의 경우 모든 부분 포함)
+- **문법적 메타데이터**: 품사(pos), 성(gender), 동사 활용형(conjugations), CEFR 레벨(level) 자동 추출
 - **공통 유틸 사용**: `utils/llm.py`의 `call_openai_chat()` 함수 활용
 - **프롬프트 분리**: `utils/prompts.py`의 `build_word_definition_prompt()` 사용
+- **보안**: Regex injection 방지를 위한 `re.escape()` 적용
 
 **흐름:**
 
 ```mermaid
 sequenceDiagram
     participant Frontend as Frontend<br/>(MarkdownViewer)
-    participant NextAPI as Next.js API<br/>(/api/dictionary/define)
-    participant FastAPI as FastAPI<br/>(/dictionary/define)
+    participant NextAPI as Next.js API<br/>(/api/dictionary/search)
+    participant FastAPI as FastAPI<br/>(/dictionary/search)
     participant Utils as Utils<br/>(prompts.py + llm.py)
     participant OpenAI as OpenAI API
     
-    Frontend->>NextAPI: POST /api/dictionary/define<br/>{word, sentence, language}
-    NextAPI->>FastAPI: POST /dictionary/define<br/>{word, sentence, language}
-    
+    Frontend->>NextAPI: POST /api/dictionary/search<br/>{word, sentence, language}
+    NextAPI->>FastAPI: POST /dictionary/search<br/>{word, sentence, language}
+
     FastAPI->>Utils: build_word_definition_prompt()
     Utils-->>FastAPI: prompt string
-    
+
     FastAPI->>Utils: call_openai_chat(prompt)
     Utils->>OpenAI: POST /v1/chat/completions
-    OpenAI-->>Utils: {lemma, definition, related_words}
+    OpenAI-->>Utils: {lemma, definition, related_words, pos, gender, conjugations, level}
     Utils->>Utils: parse_json_from_content()
-    Utils-->>FastAPI: {lemma, definition, related_words}
-    
-    FastAPI-->>NextAPI: DefineResponse<br/>{lemma, definition, related_words}
-    NextAPI-->>Frontend: {lemma, definition, related_words}
+    Utils-->>FastAPI: {lemma, definition, related_words, pos, gender, conjugations, level}
+
+    FastAPI-->>NextAPI: SearchResponse<br/>{lemma, definition, related_words, pos, gender, conjugations, level}
+    NextAPI-->>Frontend: {lemma, definition, related_words, pos, gender, conjugations, level}
 ```
 
 ### Vocabulary Management Endpoints
