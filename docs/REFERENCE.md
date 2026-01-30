@@ -759,3 +759,490 @@ generateResponse.status === 409  ← Response handling!
   - File: `src/web/app/api/dictionary/stats/route.ts`
 
 ---
+
+## Frontend Utilities & Hooks
+
+### API Client Utilities (`lib/api.ts`)
+
+#### fetchWithAuth()
+
+Fetch wrapper that automatically adds JWT Authorization header from localStorage.
+
+**Usage**:
+```typescript
+import { fetchWithAuth } from '@/lib/api'
+
+const response = await fetchWithAuth('/api/articles', {
+  method: 'GET'
+})
+```
+
+**Features**:
+- Automatically retrieves token from localStorage via `getToken()`
+- Adds `Authorization: Bearer <token>` header if token exists
+- Compatible with standard fetch API
+
+---
+
+#### parseErrorResponse()
+
+Parse error message from API response in a consistent way.
+
+**Parameters**:
+- `response` (Response): Fetch Response object
+- `defaultMessage` (string, default: 'An error occurred'): Fallback message
+
+**Returns**: Promise resolving to error message string
+
+**Usage**:
+```typescript
+import { parseErrorResponse } from '@/lib/api'
+
+const response = await fetch('/api/endpoint')
+if (!response.ok) {
+  const errorMsg = await parseErrorResponse(response, 'Failed to fetch data')
+  throw new Error(errorMsg)
+}
+```
+
+**Error Extraction Order**:
+1. `error` field from response JSON
+2. `detail` field from response JSON
+3. `message` field from response JSON
+4. Falls back to `defaultMessage`
+
+---
+
+### Date Formatting Utilities (`lib/formatters.ts`)
+
+#### formatDate()
+
+Format a date string using Intl.DateTimeFormat with customizable options.
+
+**Parameters**:
+- `dateString` (string): ISO date string to format
+- `locale` (string, default: 'en-US'): Locale string
+- `options` (Intl.DateTimeFormatOptions, default: long format with time): Formatting options
+
+**Returns**: Formatted date string, or original string if parsing fails
+
+**Usage**:
+```typescript
+import { formatDate } from '@/lib/formatters'
+
+formatDate('2024-01-29T12:30:00Z')
+// => "January 29, 2024, 12:30 PM"
+
+formatDate('2024-01-29T12:30:00Z', 'en-US', { month: 'short' })
+// => "Jan 29, 2024, 12:30 PM"
+```
+
+---
+
+#### formatDateShort()
+
+Format a date string to short format (e.g., "Jan 29, 2024").
+
+**Parameters**:
+- `dateString` (string): ISO date string to format
+
+**Returns**: Short formatted date string
+
+**Usage**:
+```typescript
+import { formatDateShort } from '@/lib/formatters'
+
+formatDateShort('2024-01-29T12:30:00Z')
+// => "Jan 29, 2024"
+```
+
+---
+
+#### formatDateTime()
+
+Format a date string to include time (e.g., "Jan 29, 2024, 12:30 PM").
+
+**Parameters**:
+- `dateString` (string): ISO date string to format
+
+**Returns**: Formatted date string with time
+
+**Usage**:
+```typescript
+import { formatDateTime } from '@/lib/formatters'
+
+formatDateTime('2024-01-29T12:30:00Z')
+// => "Jan 29, 2024, 12:30 PM"
+```
+
+---
+
+### Style Utilities (`lib/styleHelpers.ts`)
+
+#### getLevelColor()
+
+Get Tailwind CSS classes for CEFR level badge.
+
+**Parameters**:
+- `level` (string, optional): CEFR level string (e.g., 'A1', 'B2', 'C1')
+
+**Returns**: Tailwind CSS class string for background and text color
+
+**Color Scheme**:
+- A levels (A1, A2): Green (beginner)
+- B levels (B1, B2): Yellow (intermediate)
+- C levels (C1, C2): Red (advanced)
+- No level: Gray (unknown)
+
+**Usage**:
+```typescript
+import { getLevelColor } from '@/lib/styleHelpers'
+
+getLevelColor('A1')  // => 'bg-green-100 text-green-700'
+getLevelColor('B2')  // => 'bg-yellow-100 text-yellow-700'
+getLevelColor('C1')  // => 'bg-red-100 text-red-700'
+getLevelColor()      // => 'bg-gray-100 text-gray-600'
+```
+
+**Note**: These classes are safelisted in `tailwind.config.ts` to prevent purging by Tailwind's tree-shaking.
+
+---
+
+#### getLevelLabel()
+
+Get a descriptive label for CEFR level.
+
+**Parameters**:
+- `level` (string, optional): CEFR level string
+
+**Returns**: Human-readable level description
+
+**Usage**:
+```typescript
+import { getLevelLabel } from '@/lib/styleHelpers'
+
+getLevelLabel('A1')  // => 'Beginner'
+getLevelLabel('B2')  // => 'Intermediate'
+getLevelLabel('C1')  // => 'Advanced'
+getLevelLabel()      // => 'Unknown'
+```
+
+---
+
+### Custom Hooks
+
+#### useAsyncFetch
+
+Generic hook for async data fetching with loading/error/data state management.
+
+**Type Parameters**:
+- `T`: Expected data type
+
+**Returns**:
+```typescript
+{
+  data: T | null           // Fetched data
+  loading: boolean         // Loading state
+  error: string | null     // Error message
+  fetch: (url: string, options?: RequestInit) => Promise<void>
+  setData: (data: T | null) => void
+  setError: (error: string | null) => void
+}
+```
+
+**Features**:
+- Automatic loading state management
+- Error handling with message extraction
+- Automatic 401 redirect to login page
+- Type-safe data state
+
+**Usage**:
+```typescript
+import { useAsyncFetch } from '@/hooks/useAsyncFetch'
+
+function ArticleList() {
+  const { data, loading, error, fetch } = useAsyncFetch<Article[]>()
+
+  useEffect(() => {
+    fetch('/api/articles')
+  }, [fetch])
+
+  if (loading) return <div>Loading...</div>
+  if (error) return <div>Error: {error}</div>
+  return <div>{data?.map(article => ...)}</div>
+}
+```
+
+---
+
+#### usePagination
+
+Hook for pagination calculations and state management.
+
+**Parameters**:
+```typescript
+{
+  total: number   // Total number of items
+  limit: number   // Items per page
+  skip: number    // Current offset
+}
+```
+
+**Returns**:
+```typescript
+{
+  currentPage: number          // Current page (1-indexed)
+  totalPages: number           // Total number of pages
+  hasNextPage: boolean         // Whether next page exists
+  hasPrevPage: boolean         // Whether previous page exists
+  nextSkip: number             // Skip value for next page
+  prevSkip: number             // Skip value for previous page
+  getSkipForPage: (page: number) => number  // Get skip for specific page
+}
+```
+
+**Usage**:
+```typescript
+import { usePagination } from '@/hooks/usePagination'
+
+function PaginatedList() {
+  const [skip, setSkip] = useState(0)
+  const limit = 10
+  const total = 100
+
+  const {
+    currentPage,
+    totalPages,
+    hasNextPage,
+    hasPrevPage,
+    nextSkip,
+    prevSkip
+  } = usePagination({ total, limit, skip })
+
+  return (
+    <div>
+      <p>Page {currentPage} of {totalPages}</p>
+      <button
+        disabled={!hasPrevPage}
+        onClick={() => setSkip(prevSkip)}
+      >
+        Previous
+      </button>
+      <button
+        disabled={!hasNextPage}
+        onClick={() => setSkip(nextSkip)}
+      >
+        Next
+      </button>
+    </div>
+  )
+}
+```
+
+---
+
+#### useStatusPolling
+
+Hook for polling job status with automatic interval management.
+
+**Parameters**:
+```typescript
+{
+  jobId: string | null           // Job ID to poll for status
+  enabled: boolean               // Whether polling is enabled
+  onComplete?: () => void        // Callback when job completes
+  onError?: () => void           // Callback when job fails
+  interval?: number              // Polling interval in ms (default: 5000)
+}
+```
+
+**Returns**:
+```typescript
+{
+  progress: {
+    current_task: string
+    progress: number
+    message: string
+    error: string | null
+  }
+  isPolling: boolean
+}
+```
+
+**Features**:
+- Automatic polling at 5-second intervals (configurable)
+- Progress state management
+- Automatic cleanup on completion/error
+- Callbacks for status changes
+- Prevents unnecessary re-renders with state comparison
+
+**Usage**:
+```typescript
+import { useStatusPolling } from '@/hooks/useStatusPolling'
+
+function ArticleDetail() {
+  const { progress, isPolling } = useStatusPolling({
+    jobId: article?.job_id || null,
+    enabled: article?.status === 'running',
+    onComplete: () => {
+      // Reload article data
+      fetchArticle()
+    },
+    onError: () => {
+      console.error('Job failed')
+    }
+  })
+
+  if (isPolling) {
+    return (
+      <div>
+        <p>{progress.current_task}</p>
+        <progress value={progress.progress} max={100} />
+      </div>
+    )
+  }
+
+  return <div>Article content...</div>
+}
+```
+
+---
+
+#### useVocabularyDelete
+
+Custom hook for deleting vocabulary entries.
+
+**Returns**:
+```typescript
+{
+  deleteVocabulary: (vocabId: string) => Promise<void>
+}
+```
+
+**Features**:
+- Makes DELETE request to vocabulary API
+- Handles error responses with detailed messages
+- Throws errors for the caller to handle (e.g., update UI state)
+
+**Usage**:
+```typescript
+import { useVocabularyDelete } from '@/hooks/useVocabularyDelete'
+
+function VocabularyList() {
+  const [vocabularies, setVocabularies] = useState<Vocabulary[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const { deleteVocabulary } = useVocabularyDelete()
+
+  const handleDelete = async (vocabId: string) => {
+    try {
+      await deleteVocabulary(vocabId)
+      // Update local state on success
+      setVocabularies(prev => prev.filter(v => v.id !== vocabId))
+    } catch (error: any) {
+      // Handle error in UI
+      setError(error.message)
+    }
+  }
+
+  return (
+    <div>
+      {vocabularies.map(vocab => (
+        <button onClick={() => handleDelete(vocab.id)}>Delete</button>
+      ))}
+    </div>
+  )
+}
+```
+
+---
+
+### Reusable Components
+
+#### ErrorAlert
+
+Reusable error alert component for displaying error messages.
+
+**Props**:
+```typescript
+{
+  error: string | null      // Error message to display (null hides component)
+  onRetry?: () => void      // Optional retry button handler
+  className?: string        // Additional CSS classes
+}
+```
+
+**Features**:
+- Consistent error styling (red background with border)
+- Optional retry button
+- Automatic hiding when error is null
+
+**Usage**:
+```typescript
+import ErrorAlert from '@/components/ErrorAlert'
+
+function MyComponent() {
+  const [error, setError] = useState<string | null>(null)
+
+  return (
+    <div>
+      <ErrorAlert
+        error={error}
+        onRetry={() => {
+          setError(null)
+          fetchData()
+        }}
+      />
+    </div>
+  )
+}
+```
+
+---
+
+#### EmptyState
+
+Reusable empty state component for displaying when no data is available.
+
+**Props**:
+```typescript
+{
+  title: string              // Main title
+  description: string        // Description text
+  icon?: string              // Optional emoji/icon
+  action?: {                 // Optional action button
+    label: string
+    onClick: () => void
+  }
+  className?: string         // Additional CSS classes
+}
+```
+
+**Features**:
+- Consistent empty state styling
+- Optional action button
+- Centered layout with icon
+
+**Usage**:
+```typescript
+import EmptyState from '@/components/EmptyState'
+
+function ArticleList() {
+  if (articles.length === 0) {
+    return (
+      <EmptyState
+        title="No articles yet"
+        description="Generate your first article to get started"
+        icon="📚"
+        action={{
+          label: "Generate Article",
+          onClick: () => router.push('/')
+        }}
+      />
+    )
+  }
+
+  return <div>{articles.map(...)}</div>
+}
+```
+
+---

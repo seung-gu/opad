@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Utility functions: `formatters.ts` (formatDate, formatDateShort, formatDateTime) for consistent date formatting
+- Utility functions: `styleHelpers.ts` (getLevelColor, getLevelLabel) for CEFR level styling
+- API utility: `parseErrorResponse` in `api.ts` for centralized error handling
+- Components: `ErrorAlert` for consistent error messaging across pages
+- Components: `EmptyState` for consistent empty state UI patterns
+- Hooks: `useAsyncFetch` for simplified async data fetching with loading/error states
+- Hooks: `usePagination` for unified pagination logic across list pages
+- Hooks: `useStatusPolling` for job status polling with configurable intervals
+- Tailwind safelist configuration for CEFR level colors to prevent CSS purging
+
+### Changed
+- Refactored vocabulary page to use new utility functions and components for improved maintainability
+- Refactored articles page to use `usePagination` hook for consistent pagination behavior
+- Refactored article detail page to use `useStatusPolling` hook for job status tracking
+- Updated all pages to use centralized utility functions and shared components
+- Improved code organization with ~420 lines of duplicate code eliminated
+
+### Fixed
+- XSS vulnerability in MarkdownViewer (documented, fix implementation pending)
+- Conjugations type conversion bug in dictionary API for proper verb form handling
+- Tailwind CSS purge issue with dynamic CEFR level classes
+- Vocabulary POST endpoint path parameter validation bug
+
 ## [0.7.0] - 2026-01-29
 
 ### Added
