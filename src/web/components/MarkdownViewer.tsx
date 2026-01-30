@@ -88,6 +88,13 @@ export default function MarkdownViewer({
     return undefined
   }, [language])
 
+  // Helper: Escape HTML to prevent XSS
+  const escapeHtml = (text: string): string => {
+    const div = document.createElement('div')
+    div.textContent = text
+    return div.innerHTML
+  }
+
   // Helper: Create vocabulary button HTML
   const createVocabularyButtonHTML = useCallback((
     word: string,
@@ -102,22 +109,27 @@ export default function MarkdownViewer({
     conjugations?: { present?: string, past?: string, perfect?: string },
     level?: string
   ): string => {
+    // Escape all user-provided content to prevent XSS
+    const wordEscaped = escapeHtml(word)
+    const lemmaEscaped = escapeHtml(lemma)
+    const definitionEscaped = escapeHtml(definition)
     const relatedWordsStr = relatedWords ? JSON.stringify(relatedWords).replace(/"/g, '&quot;') : ''
-    const sentenceEscaped = sentence.replace(/"/g, '&quot;')
-    const posStr = pos || ''
-    const genderStr = gender || ''
+    const sentenceEscaped = escapeHtml(sentence).replace(/"/g, '&quot;')
+    const posStr = pos ? escapeHtml(pos) : ''
+    const genderStr = gender ? escapeHtml(gender) : ''
     const conjugationsStr = conjugations ? JSON.stringify(conjugations).replace(/"/g, '&quot;') : ''
-    const levelStr = level || ''
+    const levelStr = level ? escapeHtml(level) : ''
+    const spanIdEscaped = escapeHtml(spanId)
     const baseStyle = 'margin-left: 6px; padding: 1px 4px; font-size: 0.7rem; color: white; border: none; border-radius: 3px; cursor: pointer; min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;'
 
     if (isInVocabulary) {
       const style = `${baseStyle} background: #ef4444;`
-      return ` <button class="vocab-btn vocab-remove" data-word="${word}" data-lemma="${lemma}" data-definition="${definition}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanId}" data-pos="${posStr}" data-gender="${genderStr}" data-conjugations="${conjugationsStr}" data-level="${levelStr}" style="${style}" title="Remove from vocabulary">−</button>`
+      return ` <button class="vocab-btn vocab-remove" data-word="${wordEscaped}" data-lemma="${lemmaEscaped}" data-definition="${definitionEscaped}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanIdEscaped}" data-pos="${posStr}" data-gender="${genderStr}" data-conjugations="${conjugationsStr}" data-level="${levelStr}" style="${style}" title="Remove from vocabulary">−</button>`
     } else {
       const style = `${baseStyle} background: #10b981;`
-      return ` <button class="vocab-btn vocab-add" data-word="${word}" data-lemma="${lemma}" data-definition="${definition}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanId}" data-pos="${posStr}" data-gender="${genderStr}" data-conjugations="${conjugationsStr}" data-level="${levelStr}" style="${style}" title="Add to vocabulary">+</button>`
+      return ` <button class="vocab-btn vocab-add" data-word="${wordEscaped}" data-lemma="${lemmaEscaped}" data-definition="${definitionEscaped}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanIdEscaped}" data-pos="${posStr}" data-gender="${genderStr}" data-conjugations="${conjugationsStr}" data-level="${levelStr}" style="${style}" title="Add to vocabulary">+</button>`
     }
-  }, [])
+  }, [escapeHtml])
 
   // Helper: Handle add vocabulary button click
   const handleAddVocabularyClick = useCallback(async (btn: HTMLElement) => {
@@ -430,9 +442,21 @@ export default function MarkdownViewer({
     }
   }, [language, openSpanIds, wordDefinitions, loadingWords])
 
+  // Store handleWordClick ref for event delegation (avoid stale closure)
+  const handleWordClickRef = useRef(handleWordClick)
+  useEffect(() => {
+    handleWordClickRef.current = handleWordClick
+  }, [handleWordClick])
+
   // Make all words clickable (only if clickable prop is true)
   useEffect(() => {
     if (!containerRef.current || !clickable) return
+
+    // Check if already processed
+    if (containerRef.current.getAttribute('data-processed') === 'true') {
+      return
+    }
+
     const processNode = (node: Node) => {
       if (node.nodeType === Node.TEXT_NODE && node.textContent) {
         const text = node.textContent
@@ -441,38 +465,34 @@ export default function MarkdownViewer({
         // Skip if already processed or in code blocks
         if (!parent || parent.nodeName === 'CODE' || parent.nodeName === 'PRE') return
         if (parent instanceof HTMLElement && parent.classList.contains('vocab-word')) return
-        
+
         const fragment = document.createDocumentFragment()
-        
+
         // Helper: make words in text clickable (skip whitespace-only and punctuation-only)
         // Note: hyphen (-) is NOT included so "long-standing" stays as one word
         const parts = text.split(/(\s+|[.,;:!?()[\]{}""''—–]+)/)
-        
+
         parts.forEach(part => {
           if (!part) return
-          
+
           // If it's whitespace, punctuation, or standalone hyphen, just add as text
           if (/^(\s+|[.,;:!?()[\]{}""''—–]+|-+)$/.test(part)) {
             fragment.appendChild(document.createTextNode(part))
             return
           }
-          
+
           // Make word clickable (already filtered whitespace/punctuation above)
           const spanId = `vocab-${spanIdCounterRef.current++}`
           const wordSpan = document.createElement('span')
           wordSpan.textContent = part
           wordSpan.setAttribute('data-word', part)
           wordSpan.setAttribute('data-span-id', spanId)
-          if ((parent as HTMLElement).tagName === 'P'){
+          if ((parent as HTMLElement).tagName === 'P') {
             wordSpan.className = 'vocab-word user-clickable'
-            wordSpan.onclick = (e) => {
-              e.stopPropagation()
-              handleWordClick(spanId, part)
-            }
           }
           fragment.appendChild(wordSpan)
         })
-        
+
         if (fragment.childNodes.length > 0) {
           parent.replaceChild(fragment, node)
         }
@@ -488,7 +508,30 @@ export default function MarkdownViewer({
     }
 
     processNode(containerRef.current)
-  }, [content, language, handleWordClick, clickable])
+    containerRef.current.setAttribute('data-processed', 'true')
+  }, [content, clickable, articleId, onAddVocabulary])
+
+  // Event delegation for word clicks (avoids stale closure issues)
+  useEffect(() => {
+    if (!containerRef.current || !clickable) return
+
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (target.classList.contains('vocab-word') && target.classList.contains('user-clickable')) {
+        e.stopPropagation()
+        const spanId = target.getAttribute('data-span-id')
+        const word = target.getAttribute('data-word')
+        if (spanId && word) {
+          handleWordClickRef.current(spanId, word)
+        }
+      }
+    }
+
+    containerRef.current.addEventListener('click', handleClick)
+    return () => {
+      containerRef.current?.removeEventListener('click', handleClick)
+    }
+  }, [clickable])
 
   // Vocabulary highlighting: highlight vocabularies based on span_id and related_words
   useEffect(() => {
@@ -617,7 +660,14 @@ export default function MarkdownViewer({
         defSpan.className = 'word-definition'
         
         if (isLoading && !meaning) {
-          defSpan.innerHTML = `<strong>${word}</strong>: <em>Loading...</em>`
+          // Use DOM methods instead of innerHTML to prevent XSS
+          const strong = document.createElement('strong')
+          strong.textContent = word
+          const em = document.createElement('em')
+          em.textContent = 'Loading...'
+          defSpan.appendChild(strong)
+          defSpan.appendChild(document.createTextNode(': '))
+          defSpan.appendChild(em)
         } else if (meaning) {
           const isInVocabulary = vocabularies.some(v => v.lemma.toLowerCase() === displayLemma.toLowerCase())
           const sentence = extractSentence(span)
@@ -645,13 +695,22 @@ export default function MarkdownViewer({
             }
           }
 
-          let defHtml = `<strong>${displayLemma}</strong>: ${meaning}`
+          // Use DOM methods instead of innerHTML to prevent XSS
+          const strong = document.createElement('strong')
+          strong.textContent = displayLemma
+          defSpan.appendChild(strong)
+          defSpan.appendChild(document.createTextNode(': ' + meaning))
 
           if (articleId && onAddVocabulary) {
-            defHtml += createVocabularyButtonHTML(word, displayLemma, meaning, sentence, relatedWords, spanId, isInVocabulary, pos, gender, conjugations, level)
+            const buttonHtml = createVocabularyButtonHTML(word, displayLemma, meaning, sentence, relatedWords, spanId, isInVocabulary, pos, gender, conjugations, level)
+            // Create a temporary container to parse the button HTML
+            const tempDiv = document.createElement('div')
+            tempDiv.innerHTML = buttonHtml.trim()  // trim() to remove leading space
+            const button = tempDiv.firstElementChild  // Use firstElementChild, not firstChild
+            if (button) {
+              defSpan.appendChild(button)
+            }
           }
-          
-          defSpan.innerHTML = defHtml
           
           const addBtn = defSpan.querySelector('.vocab-add')
           const removeBtn = defSpan.querySelector('.vocab-remove')
@@ -672,7 +731,7 @@ export default function MarkdownViewer({
         }
         
         span.parentNode?.insertBefore(defSpan, afterWord)
-        
+
         if (afterWord) {
           span.parentNode?.insertBefore(afterWord, defSpan.nextSibling)
         }
