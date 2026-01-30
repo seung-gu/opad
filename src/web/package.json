@@ -6,7 +6,10 @@
     "dev": "next dev -p 8000",
     "dev:debug": "NODE_OPTIONS='--inspect' next dev -p 8000",
     "build": "next build",
-    "start": "next start -p 8000"
+    "start": "next start -p 8000",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.962.0",
@@ -21,12 +24,17 @@
     "sentence-splitter": "^5.0.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
+    "@vitest/ui": "^4.0.18",
     "autoprefixer": "^10.4.0",
+    "jsdom": "^27.4.0",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.3.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.18"
   }
 }
