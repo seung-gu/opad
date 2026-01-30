@@ -13,6 +13,19 @@ from fastapi.testclient import TestClient
 from api.main import app
 from api.models import User
 from api.middleware.auth import get_current_user_required
+from utils.llm import TokenUsageStats
+
+
+def mock_stats() -> TokenUsageStats:
+    """Create a mock TokenUsageStats for testing."""
+    return TokenUsageStats(
+        model="gpt-4.1-mini",
+        prompt_tokens=100,
+        completion_tokens=50,
+        total_tokens=150,
+        estimated_cost=0.0001,
+        provider="openai"
+    )
 
 
 class TestSearchWordRoute(unittest.TestCase):
@@ -34,7 +47,7 @@ class TestSearchWordRoute(unittest.TestCase):
         """Clean up dependency overrides."""
         app.dependency_overrides.clear()
 
-    @patch('api.routes.dictionary.call_openai_chat')
+    @patch('api.routes.dictionary.call_llm_with_tracking')
     @patch('api.routes.dictionary.build_word_definition_prompt')
     def test_search_word_success_with_valid_json(self, mock_prompt, mock_llm):
         """Test successful word search with valid JSON response from LLM."""
@@ -45,7 +58,7 @@ class TestSearchWordRoute(unittest.TestCase):
         mock_prompt.return_value = "test prompt"
 
         # Mock LLM response with valid JSON including new fields
-        mock_llm.return_value = '''{
+        mock_llm.return_value = ('''{
             "lemma": "test",
             "definition": "a procedure",
             "related_words": ["test", "testing"],
@@ -53,7 +66,7 @@ class TestSearchWordRoute(unittest.TestCase):
             "gender": null,
             "conjugations": null,
             "level": "B1"
-        }'''
+        }''', mock_stats())
 
         response = self.client.post(
             "/dictionary/search",
@@ -74,13 +87,13 @@ class TestSearchWordRoute(unittest.TestCase):
         self.assertIsNone(data["conjugations"])
         self.assertEqual(data["level"], "B1")
 
-    @patch('api.routes.dictionary.call_openai_chat')
+    @patch('api.routes.dictionary.call_llm_with_tracking')
     @patch('api.routes.dictionary.build_word_definition_prompt')
     def test_search_word_success_without_related_words(self, mock_prompt, mock_llm):
         """Test successful word search when LLM doesn't return related_words."""
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         mock_prompt.return_value = "test prompt"
-        mock_llm.return_value = '{"lemma": "run", "definition": "to move quickly"}'
+        mock_llm.return_value = ('{"lemma": "run", "definition": "to move quickly"}', mock_stats())
 
         response = self.client.post(
             "/dictionary/search",
@@ -102,14 +115,14 @@ class TestSearchWordRoute(unittest.TestCase):
         self.assertIsNone(data["conjugations"])
         self.assertIsNone(data["level"])
 
-    @patch('api.routes.dictionary.call_openai_chat')
+    @patch('api.routes.dictionary.call_llm_with_tracking')
     @patch('api.routes.dictionary.build_word_definition_prompt')
     def test_search_word_fallback_on_json_parse_failure(self, mock_prompt, mock_llm):
         """Test fallback behavior when JSON parsing fails."""
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         mock_prompt.return_value = "test prompt"
         # Return non-JSON content (short enough to be used as definition)
-        mock_llm.return_value = "This is a simple definition without JSON"
+        mock_llm.return_value = ("This is a simple definition without JSON", mock_stats())
 
         response = self.client.post(
             "/dictionary/search",
@@ -127,14 +140,14 @@ class TestSearchWordRoute(unittest.TestCase):
         # Should use content as definition
         self.assertEqual(data["definition"], "This is a simple definition without JSON")
 
-    @patch('api.routes.dictionary.call_openai_chat')
+    @patch('api.routes.dictionary.call_llm_with_tracking')
     @patch('api.routes.dictionary.build_word_definition_prompt')
     def test_search_word_truncates_long_non_json_response(self, mock_prompt, mock_llm):
         """Test that long non-JSON responses are truncated."""
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         mock_prompt.return_value = "test prompt"
         # Return very long non-JSON content
-        mock_llm.return_value = "x" * 1000
+        mock_llm.return_value = ("x" * 1000, mock_stats())
 
         response = self.client.post(
             "/dictionary/search",
@@ -172,7 +185,7 @@ class TestSearchWordRoute(unittest.TestCase):
 
         self.assertEqual(response.status_code, 401)
 
-    @patch('api.routes.dictionary.call_openai_chat')
+    @patch('api.routes.dictionary.call_llm_with_tracking')
     def test_search_word_invalid_input_validation(self, mock_llm):
         """Test input validation for search_word."""
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
@@ -210,16 +223,16 @@ class TestSearchWordRoute(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 422)
 
-    @patch('api.routes.dictionary.call_openai_chat')
+    @patch('api.routes.dictionary.call_llm_with_tracking')
     @patch('api.routes.dictionary.build_word_definition_prompt')
     def test_search_word_handles_llm_timeout_error(self, mock_prompt, mock_llm):
         """Test handling of LLM timeout errors."""
-        import httpx
+        import litellm
 
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         mock_prompt.return_value = "test prompt"
-        # Simulate timeout
-        mock_llm.side_effect = httpx.TimeoutException("Request timeout")
+        # Simulate timeout using LiteLLM's Timeout exception
+        mock_llm.side_effect = litellm.Timeout("Request timeout", llm_provider="openai", model="gpt-4o-mini")
 
         response = self.client.post(
             "/dictionary/search",
@@ -233,16 +246,21 @@ class TestSearchWordRoute(unittest.TestCase):
         # Should return 504 Gateway Timeout
         self.assertEqual(response.status_code, 504)
 
-    @patch('api.routes.dictionary.call_openai_chat')
+    @patch('api.routes.dictionary.call_llm_with_tracking')
     @patch('api.routes.dictionary.build_word_definition_prompt')
     def test_search_word_handles_llm_api_error(self, mock_prompt, mock_llm):
-        """Test handling of OpenAI API errors."""
-        import httpx
+        """Test handling of LLM API errors."""
+        import litellm
 
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         mock_prompt.return_value = "test prompt"
-        # Simulate API error - RuntimeError is what call_openai_chat raises
-        mock_llm.side_effect = RuntimeError("OpenAI API error: 500 - Internal Server Error")
+        # Simulate API error using LiteLLM's APIError
+        mock_llm.side_effect = litellm.APIError(
+            status_code=500,
+            message="Internal server error",
+            llm_provider="openai",
+            model="gpt-4o-mini"
+        )
 
         response = self.client.post(
             "/dictionary/search",
@@ -253,10 +271,10 @@ class TestSearchWordRoute(unittest.TestCase):
             }
         )
 
-        # Should return 500 for RuntimeError from OpenAI API
-        self.assertEqual(response.status_code, 500)
+        # Should return 502 for APIError from LiteLLM
+        self.assertEqual(response.status_code, 502)
 
-    @patch('api.routes.dictionary.call_openai_chat')
+    @patch('api.routes.dictionary.call_llm_with_tracking')
     @patch('api.routes.dictionary.build_word_definition_prompt')
     def test_search_word_with_verb_conjugations(self, mock_prompt, mock_llm):
         """Test word search for verb with conjugations."""
@@ -264,7 +282,7 @@ class TestSearchWordRoute(unittest.TestCase):
         mock_prompt.return_value = "test prompt"
 
         # Mock LLM response with verb conjugations
-        mock_llm.return_value = '''{
+        mock_llm.return_value = ('''{
             "lemma": "gehen",
             "definition": "to go, to walk",
             "related_words": ["gehen"],
@@ -276,7 +294,7 @@ class TestSearchWordRoute(unittest.TestCase):
                 "perfect": "gegangen"
             },
             "level": "A1"
-        }'''
+        }''', mock_stats())
 
         response = self.client.post(
             "/dictionary/search",
@@ -296,7 +314,7 @@ class TestSearchWordRoute(unittest.TestCase):
         self.assertEqual(data["conjugations"]["perfect"], "gegangen")
         self.assertEqual(data["level"], "A1")
 
-    @patch('api.routes.dictionary.call_openai_chat')
+    @patch('api.routes.dictionary.call_llm_with_tracking')
     @patch('api.routes.dictionary.build_word_definition_prompt')
     def test_search_word_with_german_noun_gender(self, mock_prompt, mock_llm):
         """Test word search for German noun with gender."""
@@ -304,7 +322,7 @@ class TestSearchWordRoute(unittest.TestCase):
         mock_prompt.return_value = "test prompt"
 
         # Mock LLM response with German noun gender
-        mock_llm.return_value = '''{
+        mock_llm.return_value = ('''{
             "lemma": "Hund",
             "definition": "dog",
             "related_words": ["Hund"],
@@ -312,7 +330,7 @@ class TestSearchWordRoute(unittest.TestCase):
             "gender": "der",
             "conjugations": null,
             "level": "A1"
-        }'''
+        }''', mock_stats())
 
         response = self.client.post(
             "/dictionary/search",
