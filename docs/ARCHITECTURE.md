@@ -472,16 +472,36 @@ sequenceDiagram
     participant User
     participant WebUI as Web UI
     participant API as FastAPI
+    participant Redis
+    participant Worker
+    participant CrewAI
+    participant LiteLLM
     participant MongoDB
     participant LLM as LLM Provider
 
     Note over User,LLM: Dictionary Search with Token Tracking
     User->>WebUI: Click word
     WebUI->>API: POST /dictionary/search
-    API->>LLM: Call LLM API
+    API->>LLM: Call LLM API (via utils/llm.py)
     LLM-->>API: Response + usage stats
     API->>MongoDB: save_token_usage()
     API-->>WebUI: Definition response
+
+    Note over User,MongoDB: Article Generation with Token Tracking
+    User->>WebUI: Generate article
+    WebUI->>API: POST /articles/generate
+    API->>Redis: Enqueue job
+    Redis-->>Worker: Dequeue job
+    Worker->>Worker: Set litellm.callbacks = [ArticleGenerationTokenTracker]
+    Worker->>CrewAI: run_crew()
+    CrewAI->>LiteLLM: LLM API calls
+    LiteLLM->>LLM: Multiple API calls
+    LLM-->>LiteLLM: Responses
+    LiteLLM->>Worker: Callback: log_success_event()
+    Worker->>MongoDB: save_token_usage() (per LLM call)
+    CrewAI-->>Worker: Article result
+    Worker->>MongoDB: Save article
+    Worker->>Worker: litellm.callbacks = [] (cleanup)
 
     Note over User,MongoDB: Usage Summary Retrieval
     User->>WebUI: View usage page
@@ -495,7 +515,7 @@ sequenceDiagram
     User->>WebUI: View article usage
     WebUI->>API: GET /usage/articles/{id}
     API->>MongoDB: get_article_token_usage()
-    MongoDB-->>API: Usage records
+    MongoDB-->>API: Usage records (all LLM calls)
     API-->>WebUI: List of TokenUsageRecord
     WebUI-->>User: Display usage details
 ```
@@ -518,11 +538,430 @@ sequenceDiagram
 - ✅ Authentication and authorization for usage endpoints
 - ✅ Usage summary with daily breakdown and operation filtering
 
-**Phase 4** (Planned):
-- CrewAI article generation token tracking
+**Phase 4** (Completed):
+- ✅ CrewAI article generation token tracking via LiteLLM callbacks
+- ✅ ArticleGenerationTokenTracker class for worker integration
+- ✅ Automatic token tracking for authenticated users during article generation
+
+**Phase 5** (Completed):
+- ✅ JobTracker coordinator pattern for unified tracking
+- ✅ Context manager protocol for automatic setup/cleanup
+- ✅ Proper LiteLLM callback lifecycle management
+- ✅ Nested context support with callback state preservation
+
+**Phase 6** (Planned):
 - Usage analytics dashboard (Frontend)
 - Cost alerts and limits
 - Per-user billing reports
+
+---
+
+## 🎯 JobTracker Architecture (Phase 5)
+
+### Overview
+
+JobTracker is a coordinator pattern that unifies two parallel tracking systems during article generation:
+1. **JobProgressListener** - Tracks CrewAI task progress (task-level events)
+2. **ArticleGenerationTokenTracker** - Tracks LLM token usage (API-level callbacks)
+
+### Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph Worker["Worker Process"]
+        ProcessJob[process_job]
+        JobTracker[JobTracker Context Manager]
+
+        subgraph Trackers["Tracking Components"]
+            ProgressListener[JobProgressListener<br/>CrewAI Events]
+            TokenTracker[ArticleGenerationTokenTracker<br/>LiteLLM Callbacks]
+        end
+
+        CrewAI[run_crew<br/>Article Generation]
+    end
+
+    subgraph Storage["Data Storage"]
+        Redis[(Redis<br/>Job Status)]
+        MongoDB[(MongoDB<br/>Token Usage)]
+    end
+
+    subgraph Events["Event Sources"]
+        CrewAIEvents[CrewAI Event Bus<br/>Task Start/Complete]
+        LiteLLMCallbacks[LiteLLM Callbacks<br/>API Success/Failure]
+    end
+
+    ProcessJob -->|with JobTracker| JobTracker
+    JobTracker -->|__enter__<br/>creates| ProgressListener
+    JobTracker -->|__enter__<br/>creates| TokenTracker
+    JobTracker -->|runs| CrewAI
+
+    CrewAI -->|emits events| CrewAIEvents
+    CrewAI -->|makes LLM calls| LiteLLMCallbacks
+
+    CrewAIEvents -->|triggers| ProgressListener
+    LiteLLMCallbacks -->|triggers| TokenTracker
+
+    ProgressListener -->|update_job_status| Redis
+    TokenTracker -->|save_token_usage| MongoDB
+
+    JobTracker -->|__exit__<br/>cleanup| ProgressListener
+    JobTracker -->|__exit__<br/>restore callbacks| TokenTracker
+
+    style JobTracker fill:#4a90e2,stroke:#2563eb,color:#fff
+    style ProgressListener fill:#10a37f,stroke:#0d8a6a,color:#fff
+    style TokenTracker fill:#10a37f,stroke:#0d8a6a,color:#fff
+    style Redis fill:#dc382d,stroke:#a12822,color:#fff
+    style MongoDB fill:#13aa52,stroke:#0f8a43,color:#fff
+```
+
+### Context Manager Lifecycle
+
+```python
+# Worker code
+with crewai_event_bus.scoped_handlers():
+    with JobTracker(job_id, user_id, article_id) as tracker:
+        # 1. __enter__() runs automatically
+        #    - Creates JobProgressListener
+        #    - Creates ArticleGenerationTokenTracker (if user_id)
+        #    - Saves litellm.callbacks to _original_callbacks
+        #    - Sets litellm.callbacks = [token_tracker]
+
+        result = run_crew(inputs)
+
+        # 2. During execution
+        #    - CrewAI emits task events → JobProgressListener → Redis
+        #    - CrewAI makes LLM calls → LiteLLM → TokenTracker → MongoDB
+
+        # 3. Check for failures
+        if tracker.listener.task_failed:
+            return False
+
+    # 4. __exit__() runs automatically (even on exception)
+    #    - Restores litellm.callbacks = _original_callbacks
+    #    - Prevents callback leakage between jobs
+```
+
+### Key Design Decisions
+
+**Why Context Manager?**
+- Automatic setup and cleanup (no manual litellm.callbacks management)
+- Exception-safe (cleanup always runs via `__exit__`)
+- Pythonic and readable (`with` statement)
+
+**Why Save/Restore Callbacks Instead of Clearing?**
+- Supports nested JobTracker contexts (future-proof)
+- Prevents accidentally clearing callbacks from outer scope
+- More defensive for long-running worker processes
+
+**Why Two Separate Trackers?**
+- Different abstraction levels (task-level vs API-level)
+- Different storage backends (Redis vs MongoDB)
+- Different lifetimes (ephemeral vs permanent)
+- Independent failure modes (one can fail without affecting other)
+
+**Why Coordinate Them?**
+- Shared lifecycle (both track same job)
+- Shared context (job_id, user_id, article_id)
+- Single entry point for worker code
+- Consistent error handling
+
+### Data Flow Comparison
+
+| Aspect | JobProgressListener | ArticleGenerationTokenTracker |
+|--------|---------------------|-------------------------------|
+| **Trigger** | CrewAI task events | LLM API calls |
+| **Frequency** | ~4-5 times per job | ~5-10 times per job |
+| **Granularity** | Coarse (task start/end) | Fine (per API call) |
+| **Data** | Task name, progress % | Model, tokens, cost |
+| **Storage** | Redis (job status) | MongoDB (usage records) |
+| **TTL** | 24 hours (auto-expire) | Permanent |
+| **Consumer** | Frontend polling | Analytics/billing |
+
+### Error Handling
+
+**Non-Fatal Tracking**:
+- Both trackers catch all exceptions internally
+- Failures logged as warnings but never crash worker
+- Article generation continues even if tracking fails
+- Rationale: Tracking is observability, not critical path
+
+**Cleanup Guarantees**:
+```python
+def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    """Always runs, even on exception."""
+    if self.token_tracker is not None:
+        litellm.callbacks = self._original_callbacks  # Always restore
+```
+
+### Testing Considerations
+
+**Unit Tests Should Cover**:
+- `JobTracker.__enter__()` creates both trackers
+- `JobTracker.__exit__()` restores callbacks
+- Anonymous users skip token tracking
+- Callback state preserved across nested contexts
+- Cleanup runs even on exceptions
+
+**Integration Tests Should Cover**:
+- Full article generation with both trackers active
+- Progress updates appear in Redis
+- Token usage records appear in MongoDB
+- Multiple jobs don't interfere with each other
+
+---
+
+## 🔧 Worker Token Tracking (Phase 4-5)
+
+### Overview
+
+The Worker service tracks token usage during CrewAI article generation using LiteLLM's callback system. Phase 5 introduced the **JobTracker coordinator pattern** that unifies job progress tracking and token usage tracking into a single context manager with proper lifecycle management.
+
+### Architecture
+
+**Data Flow:**
+```
+Worker → process_job() → JobTracker.__enter__() → Set litellm.callbacks → run_crew() → CrewAI agents
+                                ↓                                                            ↓
+                    JobProgressListener (task events)                            Multiple LLM calls
+                    ArticleGenerationTokenTracker (token tracking)                         ↓
+                                                                            LiteLLM intercepts each call
+                                                                                        ↓
+                                                            ArticleGenerationTokenTracker.log_success_event()
+                                                                                        ↓
+                                                                            save_token_usage() → MongoDB
+                                                                                        ↓
+                                                                    JobTracker.__exit__() → Cleanup
+```
+
+### JobTracker Coordinator (Phase 5)
+
+**File**: `src/worker/job_tracker.py`
+
+**Purpose**: Unified coordinator that manages both job progress tracking (CrewAI events) and token usage tracking (LiteLLM callbacks) with proper lifecycle management.
+
+**Architecture**:
+```python
+class JobTracker:
+    """Coordinator for job progress and token tracking during article generation.
+
+    Unifies:
+    1. JobProgressListener - Real-time task progress updates via CrewAI events
+    2. ArticleGenerationTokenTracker - LLM token usage tracking via LiteLLM callbacks
+    """
+```
+
+**Key Features**:
+- **Context Manager Protocol**: Automatic setup (`__enter__`) and cleanup (`__exit__`)
+- **Callback Lifecycle Management**: Saves and restores LiteLLM callbacks for nested contexts
+- **Conditional Tracking**: Only tracks tokens for authenticated users (user_id exists)
+- **Memory Leak Prevention**: Always clears callbacks in `__exit__`, even on exceptions
+
+**Usage Pattern** (`src/worker/processor.py`):
+
+```python
+def process_job(job_data: dict) -> bool:
+    ctx = JobContext.from_dict(job_data)
+
+    try:
+        from crewai.events.event_bus import crewai_event_bus
+
+        with crewai_event_bus.scoped_handlers():
+            with JobTracker(ctx.job_id, ctx.user_id, ctx.article_id) as tracker:
+                # Fetch vocabulary for personalized generation
+                if ctx.user_id and ctx.inputs.get('language'):
+                    vocab = get_user_vocabulary_for_generation(ctx.user_id, ctx.inputs['language'], 50)
+                    if vocab:
+                        ctx.inputs['vocabulary_list'] = vocab
+
+                # Execute CrewAI (all LLM calls automatically tracked)
+                result = run_crew(inputs=ctx.inputs)
+
+                # Check for task failures
+                if tracker.listener.task_failed:
+                    logger.warning("Task failed during execution")
+                    if ctx.article_id:
+                        update_article_status(ctx.article_id, 'failed')
+                    return False
+
+        # Save to MongoDB
+        save_article(ctx.article_id, result.raw, ctx.started_at)
+        ctx.update_status('completed', 100, 'Article generated successfully!')
+        return True
+
+    except Exception as e:
+        logger.error(f"Job failed: {e}")
+        ctx.mark_failed(translate_error(e), f"{type(e).__name__}: {str(e)[:200]}")
+        return False
+```
+
+**Lifecycle**:
+
+1. **`__enter__()`** (lines 80-121):
+   - Creates `JobProgressListener` for CrewAI task progress events
+   - Creates `ArticleGenerationTokenTracker` for token tracking (if user_id exists)
+   - Saves original `litellm.callbacks` to `_original_callbacks`
+   - Sets `litellm.callbacks = [tracker]` to enable token tracking
+   - Returns self for use in context manager
+
+2. **`__exit__()`** (lines 123-150):
+   - Restores original `litellm.callbacks` from `_original_callbacks`
+   - Prevents callback interference between jobs
+   - Always executes, even on exceptions (cleanup guaranteed)
+
+**Benefits**:
+- **Single Responsibility**: Each tracker handles one concern (progress vs tokens)
+- **Proper Cleanup**: Context manager ensures callbacks never leak between jobs
+- **Nested Context Support**: Saves/restores callbacks for nested JobTracker usage
+- **Fail-Safe**: Cleanup happens even on exceptions
+
+### ArticleGenerationTokenTracker Class
+
+**File**: `src/worker/token_tracker.py`
+
+**Purpose**: LiteLLM callback handler that intercepts all LLM API calls during article generation and records token usage to MongoDB.
+
+**Key Methods**:
+
+1. `log_success_event(kwargs, response_obj, start_time, end_time)` (lines 67-157)
+   - Called by LiteLLM after each successful LLM API call
+   - Extracts model name, prompt_tokens, completion_tokens from response
+   - Calculates estimated cost using `litellm.completion_cost()`
+   - Saves token usage to MongoDB via `save_token_usage()`
+   - Never crashes worker on tracking failures (catch-all exception handler)
+
+2. `log_failure_event(kwargs, response_obj, start_time, end_time)` (lines 179-216)
+   - Called when LLM API call fails
+   - Logs failure for observability (does not save to MongoDB)
+   - Truncates error messages to 200 chars to prevent log bloat
+
+**Integration**: Now managed by `JobTracker` coordinator (see above)
+
+### How LiteLLM Callbacks Work
+
+**LiteLLM Integration**:
+- LiteLLM provides a `CustomLogger` base class for callback handlers
+- When `litellm.callbacks = [tracker]` is set, all LLM API calls are intercepted
+- CrewAI agents use LiteLLM internally, so all agent LLM calls are tracked
+- Callbacks are invoked automatically:
+  - `log_success_event()` on successful API call
+  - `log_failure_event()` on failed API call
+
+**Per-Call Tracking**:
+- Each LLM API call during article generation generates a separate token usage record
+- An article generation may involve 5-10 LLM calls (research, writing, editing, etc.)
+- Total article cost = sum of all individual call costs
+- All records share the same `article_id` for aggregation
+
+**Callback Lifecycle with JobTracker**:
+```
+1. Worker starts job
+2. JobTracker.__enter__():
+   - Save original callbacks: _original_callbacks = litellm.callbacks.copy()
+   - Register new callback: litellm.callbacks = [tracker]
+3. CrewAI agent 1 makes LLM call → tracker.log_success_event() → save to MongoDB
+4. CrewAI agent 2 makes LLM call → tracker.log_success_event() → save to MongoDB
+5. ... (multiple calls)
+6. CrewAI completes
+7. JobTracker.__exit__():
+   - Restore callbacks: litellm.callbacks = _original_callbacks
+   - Prevents interference with next job or nested JobTracker
+```
+
+**Why Save/Restore Callbacks?**
+- Supports nested JobTracker contexts (if needed in future)
+- Prevents accidentally clearing callbacks set by outer scope
+- More robust than simply setting to empty list
+- Defensive programming for long-running worker processes
+
+### Token Usage Record Structure
+
+**Saved to MongoDB** (via `save_token_usage()`):
+```json
+{
+  "_id": "usage-uuid",
+  "user_id": "user-uuid",
+  "operation": "article_generation",
+  "model": "gpt-4.1-mini",
+  "prompt_tokens": 2000,
+  "completion_tokens": 1500,
+  "total_tokens": 3500,
+  "estimated_cost": 0.0525,
+  "article_id": "article-uuid",
+  "metadata": {
+    "job_id": "job-uuid"
+  },
+  "created_at": "2026-01-30T10:00:00Z"
+}
+```
+
+**Multiple Records Per Article**:
+- Each LLM call during generation creates a separate record
+- Aggregation query sums all records with same `article_id`
+- Example: Research agent (500 tokens) + Writing agent (3000 tokens) + Editing agent (800 tokens) = 4300 total tokens
+
+### Error Handling
+
+**Non-Fatal Failures**:
+- Token tracking failures never crash the worker
+- All exceptions caught and logged as warnings
+- Article generation continues even if tracking fails
+- Rationale: Tracking is observability, not critical functionality
+
+**Cost Calculation Fallback**:
+- If `litellm.completion_cost()` fails, cost is set to 0.0
+- Tokens are still tracked (tokens always available in response)
+- Allows cost calculation to be updated retroactively from token counts
+
+### Anonymous User Handling
+
+**Conditional Tracking** (`src/worker/processor.py:54-63`):
+```python
+if ctx.user_id:
+    token_tracker = ArticleGenerationTokenTracker(...)
+    litellm.callbacks = [token_tracker]
+```
+
+- Only tracks for authenticated users (user_id exists)
+- Anonymous users (no user_id) skip token tracking entirely
+- Prevents null user_id records in MongoDB
+- Aligns with dictionary API behavior (requires authentication)
+
+### Security Considerations
+
+**User ID Validation**:
+- `user_id` passed from job queue (validated during job creation in API)
+- Worker trusts job queue data (internal system boundary)
+- No additional validation needed in worker
+
+**Memory Leaks Prevention**:
+- `finally` block always clears `litellm.callbacks = []`
+- Prevents callbacks from affecting subsequent jobs
+- Critical in long-running worker processes
+
+### Testing
+
+**Test File**: `src/worker/tests/test_token_tracker.py`
+
+**Coverage**:
+- Callback registration and cleanup
+- Successful LLM call tracking
+- Failed LLM call handling
+- Cost calculation fallback
+- MongoDB save failures (non-fatal)
+
+### Retrieval API
+
+**Get Article Usage**:
+```python
+# API endpoint: GET /usage/articles/{article_id}
+records = get_article_token_usage(article_id)
+total_cost = sum(r['estimated_cost'] for r in records)
+```
+
+**Returns**:
+- All token usage records for article (multiple LLM calls)
+- Sorted by `created_at` ascending (chronological order)
+- Includes metadata with `job_id` for traceability
 
 ---
 
@@ -639,7 +1078,10 @@ opad/
 │   ├── worker/           # Worker 서비스 (Python)
 │   │   ├── __init__.py
 │   │   ├── main.py       # Worker 진입점
-│   │   └── processor.py  # Job 처리 로직
+│   │   ├── processor.py  # Job 처리 로직
+│   │   ├── job_tracker.py      # JobTracker coordinator (Phase 5)
+│   │   ├── token_tracker.py    # ArticleGenerationTokenTracker
+│   │   └── context.py    # JobContext helper
 │   │
 │   ├── web/              # Web 서비스 (Next.js)
 │   │   ├── app/          # Next.js App Router
@@ -684,10 +1126,20 @@ opad/
 | 폴더 | 역할 | 런타임 | 포트 |
 |------|------|--------|------|
 | `src/api/` | CRUD + Job enqueue + Dictionary API | Python (FastAPI) | 8001 (default) |
-| `src/worker/` | CrewAI 실행 | Python | - |
+| `src/worker/` | CrewAI 실행 + Job/Token Tracking | Python | - |
 | `src/web/` | UI | Node.js (Next.js) | 3000 |
-| `src/opad/` | CrewAI 로직 (공유) | - | - |
+| `src/crew/` | CrewAI 로직 (공유) | - | - |
 | `src/utils/` | 공통 유틸 (공유) | - | - |
+
+### Worker 모듈 구성 (Phase 5)
+| 파일 | 역할 | 의존성 |
+|------|------|--------|
+| `worker/main.py` | Worker 진입점 (infinite loop) | `processor.py` |
+| `worker/processor.py` | Job 처리 로직 (process_job) | `job_tracker.py`, `crew/main.py` |
+| `worker/job_tracker.py` | JobTracker coordinator (context manager) | `token_tracker.py`, `crew/progress_listener.py` |
+| `worker/token_tracker.py` | ArticleGenerationTokenTracker (LiteLLM callback) | `utils/mongodb.py` |
+| `worker/context.py` | JobContext helper (job data validation) | `api/job_queue.py` |
+| `crew/progress_listener.py` | JobProgressListener (CrewAI event listener) | `api/job_queue.py` |
 
 ---
 

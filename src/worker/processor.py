@@ -10,6 +10,12 @@ Architecture:
     Redis Queue → dequeue_job() → process_job() → CrewAI → MongoDB
                                         ↓
                                   update_job_status() → Redis Status
+
+Job Tracking:
+    JobTracker coordinates two tracking systems:
+    1. JobProgressListener - Real-time task progress via CrewAI events
+    2. ArticleGenerationTokenTracker - Token usage via LiteLLM callbacks
+    See worker/job_tracker.py for details.
 """
 
 import logging
@@ -23,6 +29,7 @@ from crew.main import run as run_crew
 from api.job_queue import dequeue_job
 from utils.mongodb import save_article, update_article_status, get_user_vocabulary_for_generation
 from worker.context import JobContext, translate_error
+from worker.job_tracker import JobTracker
 
 logger = logging.getLogger(__name__)
 
@@ -44,29 +51,27 @@ def process_job(job_data: dict) -> bool:
     ctx.update_status('running', 0, 'Starting CrewAI execution...')
 
     try:
-        from crew.progress_listener import JobProgressListener
         from crewai.events.event_bus import crewai_event_bus
 
         with crewai_event_bus.scoped_handlers():
-            listener = JobProgressListener(job_id=ctx.job_id, article_id=ctx.article_id)
+            with JobTracker(ctx.job_id, ctx.user_id, ctx.article_id) as tracker:
+                # Fetch vocabulary for personalized generation
+                if ctx.user_id and ctx.inputs.get('language'):
+                    vocab = get_user_vocabulary_for_generation(ctx.user_id, ctx.inputs['language'], 50)
+                    if vocab:
+                        ctx.inputs['vocabulary_list'] = vocab
 
-            # Fetch vocabulary for personalized generation
-            if ctx.user_id and ctx.inputs.get('language'):
-                vocab = get_user_vocabulary_for_generation(ctx.user_id, ctx.inputs['language'], 50)
-                if vocab:
-                    ctx.inputs['vocabulary_list'] = vocab
+                # Execute CrewAI
+                logger.info("Executing CrewAI", extra=ctx.log_extra)
+                result = run_crew(inputs=ctx.inputs)
+                logger.info("CrewAI completed", extra=ctx.log_extra)
 
-            # Execute CrewAI
-            logger.info("Executing CrewAI", extra=ctx.log_extra)
-            result = run_crew(inputs=ctx.inputs)
-            logger.info("CrewAI completed", extra=ctx.log_extra)
-
-            # Check for task failures
-            if listener.task_failed:
-                logger.warning("Task failed during execution", extra=ctx.log_extra)
-                if ctx.article_id:
-                    update_article_status(ctx.article_id, 'failed')
-                return False
+                # Check for task failures (listener is always created by JobTracker)
+                if tracker.listener.task_failed:
+                    logger.warning("Task failed during execution", extra=ctx.log_extra)
+                    if ctx.article_id:
+                        update_article_status(ctx.article_id, 'failed')
+                    return False
 
         # Save to MongoDB
         logger.info("Saving article", extra=ctx.log_extra)
