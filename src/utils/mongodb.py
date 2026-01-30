@@ -3,6 +3,7 @@
 import os
 import logging
 import uuid
+import re
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
@@ -837,7 +838,11 @@ def save_vocabulary(
     language: str,
     related_words: list[str] | None = None,
     span_id: str | None = None,
-    user_id: str | None = None
+    user_id: str | None = None,
+    pos: str | None = None,
+    gender: str | None = None,
+    conjugations: dict | None = None,
+    level: str | None = None
 ) -> str | None:
     """Save vocabulary word to MongoDB.
 
@@ -851,6 +856,10 @@ def save_vocabulary(
         related_words: All words in sentence belonging to this lemma (e.g., for separable verbs)
         span_id: Span ID of the clicked word
         user_id: User ID for multi-user support
+        pos: Part of speech (noun, verb, adjective, etc.)
+        gender: Grammatical gender (der/die/das, le/la, el/la)
+        conjugations: Verb conjugations by tense
+        level: CEFR level (A1-C2)
 
     Returns:
         Vocabulary ID if successful, None otherwise
@@ -864,9 +873,12 @@ def save_vocabulary(
         collection = db[VOCABULARY_COLLECTION_NAME]
 
         # Check if vocabulary already exists (same user_id, article_id, and lemma)
+        # Use case-insensitive regex for lemma matching to preserve original capitalization (important for German nouns)
+
+        escaped_lemma = re.escape(lemma)  # Escape regex metacharacters to prevent regex injection
         query = {
             'article_id': article_id,
-            'lemma': lemma.lower()
+            'lemma': {'$regex': f'^{escaped_lemma}$', '$options': 'i'}
         }
         if user_id:
             query['user_id'] = user_id
@@ -890,13 +902,17 @@ def save_vocabulary(
             '_id': str(uuid.uuid4()),
             'article_id': article_id,
             'word': word,
-            'lemma': lemma.lower(),  # Store lowercase for case-insensitive lookup
+            'lemma': lemma,  # Preserve original capitalization (important for German nouns: Hund, not hund)
             'definition': definition,
             'sentence': sentence,
             'language': language,
-            'related_words': [w.lower() for w in (related_words or [])],  # Store lowercase for case-insensitive lookup
+            'related_words': related_words or [],  # Preserve original capitalization
             'span_id': normalized_span_id,
             'user_id': user_id,
+            'pos': pos,
+            'gender': gender,
+            'conjugations': conjugations,
+            'level': level,
             'created_at': datetime.now(timezone.utc),
             'updated_at': datetime.now(timezone.utc)
         }
@@ -957,7 +973,11 @@ def get_vocabularies(article_id: str | None = None, user_id: str | None = None) 
                 'language': vocab['language'],
                 'related_words': vocab.get('related_words', None),  # May not exist for old entries
                 'created_at': vocab['created_at'],
-                'user_id': vocab.get('user_id')
+                'user_id': vocab.get('user_id'),
+                'pos': vocab.get('pos'),
+                'gender': vocab.get('gender'),
+                'conjugations': vocab.get('conjugations'),
+                'level': vocab.get('level')
             })
 
         return result
@@ -1001,7 +1021,11 @@ def get_vocabulary_by_id(vocabulary_id: str) -> dict | None:
             'language': vocab['language'],
             'related_words': vocab.get('related_words', None),
             'created_at': vocab['created_at'],
-            'user_id': vocab.get('user_id')
+            'user_id': vocab.get('user_id'),
+            'pos': vocab.get('pos'),
+            'gender': vocab.get('gender'),
+            'conjugations': vocab.get('conjugations'),
+            'level': vocab.get('level')
         }
     except PyMongoError as e:
         logger.error("Failed to get vocabulary", extra={
@@ -1267,7 +1291,11 @@ def get_vocabulary_counts(
                 'created_at': {'$first': '$created_at'},
                 'related_words': {'$first': '$related_words'},
                 'span_id': {'$first': '$span_id'},
-                'user_id': {'$first': '$user_id'}
+                'user_id': {'$first': '$user_id'},
+                'pos': {'$first': '$pos'},
+                'gender': {'$first': '$gender'},
+                'conjugations': {'$first': '$conjugations'},
+                'level': {'$first': '$level'}
             }
         })
 
@@ -1297,7 +1325,11 @@ def get_vocabulary_counts(
                 'created_at': doc.get('created_at'),
                 'related_words': doc.get('related_words'),
                 'span_id': doc.get('span_id'),
-                'user_id': doc.get('user_id')
+                'user_id': doc.get('user_id'),
+                'pos': doc.get('pos'),
+                'gender': doc.get('gender'),
+                'conjugations': doc.get('conjugations'),
+                'level': doc.get('level')
             })
 
         return result

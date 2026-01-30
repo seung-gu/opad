@@ -42,7 +42,7 @@ qa-agent
 **Post-QA Agents** (Run in parallel after qa-agent passes):
 - **version-release-agent**: Semantic versioning, git tagging, version sync across services
 - **changelog-agent**: Automatic CHANGELOG.md updates with categorized changes
-- **docs-agent**: Updates API docs, architecture, setup guides, JSDoc comments
+- **docs-agent**: Updates API docs, architecture, setup guides, JSDoc comments. NEVER automatically stage, commit, or push files - only update documentation.
 
 See `.claude/agents/` for detailed agent instructions.
 

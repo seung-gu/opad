@@ -1,8 +1,23 @@
 """Pydantic models for API request/response."""
 
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Optional, Literal
+from pydantic import BaseModel, Field, field_validator
+
+
+# Type definitions for vocabulary metadata
+CEFRLevel = Literal["A1", "A2", "B1", "B2", "C1", "C2"]
+
+
+class Conjugations(BaseModel):
+    """Verb conjugation forms."""
+    present: Optional[str] = None
+    past: Optional[str] = None
+    perfect: Optional[str] = None
+
+    def __bool__(self) -> bool:
+        """Return False if all fields are None."""
+        return any(v is not None for v in (self.present, self.past, self.perfect))
 
 
 class ArticleResponse(BaseModel):
@@ -55,18 +70,22 @@ class ArticleListResponse(BaseModel):
     limit: int = Field(..., description="Maximum number of articles returned")
 
 
-class DefineRequest(BaseModel):
-    """Request model for word definition."""
-    word: str = Field(..., min_length=1, max_length=100, description="Word to define")
+class SearchRequest(BaseModel):
+    """Request model for word search."""
+    word: str = Field(..., min_length=1, max_length=100, description="Word to search")
     sentence: str = Field(..., min_length=1, max_length=2000, description="Sentence containing the word")
     language: str = Field(..., min_length=2, max_length=50, description="Language of the sentence")
 
 
-class DefineResponse(BaseModel):
-    """Response model for word definition."""
+class SearchResponse(BaseModel):
+    """Response model for word search."""
     lemma: str
     definition: str
     related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma (e.g., for separable verbs)")
+    pos: Optional[str] = Field(None, description="Part of speech: noun, verb, adjective, etc.")
+    gender: Optional[str] = Field(None, description="Grammatical gender: der/die/das, le/la, el/la")
+    conjugations: Optional[Conjugations] = Field(None, description="Verb conjugations by tense")
+    level: Optional[CEFRLevel] = Field(None, description="CEFR level (A1-C2)")
 
 
 class VocabularyRequest(BaseModel):
@@ -79,6 +98,22 @@ class VocabularyRequest(BaseModel):
     language: str = Field(..., description="Language")
     related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma")
     span_id: Optional[str] = Field(None, description="Span ID of the clicked word")
+    pos: Optional[str] = Field(None, description="Part of speech: noun, verb, adjective, etc.")
+    gender: Optional[str] = Field(None, description="Grammatical gender: der/die/das, le/la, el/la")
+    conjugations: Optional[dict] = Field(None, description="Verb conjugations by tense")
+    level: Optional[CEFRLevel] = Field(None, description="CEFR level (A1-C2)")
+
+    @field_validator('conjugations', mode='before')
+    @classmethod
+    def convert_conjugations(cls, v):
+        """Convert Conjugations to dict, return None if empty."""
+        if v is None:
+            return None
+        if isinstance(v, Conjugations):
+            return v.model_dump() if v else None
+        if isinstance(v, dict):
+            return v if any(v.values()) else None
+        return v
 
 
 class VocabularyResponse(BaseModel):
@@ -94,6 +129,10 @@ class VocabularyResponse(BaseModel):
     span_id: Optional[str] = Field(None, description="Span ID of the clicked word")
     created_at: datetime = Field(..., description="Creation timestamp")
     user_id: Optional[str] = Field(None, description="User ID for multi-user support")
+    pos: Optional[str] = Field(None, description="Part of speech: noun, verb, adjective, etc.")
+    gender: Optional[str] = Field(None, description="Grammatical gender: der/die/das, le/la, el/la")
+    conjugations: Optional[Conjugations] = Field(None, description="Verb conjugations by tense")
+    level: Optional[CEFRLevel] = Field(None, description="CEFR level (A1-C2)")
 
 
 class VocabularyCount(BaseModel):
@@ -111,6 +150,10 @@ class VocabularyCount(BaseModel):
     user_id: Optional[str] = Field(None, description="User ID")
     count: int = Field(..., description="Number of times this lemma was saved")
     article_ids: list[str] = Field(..., description="Article IDs where this lemma appears")
+    pos: Optional[str] = Field(None, description="Part of speech from most recent entry")
+    gender: Optional[str] = Field(None, description="Grammatical gender from most recent entry")
+    conjugations: Optional[Conjugations] = Field(None, description="Verb conjugations from most recent entry")
+    level: Optional[CEFRLevel] = Field(None, description="CEFR level from most recent entry")
 
 
 class User(BaseModel):
