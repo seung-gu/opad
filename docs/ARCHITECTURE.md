@@ -317,6 +317,19 @@ The system now supports vocabulary-aware article generation, where CrewAI adjust
 - Lists all article_ids where lemma appears
 - Includes grammatical metadata (pos, gender, conjugations, level) from most recent entry
 
+#### API Model Enhancements
+
+**Conjugations.__bool__()** (`src/api/models.py:18-20`):
+- Enables truthiness checking: `if conjugations:` returns False when all fields (present, past, perfect) are None
+- Simplifies validation logic by treating empty Conjugations as falsy
+- Backend can check conjugation presence without explicit null checks
+
+**VocabularyRequest.field_validator** (`src/api/models.py:106-116`):
+- Automatic conversion from Conjugations model to dict before database storage
+- Returns None if conjugations object is empty (using `__bool__` check)
+- Handles both dict and Conjugations input types
+- Prevents storing empty conjugation objects in MongoDB
+
 ### Vocabulary-Aware Generation Flow
 1. User saves vocabulary words from articles (POST /dictionary/vocabulary)
 2. Words stored with article context (sentence, span_id)
@@ -614,22 +627,37 @@ Vocabulary deletion with error handling:
 
 ### Reusable Components
 
-#### ErrorAlert
+#### ErrorAlert (`src/web/components/ErrorAlert.tsx`)
 Consistent error message display:
-- Red background with border
-- Optional retry button
+- Red background with border (`bg-red-50 border-red-200`)
+- Optional retry button with hover effect
 - Automatic hiding when error is null
+- Accessible error messaging
 
-#### EmptyState
+**Props**:
+- `error` (string | null): Error message to display
+- `onRetry` (optional): Callback function for retry button
+- `className` (optional): Additional CSS classes
+
+#### EmptyState (`src/web/components/EmptyState.tsx`)
 Consistent empty state display:
-- Centered layout
-- Optional icon
-- Optional action button
+- Centered layout with white card background
+- Optional icon (emoji or Unicode character)
+- Optional action button with blue styling
+- Title and description text with gray tones
+
+**Props**:
+- `title` (string): Main heading text
+- `description` (string): Descriptive subtitle
+- `icon` (optional): Emoji or icon character
+- `action` (optional): Object with `label` and `onClick` for action button
+- `className` (optional): Additional CSS classes
 
 **Benefits**:
 - Consistent UX across all pages
 - Reduces code duplication
 - Easy to update design globally
+- Improves maintainability with single source of truth
 
 ### Refactoring Impact
 
@@ -652,6 +680,94 @@ Consistent empty state display:
 - Articles list page: 27 lines reduced
 - Vocabulary page: 43 lines reduced
 - Total: 236 lines of code removed through refactoring
+
+### Security Improvements
+
+#### XSS Prevention in MarkdownViewer (`src/web/components/MarkdownViewer.tsx`)
+
+**Issue**: Previous implementation used `innerHTML` to inject vocabulary buttons, creating XSS vulnerability.
+
+**Security Measures Implemented**:
+
+1. **HTML Escaping** (lines 92-96):
+   - `escapeHtml()` utility converts text to DOM text node then reads innerHTML
+   - Prevents script injection in user-provided content (word, lemma, definition, sentence)
+   - Applied to all vocabulary data before rendering
+
+2. **DOM API Methods** (lines 663-713):
+   - Replaced `innerHTML` with DOM manipulation (`createElement`, `textContent`)
+   - Creates definition spans using `document.createElement()` instead of string templates
+   - Uses `textContent` for user data instead of `innerHTML`
+   - Parses button HTML in temporary container, then extracts element reference
+
+3. **Event Delegation** (lines 514-534):
+   - Single event listener on container instead of per-word listeners
+   - Prevents stale closure issues with dynamic content
+   - Ref-based callback storage (`handleWordClickRef`) avoids outdated state
+
+4. **Data Attribute Escaping** (lines 112-131):
+   - All data attributes escaped before setting: `data-word="${wordEscaped}"`
+   - JSON strings escaped with `.replace(/"/g, '&quot;')` for attribute safety
+   - Prevents attribute injection attacks
+
+**Before (Vulnerable)**:
+```typescript
+// Direct innerHTML injection - XSS risk
+defSpan.innerHTML = `<strong>${lemma}</strong>: ${meaning} <button>...</button>`
+```
+
+**After (Secure)**:
+```typescript
+// DOM API - XSS safe
+const strong = document.createElement('strong')
+strong.textContent = displayLemma
+defSpan.appendChild(strong)
+defSpan.appendChild(document.createTextNode(': ' + meaning))
+```
+
+**Impact**: Prevents malicious script execution from vocabulary data, protects against DOM-based XSS attacks.
+
+#### React Component Remounting Pattern
+
+**Purpose**: Prevent React hydration mismatches when article content changes.
+
+**Implementation** (`src/web/app/articles/[id]/page.tsx:266`):
+```typescript
+<MarkdownViewer
+  key={`${articleId}-${content.length}`}
+  content={content}
+  language={article?.language}
+  articleId={articleId}
+  vocabularies={vocabularies}
+  onAddVocabulary={handleAddVocabulary}
+/>
+```
+
+**Key Prop Strategy**:
+- Pattern: `${articleId}-${content.length}`
+- Forces complete component remount when content changes
+- Triggers reset of `data-processed` attribute (line 456)
+- Clears all previous DOM state and event listeners
+
+**Processing State Check** (`src/web/components/MarkdownViewer.tsx:456-458`):
+```typescript
+// Skip if already processed (component remounts on content change via key prop)
+if (containerRef.current.getAttribute('data-processed') === 'true') {
+  return
+}
+```
+
+**Why This Pattern**:
+- Without key: React reuses DOM nodes, causing hydration mismatches
+- Manual cleanup: Error-prone and complex to maintain
+- useEffect on content: Risk of double-processing
+- Remounting: Clean state guaranteed, simple lifecycle
+
+**Benefits**:
+- Eliminates React DOM mismatch errors
+- Prevents stale event listeners
+- Simplifies component update logic
+- Ensures consistent behavior across content changes
 
 ### Bug Fixes
 
@@ -692,3 +808,49 @@ safelist: [
 - 저장된 단어는 초록색으로 하이라이트
 - `related_words`에 포함된 단어들도 함께 초록색 표시
 - 예: "hängt" 저장 시 "ab"도 자동으로 초록색 표시
+
+---
+
+## 🧪 Testing Infrastructure
+
+### Web Testing (Vitest)
+
+**Configuration**: `src/web/vitest.config.ts`
+
+**Test Environment**:
+- **Framework**: Vitest 4.0.18 with jsdom for DOM simulation
+- **UI**: @vitest/ui for interactive test running
+- **Testing Library**: @testing-library/react for component testing
+- **Test Matchers**: @testing-library/jest-dom for DOM assertions
+
+**Coverage Settings**:
+- Provider: v8 (Node.js native coverage)
+- Reporters: text, json, html
+- Thresholds: 80% for lines, functions, branches, statements
+- Excludes: node_modules, test files, test directories
+
+**Test Location**:
+- Pattern: `**/__tests__/**/*.test.ts` and `**/__tests__/**/*.test.tsx`
+- Current test files:
+  - `hooks/__tests__/usePagination.test.ts`
+  - `hooks/__tests__/useStatusPolling.test.ts`
+  - `lib/__tests__/api.test.ts`
+  - `lib/__tests__/formatters.test.ts`
+  - `lib/__tests__/styleHelpers.test.ts`
+
+**Run Commands** (`src/web/package.json`):
+```bash
+npm test         # Run all tests once
+npm run test:watch   # Watch mode for development
+npm run test:ui      # Interactive UI for test exploration
+```
+
+**Alias Resolution**:
+- `@` alias resolves to `src/web/` directory
+- Matches Next.js path configuration for consistency
+
+**Benefits**:
+- Fast test execution with Vitest (ESM-native)
+- Interactive UI for debugging
+- Coverage reporting for quality assurance
+- Type-safe testing with TypeScript

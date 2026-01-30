@@ -760,6 +760,185 @@ generateResponse.status === 409  ← Response handling!
 
 ---
 
+## API Models
+
+### Conjugations Model
+
+**File**: `src/api/models.py:12-21`
+
+**Purpose**: Store verb conjugation forms across tenses (present, past, perfect).
+
+**Fields**:
+```python
+class Conjugations(BaseModel):
+    present: Optional[str] = None
+    past: Optional[str] = None
+    perfect: Optional[str] = None
+```
+
+**Special Method - `__bool__()`**:
+```python
+def __bool__(self) -> bool:
+    """Return False if all fields are None."""
+    return any(v is not None for v in (self.present, self.past, self.perfect))
+```
+
+**Behavior**:
+- Returns `True` if at least one conjugation field has a value
+- Returns `False` if all fields are None (empty conjugations)
+- Enables truthiness checking: `if conjugations:` instead of explicit null checks
+
+**Usage Example**:
+```python
+# Create conjugations
+conjugations = Conjugations(present="geht", past="ging", perfect="ist gegangen")
+if conjugations:  # True - has values
+    print("Has conjugations")
+
+# Empty conjugations
+empty = Conjugations()
+if empty:  # False - all None
+    print("This won't print")
+
+# Used in field validator
+if isinstance(v, Conjugations):
+    return v.model_dump() if v else None  # Returns None for empty
+```
+
+**Benefits**:
+- Simplifies validation logic throughout codebase
+- Prevents storing empty conjugation objects in database
+- More Pythonic: `if conjugations:` vs `if conjugations.present or conjugations.past or conjugations.perfect:`
+
+---
+
+### VocabularyRequest Model
+
+**File**: `src/api/models.py:91-117`
+
+**Purpose**: Request model for adding vocabulary with automatic type conversion.
+
+**Field Validator - `convert_conjugations()`**:
+```python
+@field_validator('conjugations', mode='before')
+@classmethod
+def convert_conjugations(cls, v):
+    """Convert Conjugations to dict, return None if empty."""
+    if v is None:
+        return None
+    if isinstance(v, Conjugations):
+        return v.model_dump() if v else None  # Uses __bool__
+    if isinstance(v, dict):
+        return v if any(v.values()) else None
+    return v
+```
+
+**Behavior**:
+- Runs before Pydantic validation (`mode='before'`)
+- Converts Conjugations model to dict for MongoDB storage
+- Returns None if conjugations object is empty (using `__bool__` check)
+- Handles both dict and Conjugations input types
+- Prevents storing empty conjugation objects: `{"present": null, "past": null, "perfect": null}` becomes `null`
+
+**Flow**:
+1. Frontend sends conjugations as dict: `{"present": "geht", "past": null, "perfect": null}`
+2. Validator checks if any values exist: `any(v.values())`
+3. Returns dict if has values, None if all null
+4. Prevents empty objects in MongoDB
+
+**Benefits**:
+- Automatic conversion from model to dict
+- No need for explicit null checks in route handlers
+- Database stores `null` instead of empty objects
+- Cleaner MongoDB documents
+
+**Example**:
+```python
+# Request with conjugations
+request = VocabularyRequest(
+    conjugations={"present": "geht", "past": "ging", "perfect": None}
+)
+# Stored as: {"present": "geht", "past": "ging"}
+
+# Request with empty conjugations
+request = VocabularyRequest(
+    conjugations={"present": None, "past": None, "perfect": None}
+)
+# Stored as: null (not an empty object)
+```
+
+---
+
+## Testing
+
+### Web Testing with Vitest
+
+**Configuration File**: `src/web/vitest.config.ts`
+
+**Framework**: Vitest 4.0.18 with jsdom environment
+
+**Test Setup**:
+- Environment: jsdom for DOM simulation
+- Globals: Enabled for test functions (describe, it, expect)
+- Test pattern: `**/__tests__/**/*.test.ts` and `**/__tests__/**/*.test.tsx`
+
+**Dependencies**:
+- `vitest@4.0.18` - Test framework (ESM-native, fast)
+- `@vitest/ui@4.0.18` - Interactive test UI
+- `jsdom@27.4.0` - DOM simulation for Node.js
+- `@testing-library/react@16.3.2` - React component testing utilities
+- `@testing-library/jest-dom@6.9.1` - DOM assertion matchers
+
+**Coverage Configuration**:
+- Provider: v8 (Node.js native coverage)
+- Reporters: text, json, html
+- Thresholds: 80% for lines, functions, branches, statements
+- Excludes: node_modules, test files (`**/*.test.ts`, `**/*.test.tsx`), test directories
+
+**Path Aliases**:
+- `@` resolves to `src/web/` (matches Next.js tsconfig)
+
+**Available Commands** (`package.json`):
+```bash
+# Run all tests once
+npm test
+
+# Watch mode for development
+npm run test:watch
+
+# Interactive UI for test exploration
+npm run test:ui
+```
+
+**Current Test Coverage**:
+- `hooks/__tests__/usePagination.test.ts` - Pagination logic tests
+- `hooks/__tests__/useStatusPolling.test.ts` - Job polling tests
+- `lib/__tests__/api.test.ts` - API client tests
+- `lib/__tests__/formatters.test.ts` - Date formatting tests
+- `lib/__tests__/styleHelpers.test.ts` - CEFR styling tests
+
+**Example Test File Structure**:
+```typescript
+import { describe, it, expect } from 'vitest'
+import { formatDate } from '@/lib/formatters'
+
+describe('formatDate', () => {
+  it('should format ISO date string correctly', () => {
+    const result = formatDate('2024-01-29T12:30:00Z')
+    expect(result).toMatch(/January 29, 2024/)
+  })
+})
+```
+
+**Benefits**:
+- Fast test execution with Vitest's ESM-native architecture
+- Interactive UI for debugging failing tests
+- Coverage reporting for quality assurance
+- Type-safe testing with full TypeScript support
+- Compatible with React Testing Library ecosystem
+
+---
+
 ## Frontend Utilities & Hooks
 
 ### API Client Utilities (`lib/api.ts`)
@@ -1162,6 +1341,8 @@ function VocabularyList() {
 
 Reusable error alert component for displaying error messages.
 
+**File**: `src/web/components/ErrorAlert.tsx`
+
 **Props**:
 ```typescript
 {
@@ -1171,10 +1352,23 @@ Reusable error alert component for displaying error messages.
 }
 ```
 
+**Styling**:
+- Light red background with border: `bg-red-50 border border-red-200`
+- Rounded corners with padding: `rounded-lg p-4`
+- Error text: Dark red (`text-red-800`)
+- Retry button: Red text with underline and hover effect
+- Bottom margin: `mb-6` (can be overridden)
+
 **Features**:
 - Consistent error styling (red background with border)
-- Optional retry button
+- Optional retry button for recoverable errors
 - Automatic hiding when error is null
+- Accessible error messaging with proper color contrast
+
+**Behavior**:
+- Returns `null` when `error` prop is null/undefined
+- Renders retry button only if `onRetry` callback is provided
+- Button styled with underline and hover effect for clear affordance
 
 **Usage**:
 ```typescript
@@ -1197,11 +1391,216 @@ function MyComponent() {
 }
 ```
 
+**Used In**:
+- `src/web/app/vocabulary/page.tsx` - Vocabulary fetch errors
+- Other pages with error states requiring user feedback
+
+---
+
+### MarkdownViewer Component
+
+**File**: `src/web/components/MarkdownViewer.tsx`
+
+**Component Remounting Pattern**:
+
+To prevent React hydration mismatches when article content changes, MarkdownViewer uses a key prop pattern that forces component remount on content changes.
+
+**Pattern** (from `src/web/app/articles/[id]/page.tsx:266`):
+```typescript
+<MarkdownViewer
+  key={`${articleId}-${content.length}`}
+  content={content}
+  language={article?.language}
+  articleId={articleId}
+  vocabularies={vocabularies}
+  onAddVocabulary={handleAddVocabulary}
+/>
+```
+
+**Why This Matters**:
+- When article content changes (e.g., after generation completes), React must fully remount the component
+- Without key prop: React attempts to reuse DOM nodes, causing hydration mismatches
+- Key pattern `${articleId}-${content.length}` ensures unique key per content state
+- Component remount triggers `data-processed` reset (line 456), allowing word-clickable logic to re-run
+
+**Processing State Check** (`src/web/components/MarkdownViewer.tsx:456-458`):
+```typescript
+// Skip if already processed (component remounts on content change via key prop)
+if (containerRef.current.getAttribute('data-processed') === 'true') {
+  return
+}
+```
+
+**Benefits**:
+- Prevents React DOM mismatch errors
+- Ensures clean state on content changes
+- Avoids stale event listeners from previous content
+- Simplifies component lifecycle (no complex update logic needed)
+
+**Alternative Approaches (Why Not Used)**:
+- Manual DOM cleanup: Error-prone, complex to maintain
+- useEffect dependency on content: Can cause double-processing
+- Force update: Doesn't guarantee full DOM reset
+
+---
+
+### MarkdownViewer Security
+
+**File**: `src/web/components/MarkdownViewer.tsx`
+
+**XSS Prevention Measures**:
+
+#### 1. HTML Escaping Utility (lines 92-96)
+
+```typescript
+const escapeHtml = (text: string): string => {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
+}
+```
+
+**Purpose**: Convert user-provided text to HTML-safe string
+**Mechanism**: Browser's HTML encoder via textContent → innerHTML
+**Applied To**: All vocabulary data (word, lemma, definition, sentence, pos, gender, level)
+
+#### 2. DOM API Methods Instead of innerHTML (lines 663-713)
+
+**Before (Vulnerable)**:
+```typescript
+defSpan.innerHTML = `<strong>${lemma}</strong>: ${meaning} ${buttonHtml}`
+```
+
+**After (Secure)**:
+```typescript
+const strong = document.createElement('strong')
+strong.textContent = displayLemma  // Safe: textContent escapes HTML
+defSpan.appendChild(strong)
+defSpan.appendChild(document.createTextNode(': ' + meaning))
+
+// Parse button HTML in controlled way
+const tempDiv = document.createElement('div')
+tempDiv.innerHTML = buttonHtml.trim()
+const button = tempDiv.firstElementChild
+if (button) {
+  defSpan.appendChild(button)
+}
+```
+
+**Security Benefits**:
+- `textContent` automatically escapes HTML entities
+- No script execution from user data
+- Button HTML parsed in isolated container
+- Element extraction via `firstElementChild` (not `innerHTML`)
+
+#### 3. Data Attribute Escaping (lines 112-131)
+
+```typescript
+const wordEscaped = escapeHtml(word)
+const lemmaEscaped = escapeHtml(lemma)
+const definitionEscaped = escapeHtml(definition)
+const relatedWordsStr = relatedWords ? JSON.stringify(relatedWords).replace(/"/g, '&quot;') : ''
+const sentenceEscaped = escapeHtml(sentence).replace(/"/g, '&quot;')
+
+const buttonHtml = `<button data-word="${wordEscaped}" data-lemma="${lemmaEscaped}" ...>`
+```
+
+**Protection**:
+- All data attributes HTML-escaped before embedding
+- JSON strings escaped with `replace(/"/g, '&quot;')` for attribute safety
+- Prevents attribute injection: `word="hello" onclick="alert('xss')"`
+
+#### 4. Event Delegation (lines 514-534)
+
+**Before (Vulnerable to Stale Closures)**:
+```typescript
+// Inline event handlers - stale state
+wordSpan.addEventListener('click', () => {
+  handleWordClick(spanId, word)  // May use outdated state
+})
+```
+
+**After (Secure & Performance)**:
+```typescript
+// Single event listener on container
+containerRef.current.addEventListener('click', (e: MouseEvent) => {
+  const target = e.target as HTMLElement
+  if (target.classList.contains('vocab-word') && target.classList.contains('user-clickable')) {
+    const spanId = target.getAttribute('data-span-id')
+    const word = target.getAttribute('data-word')
+    if (spanId && word) {
+      handleWordClickRef.current(spanId, word)  // Always current ref
+    }
+  }
+})
+
+// Ref-based callback storage (lines 446-449)
+const handleWordClickRef = useRef(handleWordClick)
+useEffect(() => {
+  handleWordClickRef.current = handleWordClick
+}, [handleWordClick])
+```
+
+**Security Benefits**:
+- Ref-based callback prevents stale closures
+- Single listener reduces attack surface
+- Data read from attributes (already escaped)
+- No inline handlers (`onclick`) that could be injected
+
+#### Attack Scenarios Prevented
+
+**Scenario 1: Script Injection in Definition**
+```typescript
+// Malicious definition from API
+definition: "<script>alert('XSS')</script>"
+
+// Old code (vulnerable)
+innerHTML = `<strong>${lemma}</strong>: ${definition}`
+// Result: Script executes!
+
+// New code (safe)
+textContent = definition
+// Result: "<script>alert('XSS')</script>" displayed as text
+```
+
+**Scenario 2: Attribute Injection**
+```typescript
+// Malicious word from API
+word: 'hello" onclick="alert(\'xss\')'
+
+// Old code (vulnerable)
+innerHTML = `<span data-word="${word}">...</span>`
+// Result: <span data-word="hello" onclick="alert('xss')">...</span>
+
+// New code (safe)
+const wordEscaped = escapeHtml(word)  // "hello&quot; onclick=&quot;alert('xss')&quot;"
+innerHTML = `<span data-word="${wordEscaped}">...</span>`
+// Result: onclick stored as text, not executed
+```
+
+**Scenario 3: Event Handler Injection**
+```typescript
+// Malicious lemma from API
+lemma: "test<img src=x onerror=alert('XSS')>"
+
+// Old code (vulnerable)
+innerHTML = `<strong>${lemma}</strong>`
+// Result: Image loads, onerror executes
+
+// New code (safe)
+strong.textContent = lemma
+// Result: All HTML rendered as text
+```
+
+**Impact**: Prevents DOM-based XSS attacks, protects against script execution from vocabulary data.
+
 ---
 
 #### EmptyState
 
 Reusable empty state component for displaying when no data is available.
+
+**File**: `src/web/components/EmptyState.tsx`
 
 **Props**:
 ```typescript
@@ -1217,10 +1616,19 @@ Reusable empty state component for displaying when no data is available.
 }
 ```
 
+**Styling**:
+- White card with rounded corners and shadow: `bg-white rounded-lg shadow-lg`
+- Centered text layout with padding: `p-8 text-center`
+- Icon: 4xl font size with bottom margin
+- Title: Gray-500 large text
+- Description: Gray-400 regular text
+- Action button: Blue button with hover effect
+
 **Features**:
-- Consistent empty state styling
-- Optional action button
-- Centered layout with icon
+- Consistent empty state styling across all pages
+- Optional action button for primary CTA
+- Centered layout with icon support
+- Flexible with additional className prop
 
 **Usage**:
 ```typescript
@@ -1244,5 +1652,9 @@ function ArticleList() {
   return <div>{articles.map(...)}</div>
 }
 ```
+
+**Used In**:
+- `src/web/app/vocabulary/page.tsx` - No vocabulary state
+- Other list pages when data is empty
 
 ---

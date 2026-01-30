@@ -452,7 +452,14 @@ export default function MarkdownViewer({
   useEffect(() => {
     if (!containerRef.current || !clickable) return
 
-    // Check if already processed
+    /**
+     * Skip if already processed (component remounts on content change via key prop).
+     *
+     * Parent components use key={`${articleId}-${content.length}`} to force remount
+     * when content changes, ensuring this processing logic runs with clean DOM state.
+     *
+     * See: src/web/app/articles/[id]/page.tsx:266
+     */
     if (containerRef.current.getAttribute('data-processed') === 'true') {
       return
     }
