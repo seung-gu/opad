@@ -57,9 +57,6 @@ async def search_word(
             temperature=0
         )
 
-        # Log token usage
-        logger.info("Token usage for dictionary search", extra=stats.to_dict())
-
         # Parse JSON response
         result = parse_json_from_content(content)
         

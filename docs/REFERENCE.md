@@ -730,6 +730,560 @@ generateResponse.status === 409  ← Response handling!
 
 ---
 
+### Token Usage Functions
+
+#### save_token_usage()
+
+**Module**: `utils/mongodb.py`
+
+**Description**: Save token usage record to MongoDB for cost tracking and analytics.
+
+**Signature**:
+```python
+def save_token_usage(
+    user_id: str,
+    operation: str,
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    estimated_cost: float,
+    article_id: Optional[str] = None,
+    metadata: Optional[dict] = None
+) -> Optional[str]
+```
+
+**Parameters**:
+- `user_id`: User ID who incurred the usage
+- `operation`: Operation type (`"dictionary_search"` | `"article_generation"`)
+- `model`: Model name used (e.g., `"gpt-4.1-mini"`, `"anthropic/claude-4.5-sonnet"`)
+- `prompt_tokens`: Number of input tokens
+- `completion_tokens`: Number of output tokens
+- `estimated_cost`: Estimated cost in USD
+- `article_id` (optional): Article ID if usage is associated with an article
+- `metadata` (optional): Additional metadata (e.g., `{"query": "word", "language": "English"}`)
+
+**Returns**: Document ID if successful, `None` otherwise
+
+**Example**:
+```python
+from utils.mongodb import save_token_usage
+
+usage_id = save_token_usage(
+    user_id="user-123",
+    operation="dictionary_search",
+    model="gpt-4.1-mini",
+    prompt_tokens=100,
+    completion_tokens=50,
+    estimated_cost=0.00025,
+    metadata={"query": "hello", "language": "English"}
+)
+```
+
+---
+
+#### get_user_token_summary()
+
+**Module**: `utils/mongodb.py`
+
+**Description**: Get token usage summary for a user within a specified time window.
+
+**Signature**:
+```python
+def get_user_token_summary(user_id: str, days: int = 30) -> dict
+```
+
+**Parameters**:
+- `user_id`: User ID to get summary for
+- `days`: Number of days to look back (default: 30, clamped to [1, 365])
+
+**Returns**:
+```python
+{
+    'total_tokens': int,           # Total tokens used
+    'total_cost': float,            # Total estimated cost in USD
+    'by_operation': {               # Usage by operation type
+        'operation_type': {
+            'tokens': int,
+            'cost': float,
+            'count': int
+        }
+    },
+    'daily_usage': [                # Daily usage breakdown
+        {
+            'date': 'YYYY-MM-DD',
+            'tokens': int,
+            'cost': float
+        }
+    ]
+}
+```
+
+**Example**:
+```python
+from utils.mongodb import get_user_token_summary
+
+summary = get_user_token_summary("user-123", days=7)
+print(f"Total cost (7 days): ${summary['total_cost']:.4f}")
+print(f"Total tokens: {summary['total_tokens']}")
+
+for op, stats in summary['by_operation'].items():
+    print(f"{op}: {stats['tokens']} tokens, ${stats['cost']:.4f}")
+```
+
+---
+
+#### get_article_token_usage()
+
+**Module**: `utils/mongodb.py`
+
+**Description**: Get all token usage records for a specific article.
+
+**Signature**:
+```python
+def get_article_token_usage(article_id: str) -> list[dict]
+```
+
+**Parameters**:
+- `article_id`: Article ID to get usage for
+
+**Returns**: List of token usage records sorted by `created_at` ascending (oldest first)
+
+**Record Format**:
+```python
+{
+    'id': str,                      # Usage record ID
+    'user_id': str,                 # User who incurred usage
+    'operation': str,               # Operation type
+    'model': str,                   # Model used
+    'prompt_tokens': int,           # Input tokens
+    'completion_tokens': int,       # Output tokens
+    'total_tokens': int,            # Total tokens
+    'estimated_cost': float,        # Cost in USD
+    'metadata': dict,               # Additional metadata
+    'created_at': datetime          # Timestamp
+}
+```
+
+**Example**:
+```python
+from utils.mongodb import get_article_token_usage
+
+usage_records = get_article_token_usage("article-123")
+total_cost = sum(record['estimated_cost'] for record in usage_records)
+print(f"Total article generation cost: ${total_cost:.4f}")
+```
+
+---
+
+### Token Usage Functions - Deep Dive
+
+#### MongoDB Aggregation Pipelines
+
+`get_user_token_summary()` 함수는 두 개의 aggregation pipeline을 사용합니다:
+
+**Pipeline 1 - Operation별 집계:**
+```python
+operation_pipeline = [
+    # Stage 1: 필터링 (유저 + 기간)
+    {'$match': {
+        'user_id': user_id,
+        'created_at': {'$gte': cutoff}  # 30일 전부터
+    }},
+
+    # Stage 2: operation별 그룹핑
+    {'$group': {
+        '_id': '$operation',           # 그룹 키 (SQL의 GROUP BY)
+        'tokens': {'$sum': '$total_tokens'},
+        'cost': {'$sum': '$estimated_cost'},
+        'count': {'$sum': 1}           # 호출 횟수
+    }}
+]
+```
+
+**Pipeline 2 - 일별 집계:**
+```python
+daily_pipeline = [
+    {'$match': {...}},  # 동일한 필터
+
+    {'$group': {
+        '_id': {
+            '$dateToString': {           # datetime → 문자열 변환
+                'format': '%Y-%m-%d',    # "2026-01-30" 형식
+                'date': '$created_at'
+            }
+        },
+        'tokens': {'$sum': '$total_tokens'},
+        'cost': {'$sum': '$estimated_cost'}
+    }},
+
+    {'$sort': {'_id': 1}}  # 날짜 오름차순 (과거 → 최근)
+]
+```
+
+**주요 개념:**
+- `$group._id`: SQL의 `GROUP BY`와 동일. `'$operation'`은 operation 필드 값별로 그룹
+- `$dateToString`: datetime을 문자열로 변환하여 "일" 단위 그룹핑 가능
+- `$sum: 1`: 각 문서마다 1을 더해서 카운트 (SQL의 `COUNT(*)`)
+
+---
+
+#### Token Usage 인덱스 전략
+
+```python
+indexes = [
+    # 1. 유저별 사용량 조회 최적화 (가장 많이 쓰는 쿼리)
+    ([('user_id', 1), ('created_at', -1)], 'idx_token_user_created', {}),
+
+    # 2. 아티클별 조회 (sparse: article_id 없는 문서는 제외)
+    ([('article_id', 1)], 'idx_token_article_id', {'sparse': True}),
+
+    # 3. 시간순 조회 (관리자용 전체 통계)
+    ([('created_at', -1)], 'idx_token_created_at', {}),
+
+    # 4. operation 타입별 분석
+    ([('operation', 1), ('created_at', -1)], 'idx_token_operation_created', {}),
+]
+```
+
+**Compound Index 순서 중요:**
+- `(user_id, created_at)` 인덱스로:
+  - ✅ `user_id`만으로 검색 가능
+  - ✅ `user_id + created_at` 검색 가능
+  - ❌ `created_at`만으로는 이 인덱스 사용 불가 (별도 인덱스 필요)
+
+**Sparse 인덱스:**
+- `article_id`가 없는 문서(dictionary_search)는 인덱스에서 제외
+- 인덱스 크기 절약 + 저장 공간 효율화
+
+---
+
+#### Index Conflict Resolution
+
+스키마 변경 시 인덱스 충돌을 자동으로 해결하는 헬퍼 함수들:
+
+```python
+def _create_index_safe(collection, keys, name, **kwargs) -> bool:
+    """Create index with conflict resolution."""
+    try:
+        collection.create_index(keys, name=name, **kwargs)
+        return True
+    except PyMongoError as e:
+        if "already exists" not in str(e):
+            raise
+        return _resolve_index_conflict(collection, keys, name, **kwargs)
+
+
+def _resolve_index_conflict(collection, keys, name, **kwargs) -> bool:
+    """Resolve by dropping conflicting index and recreating."""
+    keys_dict = dict(keys)
+    existing_indexes = collection.index_information()
+
+    for idx_name, idx_info in existing_indexes.items():
+        if idx_name == '_id_':
+            continue
+
+        idx_keys = dict(idx_info.get('key', []))
+
+        # 같은 이름 다른 키, 또는 같은 키 다른 이름
+        if (idx_name == name and idx_keys != keys_dict) or \
+           (idx_keys == keys_dict and idx_name != name):
+            collection.drop_index(idx_name)
+            collection.create_index(keys, name=name, **kwargs)
+            return True
+
+    return False
+```
+
+**사용 사례:**
+- 필드명 변경 시 (`owner_id` → `user_id`)
+- 인덱스 키 추가/제거 시
+- 배포 시 자동 마이그레이션
+
+---
+
+#### Input Validation
+
+```python
+def save_token_usage(...) -> Optional[str]:
+    # 1. user_id 검증 (빈 문자열 방지)
+    if not user_id or not user_id.strip():
+        logger.warning("Invalid user_id: empty or whitespace")
+        return None
+
+    # 2. 토큰 수 검증 (음수 방지)
+    if prompt_tokens < 0 or completion_tokens < 0:
+        logger.warning("Invalid token counts",
+            extra={"promptTokens": prompt_tokens, "completionTokens": completion_tokens})
+        return None
+
+    # ... 실제 저장 로직
+```
+
+```python
+def get_user_token_summary(user_id: str, days: int = 30) -> dict:
+    # days 범위 검증 [1, 365]
+    if days < 1 or days > 365:
+        logger.warning(f"Invalid days {days}, clamping to [1, 365]")
+        days = max(1, min(days, 365))
+
+    # ... 실제 조회 로직
+```
+
+**검증 원칙:**
+- Early return으로 불필요한 DB 연결 방지
+- 잘못된 데이터가 DB에 저장되는 것 차단
+- 명확한 로그 메시지로 디버깅 용이
+
+---
+
+#### Token Tracking Data Flow
+
+```
+[API 호출]
+    │
+    ▼
+call_llm_with_tracking()
+    │
+    ├── LiteLLM API 호출 (OpenAI/Anthropic/Google)
+    │
+    └── TokenUsageStats 생성
+            │
+            ▼
+        (content, stats) 반환
+            │
+    ┌───────┴───────┐
+    │               │
+    ▼               ▼
+[로깅]        save_token_usage()
+logger.info()       │
+                    ▼
+              MongoDB insert
+              (token_usage 컬렉션)
+                    │
+    ┌───────────────┼───────────────┐
+    │               │               │
+    ▼               ▼               ▼
+get_user_      get_article_    Dashboard
+token_summary  token_usage     (Phase 3)
+    │               │
+    ▼               ▼
+{total_tokens,  [usage records
+ total_cost,     by article]
+ by_operation,
+ daily_usage}
+```
+
+**Phase 구분:**
+- **Phase 1** ✅: LiteLLM 통합, TokenUsageStats, Dictionary API 로깅
+- **Phase 2** ✅: MongoDB 저장 함수, 집계 함수, 인덱스
+- **Phase 3** 🔜: API 엔드포인트 (`/usage/me`, `/usage/articles/{id}`)
+- **Phase 4** 🔜: Worker에서 article_generation 토큰 추적
+
+---
+
+### LLM Utility Functions
+
+#### call_llm_with_tracking()
+
+**Module**: `utils/llm.py`
+
+**Description**: Call LLM API with automatic token usage tracking using LiteLLM. Provider-agnostic function supporting OpenAI, Anthropic, Google, etc.
+
+**Signature**:
+```python
+async def call_llm_with_tracking(
+    messages: list[dict[str, str]],
+    model: str = "gpt-4.1-mini",
+    timeout: float = 30.0,
+    **kwargs
+) -> tuple[str, TokenUsageStats]
+```
+
+**Parameters**:
+- `messages`: List of message dicts with `'role'` and `'content'` keys
+  - Example: `[{"role": "user", "content": "Hello"}]`
+- `model`: LiteLLM model identifier (default: `"gpt-4.1-mini"`)
+  - OpenAI: `"gpt-4.1-mini"`, `"gpt-4.1"`
+  - Anthropic: `"anthropic/claude-4.5-sonnet"`
+  - Google: `"gemini/gemini-2.0-flash"`
+- `timeout`: Request timeout in seconds (default: 30.0)
+- `**kwargs`: Additional arguments passed to `litellm.acompletion()`
+  - Examples: `max_tokens`, `temperature`, `top_p`
+
+**Returns**: Tuple of `(content: str, stats: TokenUsageStats)`
+- `content`: Response content string from the model
+- `stats`: Token usage statistics object
+
+**TokenUsageStats Fields**:
+```python
+@dataclass
+class TokenUsageStats:
+    model: str              # Model name
+    prompt_tokens: int      # Input tokens
+    completion_tokens: int  # Output tokens
+    total_tokens: int       # Total tokens
+    estimated_cost: float   # Cost in USD
+    provider: str | None    # Provider name
+```
+
+**Raises**:
+- `ValueError`: If messages list is empty
+- `litellm.AuthenticationError`: Invalid API key
+- `litellm.RateLimitError`: Rate limit exceeded
+- `litellm.Timeout`: Request timeout
+- `litellm.APIError`: LLM API error
+- `RuntimeError`: No content returned from API
+
+**Example**:
+```python
+from utils.llm import call_llm_with_tracking
+
+# Make LLM call with tracking
+content, stats = await call_llm_with_tracking(
+    messages=[
+        {"role": "user", "content": "Translate 'hello' to French"}
+    ],
+    model="gpt-4.1-mini",
+    max_tokens=50,
+    temperature=0
+)
+
+# Log token usage
+print(f"Model: {stats.model}")
+print(f"Tokens: {stats.total_tokens}")
+print(f"Cost: ${stats.estimated_cost:.6f}")
+
+# Use content
+print(f"Response: {content}")
+```
+
+**Integration Example** (Dictionary API):
+```python
+from utils.llm import call_llm_with_tracking
+from utils.prompts import build_word_definition_prompt
+from utils.mongodb import save_token_usage
+
+@router.post("/dictionary/search")
+async def search_word(request: SearchRequest, current_user: User):
+    # Build prompt
+    prompt = build_word_definition_prompt(
+        language=request.language,
+        sentence=request.sentence,
+        word=request.word
+    )
+
+    # Call LLM with tracking
+    content, stats = await call_llm_with_tracking(
+        messages=[{"role": "user", "content": prompt}],
+        model="gpt-4.1-mini",
+        max_tokens=200
+    )
+
+    # Log token usage
+    logger.info("Token usage", extra=stats.to_dict())
+
+    # Save to database
+    save_token_usage(
+        user_id=current_user.id,
+        operation="dictionary_search",
+        model=stats.model,
+        prompt_tokens=stats.prompt_tokens,
+        completion_tokens=stats.completion_tokens,
+        estimated_cost=stats.estimated_cost,
+        metadata={"query": request.word, "language": request.language}
+    )
+
+    # Parse response
+    result = parse_json_from_content(content)
+    return SearchResponse(**result)
+```
+
+---
+
+#### parse_json_from_content()
+
+**Module**: `utils/llm.py`
+
+**Description**: Parse JSON from LLM response content, handling various formats including plain JSON, markdown code blocks, and JSON embedded in text.
+
+**Signature**:
+```python
+def parse_json_from_content(content: str) -> dict | None
+```
+
+**Parameters**:
+- `content`: Raw content string from LLM
+
+**Returns**: Parsed JSON dict, or `None` if parsing fails
+
+**Supported Formats**:
+1. Plain JSON: `{"key": "value"}`
+2. Markdown JSON code block: ` ```json {"key": "value"} ``` `
+3. Generic markdown code block: ` ``` {"key": "value"} ``` `
+4. JSON with surrounding text: `Here is the result: {"key": "value"} and that's it.`
+
+**Example**:
+```python
+from utils.llm import parse_json_from_content
+
+# Plain JSON
+content = '{"lemma": "hello", "definition": "greeting"}'
+result = parse_json_from_content(content)
+# => {'lemma': 'hello', 'definition': 'greeting'}
+
+# Markdown code block
+content = '```json\n{"lemma": "hello"}\n```'
+result = parse_json_from_content(content)
+# => {'lemma': 'hello'}
+
+# JSON in text
+content = 'The result is {"lemma": "hello"} as requested.'
+result = parse_json_from_content(content)
+# => {'lemma': 'hello'}
+```
+
+---
+
+#### get_llm_error_response()
+
+**Module**: `utils/llm.py`
+
+**Description**: Convert LLM-related exceptions to HTTP status codes and error messages.
+
+**Signature**:
+```python
+def get_llm_error_response(e: Exception) -> tuple[int, str]
+```
+
+**Parameters**:
+- `e`: Exception to handle
+
+**Returns**: Tuple of `(status_code: int, detail_message: str)`
+
+**Error Mapping**:
+- `litellm.AuthenticationError` → `(401, "LLM provider authentication failed")`
+- `litellm.RateLimitError` → `(429, "LLM provider rate limit exceeded")`
+- `litellm.Timeout` → `(504, "LLM provider timeout")`
+- `litellm.ServiceUnavailableError` → `(503, "LLM provider service unavailable")`
+- `litellm.APIError` → `(502, "LLM provider API error")`
+- `ValueError` → `(400, "Invalid request: {error}")`
+- `RuntimeError` → `(500, "LLM provider error: {error}")`
+- Other exceptions → `(500, "Internal server error")`
+
+**Example**:
+```python
+from utils.llm import call_llm_with_tracking, get_llm_error_response
+from fastapi import HTTPException
+
+try:
+    content, stats = await call_llm_with_tracking(messages=[...])
+except Exception as e:
+    status_code, detail = get_llm_error_response(e)
+    raise HTTPException(status_code=status_code, detail=detail)
+```
+
+---
+
 ## Next.js API Routes
 
 ### Summary

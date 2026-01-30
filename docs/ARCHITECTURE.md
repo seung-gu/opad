@@ -116,14 +116,14 @@ sequenceDiagram
 | **Web** | **API** | HTTP | Article 생성, Job enqueue |
 | **Web** | **Next.js API** | HTTP | Dictionary API 요청 (프록시), Vocabulary CRUD 요청 (프록시), Dictionary Stats 요청 (프록시) |
 | **Next.js API** | **API** | HTTP | Dictionary API 프록시 요청, Vocabulary CRUD 프록시 요청, Dictionary Stats 프록시 요청 |
-| **API** | **MongoDB** | (via utils.mongodb) | 중복 체크, Article metadata 저장/조회, Vocabulary 저장/조회 |
+| **API** | **MongoDB** | (via utils.mongodb) | 중복 체크, Article metadata 저장/조회, Vocabulary 저장/조회, Token usage 저장/조회 |
 | **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
 | **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.job_queue` 사용) |
-| **API** | **OpenAI** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 (lemma, definition, related_words) |
+| **API** | **LLM** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 (lemma, definition, related_words) + Token tracking |
 | **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
 | **Worker** | **Redis** | `SET` | Job 상태 업데이트 (공통 모듈 `api.job_queue` 사용) |
 | **Worker** | **CrewAI** | Function Call | Article 생성 |
-| **Worker** | **MongoDB** | (via utils.mongodb) | Article content 저장 |
+| **Worker** | **MongoDB** | (via utils.mongodb) | Article content 저장, Token usage 저장 |
 
 **참고**: API와 Worker 모두 `api.job_queue` 모듈을 통해 Redis에 접근합니다. MongoDB 접근은 `utils.mongodb` 모듈을 통해 합니다.
 
@@ -209,7 +209,7 @@ Queue: opad:jobs (List)
 ### 4. **데이터 저장소**
 
 #### MongoDB: Article Storage
-- **Article metadata 및 content 저장**
+- **Article metadata 및 content 저장** (`articles` 컬렉션)
   - 중복 체크 (24시간 내 동일 입력 파라미터)
   - Article 조회 및 리스트
 
@@ -217,6 +217,11 @@ Queue: opad:jobs (List)
   - 단어, lemma, 정의, 문장 컨텍스트 저장
   - `related_words` 배열 포함 (분리 동사 등 복잡한 언어 구조 지원)
   - Article별로 그룹화하여 관리
+
+- **Token Usage 추적** (`token_usage` 컬렉션)
+  - LLM API 호출 시 토큰 사용량 및 비용 추적
+  - 사용자별, 작업별 (dictionary_search, article_generation) 집계
+  - 일별 사용량 통계 및 비용 분석
   
 **Article Status** (MongoDB, 영구 저장):
 - `running`: Article 생성 시 초기 상태 (처리 중)
@@ -251,6 +256,183 @@ queued → running → completed / failed
 - **Article Status (MongoDB)**: Article의 최종 상태 (영구 저장)
 - **Job Status (Redis)**: Job 처리의 실시간 상태 (24시간 후 자동 삭제)
 - Article은 `running` 상태로 생성되고, Job이 완료되면 `completed` 또는 `failed`로 업데이트됨
+
+---
+
+## 💰 Token Usage Tracking
+
+### Overview
+The system tracks LLM API token usage and costs for all API calls, enabling cost monitoring, user billing, and usage analytics.
+
+### Architecture
+
+#### 1. LLM Utility Module (`utils/llm.py`)
+Provider-agnostic LLM API calls using LiteLLM with automatic token tracking.
+
+**Functions**:
+- `call_llm_with_tracking()`: Makes LLM API calls and returns content + token statistics
+- `parse_json_from_content()`: Parses JSON from LLM responses (handles markdown code blocks)
+- `get_llm_error_response()`: Converts LLM exceptions to HTTP status codes
+
+**TokenUsageStats Dataclass**:
+```python
+@dataclass
+class TokenUsageStats:
+    model: str              # Model name (e.g., "gpt-4.1-mini")
+    prompt_tokens: int      # Input tokens
+    completion_tokens: int  # Output tokens
+    total_tokens: int       # Total tokens used
+    estimated_cost: float   # Cost in USD (calculated by LiteLLM)
+    provider: str | None    # Provider name (openai, anthropic, google)
+```
+
+**Supported Providers** (via LiteLLM):
+- OpenAI: `"gpt-4.1-mini"`, `"gpt-4.1"`
+- Anthropic: `"anthropic/claude-4.5-sonnet"`
+- Google: `"gemini/gemini-2.0-flash"`
+
+**Example Usage**:
+```python
+from utils.llm import call_llm_with_tracking, TokenUsageStats
+
+content, stats = await call_llm_with_tracking(
+    messages=[{"role": "user", "content": "Hello"}],
+    model="gpt-4.1-mini",
+    max_tokens=200
+)
+
+# stats.model = "gpt-4.1-mini"
+# stats.prompt_tokens = 8
+# stats.completion_tokens = 12
+# stats.estimated_cost = 0.000015
+```
+
+#### 2. MongoDB Storage (`utils/mongodb.py`)
+
+**save_token_usage()**: Save token usage record
+```python
+def save_token_usage(
+    user_id: str,
+    operation: str,  # "dictionary_search" | "article_generation"
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    estimated_cost: float,
+    article_id: Optional[str] = None,
+    metadata: Optional[dict] = None
+) -> Optional[str]:
+    """Save token usage record to MongoDB."""
+```
+
+**get_user_token_summary()**: Get user's token usage summary
+```python
+def get_user_token_summary(user_id: str, days: int = 30) -> dict:
+    """
+    Returns:
+    {
+        'total_tokens': int,
+        'total_cost': float,
+        'by_operation': {
+            'operation_type': {'tokens': int, 'cost': float, 'count': int}
+        },
+        'daily_usage': [
+            {'date': 'YYYY-MM-DD', 'tokens': int, 'cost': float}
+        ]
+    }
+    """
+```
+
+**get_article_token_usage()**: Get token usage for specific article
+```python
+def get_article_token_usage(article_id: str) -> list[dict]:
+    """Returns all token usage records for an article."""
+```
+
+#### 3. Token Usage Collection Schema (MongoDB)
+
+```json
+{
+  "_id": "uuid",
+  "user_id": "uuid",
+  "operation": "dictionary_search | article_generation",
+  "model": "string",
+  "prompt_tokens": 100,
+  "completion_tokens": 50,
+  "total_tokens": 150,
+  "estimated_cost": 0.00025,
+  "article_id": "uuid (optional)",
+  "metadata": {
+    "query": "...",
+    "language": "..."
+  },
+  "created_at": "datetime"
+}
+```
+
+**Indexes**:
+- `(user_id, created_at)`: User usage queries (descending)
+- `article_id`: Article-specific queries (sparse)
+- `created_at`: Time-based queries (descending)
+- `(operation, created_at)`: Operation-type queries
+
+### Integration
+
+#### Dictionary API (`src/api/routes/dictionary.py`)
+
+```python
+@router.post("/search", response_model=SearchResponse)
+async def search_word(request: SearchRequest, current_user: User = Depends(get_current_user_required)):
+    # Build prompt
+    prompt = build_word_definition_prompt(
+        language=request.language,
+        sentence=request.sentence,
+        word=request.word
+    )
+
+    # Call LLM with tracking
+    content, stats = await call_llm_with_tracking(
+        messages=[{"role": "user", "content": prompt}],
+        model="gpt-4.1-mini",
+        max_tokens=200
+    )
+
+    # Log token usage
+    logger.info("Token usage for dictionary search", extra=stats.to_dict())
+
+    # Save to database (Phase 2)
+    save_token_usage(
+        user_id=current_user.id,
+        operation="dictionary_search",
+        model=stats.model,
+        prompt_tokens=stats.prompt_tokens,
+        completion_tokens=stats.completion_tokens,
+        estimated_cost=stats.estimated_cost,
+        metadata={"query": request.word, "language": request.language}
+    )
+
+    # Parse and return response
+    result = parse_json_from_content(content)
+    return SearchResponse(**result)
+```
+
+### Future Enhancements
+
+**Phase 1** (Completed):
+- ✅ LiteLLM integration with token tracking
+- ✅ TokenUsageStats dataclass
+- ✅ MongoDB storage functions
+- ✅ Dictionary API integration with logging
+
+**Phase 2** (In Progress):
+- Database storage of token usage records
+- User token summary endpoint
+- Article token usage tracking
+
+**Phase 3** (Planned):
+- CrewAI article generation token tracking
+- Usage analytics dashboard
+- Cost alerts and limits
+- Per-user billing reports
 
 ---
 
@@ -422,24 +604,40 @@ opad/
 ## 🔑 공통 유틸리티 모듈
 
 ### LLM 유틸리티 (`utils/llm.py`)
-OpenAI API 호출을 위한 공통 함수들:
+Provider-agnostic LLM API 호출 및 토큰 추적을 위한 공통 함수들 (LiteLLM 기반):
 
-- **`get_openai_api_key()`**: 환경변수에서 OpenAI API 키 로딩
-- **`call_openai_chat()`**: OpenAI Chat Completions API 호출 (범용 함수)
+- **`call_llm_with_tracking()`**: LLM API 호출 + 토큰 사용량 추적 (범용 함수)
+  - 반환값: `(content: str, stats: TokenUsageStats)`
+  - OpenAI, Anthropic, Google 등 다양한 프로바이더 지원
+  - 자동 비용 계산 (LiteLLM 내장 가격 데이터베이스 사용)
+- **`TokenUsageStats`**: 토큰 사용량 통계 dataclass
+  - 필드: `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `estimated_cost`, `provider`
 - **`parse_json_from_content()`**: LLM 응답에서 JSON 파싱 (다양한 형식 지원)
+  - 일반 JSON, 마크다운 코드 블록 (```json), 텍스트 내 JSON 추출 지원
 - **`get_llm_error_response()`**: LLM 관련 예외를 HTTP 상태 코드로 변환
 
 **사용 예시:**
 ```python
-from utils.llm import call_openai_chat, parse_json_from_content
+from utils.llm import call_llm_with_tracking, parse_json_from_content
 
-content = await call_openai_chat(
-    prompt="...",
+# LLM 호출 + 토큰 추적
+content, stats = await call_llm_with_tracking(
+    messages=[{"role": "user", "content": "Hello"}],
     model="gpt-4.1-mini",
     max_tokens=200
 )
+
+# 토큰 사용량 로깅
+logger.info("Token usage", extra=stats.to_dict())
+
+# JSON 파싱
 result = parse_json_from_content(content)
 ```
+
+**지원 프로바이더** (LiteLLM):
+- OpenAI: `"gpt-4.1-mini"`, `"gpt-4.1"`
+- Anthropic: `"anthropic/claude-4.5-sonnet"`
+- Google: `"gemini/gemini-2.0-flash"`
 
 ### 프롬프트 템플릿 (`utils/prompts.py`)
 재사용 가능한 LLM 프롬프트 빌더 함수들:

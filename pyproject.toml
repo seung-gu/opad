@@ -31,6 +31,11 @@ packages = ["src/crew", "src/api", "src/worker", "src/utils"]
 [tool.crewai]
 type = "crew"
 
+[dependency-groups]
+dev = [
+    "radon>=6.0.1",
+]
+
 [project.scripts]
 opad = "crew.main:run"
 run_crew = "crew.main:run"

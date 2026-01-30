@@ -23,6 +23,7 @@ DATABASE_NAME = os.getenv('MONGODB_DATABASE', 'opad')
 COLLECTION_NAME = 'articles'
 VOCABULARY_COLLECTION_NAME = 'vocabularies'
 USERS_COLLECTION_NAME = 'users'
+TOKEN_USAGE_COLLECTION_NAME = 'token_usage'
 
 _client_cache = None
 _connection_attempted = False
@@ -562,6 +563,98 @@ def _ensure_vocabularies_indexes() -> bool:
         return False
 
 
+def _create_index_safe(collection, keys: list, name: str, **kwargs) -> bool:
+    """Create index with conflict resolution.
+
+    Args:
+        collection: MongoDB collection
+        keys: Index keys as list of tuples
+        name: Index name
+        **kwargs: Additional index options
+
+    Returns:
+        True if index created successfully, False otherwise
+    """
+    try:
+        collection.create_index(keys, name=name, **kwargs)
+        logger.info(f"Ensured index exists: {name}")
+        return True
+    except PyMongoError as e:
+        error_str = str(e)
+        if "already exists" not in error_str:
+            raise
+        return _resolve_index_conflict(collection, keys, name, **kwargs)
+
+
+def _resolve_index_conflict(collection, keys: list, name: str, **kwargs) -> bool:
+    """Resolve index conflict by dropping and recreating.
+
+    Args:
+        collection: MongoDB collection
+        keys: Index keys as list of tuples
+        name: Index name
+        **kwargs: Additional index options
+
+    Returns:
+        True if resolved successfully, False otherwise
+    """
+    keys_dict = dict(keys)
+    existing_indexes = collection.index_information()
+
+    for idx_name, idx_info in existing_indexes.items():
+        if idx_name == '_id_':
+            continue
+
+        idx_keys = dict(idx_info.get('key', []))
+
+        # Same name but different keys, or same keys but different name
+        if (idx_name == name and idx_keys != keys_dict) or (idx_keys == keys_dict and idx_name != name):
+            logger.warning(f"Dropping conflicting index: {idx_name}")
+            collection.drop_index(idx_name)
+            collection.create_index(keys, name=name, **kwargs)
+            logger.info(f"Created index: {name}")
+            return True
+
+    logger.error(f"Failed to resolve index conflict for {name}")
+    return False
+
+
+def _ensure_token_usage_indexes() -> bool:
+    """Ensure MongoDB indexes exist for token_usage collection.
+
+    Creates indexes if they don't exist:
+    - (user_id, created_at): for user's usage queries
+    - article_id: for article-specific queries (sparse)
+    - created_at: for time-based queries
+    - (operation, created_at): for operation-type queries
+
+    Returns:
+        True if indexes were created/verified successfully, False otherwise
+    """
+    client = get_mongodb_client()
+    if not client:
+        return False
+
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[TOKEN_USAGE_COLLECTION_NAME]
+
+        indexes = [
+            ([('user_id', 1), ('created_at', -1)], 'idx_token_user_created', {}),
+            ([('article_id', 1)], 'idx_token_article_id', {'sparse': True}),
+            ([('created_at', -1)], 'idx_token_created_at', {}),
+            ([('operation', 1), ('created_at', -1)], 'idx_token_operation_created', {}),
+        ]
+
+        for keys, name, kwargs in indexes:
+            _create_index_safe(collection, keys, name, **kwargs)
+
+        return True
+    except PyMongoError as e:
+        logger.error("Failed to create token_usage indexes", extra={"error": str(e)})
+        return False
+
+
 def ensure_indexes() -> bool:
     """Ensure all MongoDB indexes exist for all collections.
 
@@ -573,7 +666,8 @@ def ensure_indexes() -> bool:
     articles_ok = _ensure_articles_indexes()
     users_ok = _ensure_users_indexes()
     vocabularies_ok = _ensure_vocabularies_indexes()
-    return articles_ok and users_ok and vocabularies_ok
+    token_usage_ok = _ensure_token_usage_indexes()
+    return articles_ok and users_ok and vocabularies_ok and token_usage_ok
 
 
 def find_duplicate_article(inputs: dict, user_id: Optional[str] = None, hours: int = 24) -> Optional[dict]:
@@ -1428,6 +1522,294 @@ def get_user_vocabulary_for_generation(
         logger.error(
             "Failed to get vocabulary for generation",
             extra={"userId": user_id, "language": language, "error": str(e)}
+        )
+        return []
+
+
+# ============================================================================
+# Token Usage Collection Functions
+# ============================================================================
+
+def save_token_usage(
+    user_id: str,
+    operation: str,
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    estimated_cost: float,
+    article_id: Optional[str] = None,
+    metadata: Optional[dict] = None
+) -> Optional[str]:
+    """Save token usage record to MongoDB.
+
+    Records token usage for cost tracking and analytics.
+
+    Args:
+        user_id: User ID who incurred the usage
+        operation: Operation type ("dictionary_search" | "article_generation")
+        model: Model name used (e.g., "gpt-4", "claude-3-opus")
+        prompt_tokens: Number of input tokens
+        completion_tokens: Number of output tokens
+        estimated_cost: Estimated cost in USD
+        article_id: Optional article ID if usage is associated with an article
+        metadata: Optional additional metadata (e.g., query, language)
+
+    Returns:
+        Inserted document ID if successful, None otherwise
+    """
+    # Validate inputs
+    if not user_id or not user_id.strip():
+        logger.warning("Invalid user_id for token usage: empty or whitespace")
+        return None
+    if prompt_tokens < 0 or completion_tokens < 0:
+        logger.warning(
+            "Invalid token counts for token usage",
+            extra={"promptTokens": prompt_tokens, "completionTokens": completion_tokens}
+        )
+        return None
+
+    client = get_mongodb_client()
+    if not client:
+        return None
+
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[TOKEN_USAGE_COLLECTION_NAME]
+
+        now = datetime.now(timezone.utc)
+        usage_doc = {
+            '_id': str(uuid.uuid4()),
+            'user_id': user_id,
+            'operation': operation,
+            'model': model,
+            'prompt_tokens': prompt_tokens,
+            'completion_tokens': completion_tokens,
+            'total_tokens': prompt_tokens + completion_tokens,
+            'estimated_cost': estimated_cost,
+            'article_id': article_id,
+            'metadata': metadata or {},
+            'created_at': now
+        }
+
+        collection.insert_one(usage_doc)
+        usage_id = usage_doc['_id']
+
+        logger.info(
+            "Token usage saved",
+            extra={
+                "usageId": usage_id,
+                "userId": user_id,
+                "operation": operation,
+                "totalTokens": prompt_tokens + completion_tokens,
+                "estimatedCost": estimated_cost
+            }
+        )
+        return usage_id
+    except PyMongoError as e:
+        logger.error(
+            "Failed to save token usage",
+            extra={"userId": user_id, "operation": operation, "error": str(e)}
+        )
+        return None
+
+
+def get_user_token_summary(user_id: str, days: int = 30) -> dict:
+    """Get token usage summary for a user.
+
+    Aggregates token usage data for the specified user within the time window.
+
+    Args:
+        user_id: User ID to get summary for
+        days: Number of days to look back (default: 30, clamped to [1, 365])
+
+    Returns:
+        Dictionary with:
+        - total_tokens: Total tokens used
+        - total_cost: Total estimated cost in USD
+        - by_operation: Dict mapping operation type to {tokens, cost, count}
+        - daily_usage: List of {date, tokens, cost} sorted by date ascending
+    """
+    # Clamp days to valid range [1, 365]
+    if days < 1 or days > 365:
+        logger.warning(
+            f"Invalid days value {days} for token summary, clamping to [1, 365]",
+            extra={"userId": user_id, "requestedDays": days}
+        )
+        days = max(1, min(days, 365))
+
+    client = get_mongodb_client()
+    if not client:
+        return {
+            'total_tokens': 0,
+            'total_cost': 0.0,
+            'by_operation': {},
+            'daily_usage': []
+        }
+
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[TOKEN_USAGE_COLLECTION_NAME]
+
+        # Calculate cutoff date
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+        # Aggregation for totals and by operation
+        operation_pipeline = [
+            {
+                '$match': {
+                    'user_id': user_id,
+                    'created_at': {'$gte': cutoff}
+                }
+            },
+            {
+                '$group': {
+                    '_id': '$operation',
+                    'tokens': {'$sum': '$total_tokens'},
+                    'cost': {'$sum': '$estimated_cost'},
+                    'count': {'$sum': 1}
+                }
+            }
+        ]
+
+        by_operation = {}
+        total_tokens = 0
+        total_cost = 0.0
+
+        for doc in collection.aggregate(operation_pipeline):
+            op = doc['_id']
+            tokens = doc['tokens']
+            cost = doc['cost']
+            count = doc['count']
+
+            by_operation[op] = {
+                'tokens': tokens,
+                'cost': round(cost, 6),
+                'count': count
+            }
+            total_tokens += tokens
+            total_cost += cost
+
+        # Aggregation for daily usage
+        daily_pipeline = [
+            {
+                '$match': {
+                    'user_id': user_id,
+                    'created_at': {'$gte': cutoff}
+                }
+            },
+            {
+                '$group': {
+                    '_id': {
+                        '$dateToString': {
+                            'format': '%Y-%m-%d',
+                            'date': '$created_at'
+                        }
+                    },
+                    'tokens': {'$sum': '$total_tokens'},
+                    'cost': {'$sum': '$estimated_cost'}
+                }
+            },
+            {
+                '$sort': {'_id': 1}
+            }
+        ]
+
+        daily_usage = []
+        for doc in collection.aggregate(daily_pipeline):
+            daily_usage.append({
+                'date': doc['_id'],
+                'tokens': doc['tokens'],
+                'cost': round(doc['cost'], 6)
+            })
+
+        logger.info(
+            "Token usage summary retrieved",
+            extra={
+                "userId": user_id,
+                "days": days,
+                "totalTokens": total_tokens,
+                "totalCost": round(total_cost, 6)
+            }
+        )
+
+        return {
+            'total_tokens': total_tokens,
+            'total_cost': round(total_cost, 6),
+            'by_operation': by_operation,
+            'daily_usage': daily_usage
+        }
+    except PyMongoError as e:
+        logger.error(
+            "Failed to get token usage summary",
+            extra={"userId": user_id, "error": str(e)}
+        )
+        return {
+            'total_tokens': 0,
+            'total_cost': 0.0,
+            'by_operation': {},
+            'daily_usage': []
+        }
+
+
+def get_article_token_usage(article_id: str) -> list[dict]:
+    """Get all token usage records for an article.
+
+    Retrieves all token usage records associated with a specific article,
+    sorted by created_at ascending (oldest first).
+
+    Args:
+        article_id: Article ID to get usage for
+
+    Returns:
+        List of token usage records with fields:
+        - id: Usage record ID
+        - user_id: User who incurred the usage
+        - operation: Operation type
+        - model: Model used
+        - prompt_tokens: Input tokens
+        - completion_tokens: Output tokens
+        - total_tokens: Total tokens
+        - estimated_cost: Cost in USD
+        - metadata: Additional metadata
+        - created_at: Timestamp
+    """
+    # Validate article_id
+    if not article_id or not article_id.strip():
+        logger.warning("Invalid article_id for token usage query: empty or whitespace")
+        return []
+
+    client = get_mongodb_client()
+    if not client:
+        return []
+
+    try:
+        db = client[DATABASE_NAME]
+        collection = db[TOKEN_USAGE_COLLECTION_NAME]
+
+        result = []
+        for doc in collection.find({'article_id': article_id}).sort('created_at', 1):
+            result.append({
+                'id': doc['_id'],
+                'user_id': doc['user_id'],
+                'operation': doc['operation'],
+                'model': doc['model'],
+                'prompt_tokens': doc['prompt_tokens'],
+                'completion_tokens': doc['completion_tokens'],
+                'total_tokens': doc['total_tokens'],
+                'estimated_cost': doc['estimated_cost'],
+                'metadata': doc.get('metadata', {}),
+                'created_at': doc['created_at']
+            })
+
+        logger.info(
+            "Article token usage retrieved",
+            extra={"articleId": article_id, "recordCount": len(result)}
+        )
+        return result
+    except PyMongoError as e:
+        logger.error(
+            "Failed to get article token usage",
+            extra={"articleId": article_id, "error": str(e)}
         )
         return []
 
