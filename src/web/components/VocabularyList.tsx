@@ -1,6 +1,7 @@
 'use client'
 
 import { Vocabulary } from '@/types/article'
+import { getLevelColor } from '@/lib/styleHelpers'
 
 interface VocabularyListProps {
   vocabularies: Vocabulary[]
@@ -10,14 +11,6 @@ interface VocabularyListProps {
 export default function VocabularyList({ vocabularies, onDelete }: VocabularyListProps) {
   if (vocabularies.length === 0) {
     return null
-  }
-
-  // Helper function for CEFR level badge color
-  const getLevelColor = (level?: string) => {
-    if (!level) return 'bg-gray-100 text-gray-600'
-    if (level.startsWith('A')) return 'bg-green-100 text-green-700'
-    if (level.startsWith('B')) return 'bg-yellow-100 text-yellow-700'
-    return 'bg-red-100 text-red-700' // C1, C2
   }
 
   return (
