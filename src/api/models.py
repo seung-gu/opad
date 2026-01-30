@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # Type definitions for vocabulary metadata
@@ -14,6 +14,10 @@ class Conjugations(BaseModel):
     present: Optional[str] = None
     past: Optional[str] = None
     perfect: Optional[str] = None
+
+    def __bool__(self) -> bool:
+        """Return False if all fields are None."""
+        return any(v is not None for v in (self.present, self.past, self.perfect))
 
 
 class ArticleResponse(BaseModel):
@@ -96,8 +100,20 @@ class VocabularyRequest(BaseModel):
     span_id: Optional[str] = Field(None, description="Span ID of the clicked word")
     pos: Optional[str] = Field(None, description="Part of speech: noun, verb, adjective, etc.")
     gender: Optional[str] = Field(None, description="Grammatical gender: der/die/das, le/la, el/la")
-    conjugations: Optional[Conjugations] = Field(None, description="Verb conjugations by tense")
+    conjugations: Optional[dict] = Field(None, description="Verb conjugations by tense")
     level: Optional[CEFRLevel] = Field(None, description="CEFR level (A1-C2)")
+
+    @field_validator('conjugations', mode='before')
+    @classmethod
+    def convert_conjugations(cls, v):
+        """Convert Conjugations to dict, return None if empty."""
+        if v is None:
+            return None
+        if isinstance(v, Conjugations):
+            return v.model_dump() if v else None
+        if isinstance(v, dict):
+            return v if any(v.values()) else None
+        return v
 
 
 class VocabularyResponse(BaseModel):
