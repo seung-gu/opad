@@ -20,6 +20,7 @@ from utils.mongodb import (
     get_vocabulary_by_id,
     get_vocabulary_counts,
     save_vocabulary,
+    save_token_usage,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,17 @@ async def search_word(
             model="gpt-4.1-mini",
             max_tokens=200,
             temperature=0
+        )
+
+        # Save token usage to database
+        save_token_usage(
+            user_id=current_user.id,
+            operation="dictionary_search",
+            model=stats.model,
+            prompt_tokens=stats.prompt_tokens,
+            completion_tokens=stats.completion_tokens,
+            estimated_cost=stats.estimated_cost,
+            metadata={"word": request.word, "language": request.language}
         )
 
         # Parse JSON response

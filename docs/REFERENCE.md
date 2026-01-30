@@ -230,8 +230,8 @@ generateResponse.status === 409  ← Response handling!
 ## FastAPI Endpoints
 
 ### Summary
-- Total endpoints: 16
-- Tags: meta, health, jobs, stats, articles, dictionary
+- Total endpoints: 18
+- Tags: meta, health, jobs, stats, articles, dictionary, auth, usage
 
 ### Endpoints by Tag
 
@@ -258,7 +258,8 @@ generateResponse.status === 409  ← Response handling!
 
 #### Meta
 
-- **GET** `/endpoints` - List Endpoints
+- **GET** `/endpoints` - List all API endpoints (dynamic, tag-based grouping)
+  - See [Dynamic Endpoint Discovery](ARCHITECTURE.md#dynamic-endpoint-discovery) for implementation details
 
 #### Stats
 
@@ -276,6 +277,11 @@ generateResponse.status === 409  ← Response handling!
 - **POST** `/auth/register` - Register a new user account
 - **POST** `/auth/login` - Authenticate and obtain JWT token
 - **GET** `/auth/me` - Get current authenticated user information
+
+#### Usage
+
+- **GET** `/usage/me` - Get current user's token usage summary
+- **GET** `/usage/articles/{article_id}` - Get token usage records for a specific article
 
 ---
 
@@ -730,6 +736,91 @@ generateResponse.status === 409  ← Response handling!
 
 ---
 
+### Usage Endpoints
+
+#### GET /usage/me
+
+**Description**: Get current user's token usage summary within a specified time window.
+
+**Auth**: Required (JWT)
+
+**Query Parameters**:
+- `days` (integer, default: 30, range: 1-365): Number of days to look back
+
+**Response** (200):
+```json
+{
+  "total_tokens": 15000,
+  "total_cost": 0.0234,
+  "by_operation": {
+    "dictionary_search": {
+      "tokens": 5000,
+      "cost": 0.0075,
+      "count": 50
+    },
+    "article_generation": {
+      "tokens": 10000,
+      "cost": 0.0159,
+      "count": 5
+    }
+  },
+  "daily_usage": [
+    {"date": "2026-01-28", "tokens": 3000, "cost": 0.0045},
+    {"date": "2026-01-29", "tokens": 5000, "cost": 0.0078},
+    {"date": "2026-01-30", "tokens": 7000, "cost": 0.0111}
+  ]
+}
+```
+
+**Response** (422 - Invalid days range):
+```json
+{
+  "detail": [{"loc": ["query", "days"], "msg": "ensure this value is greater than or equal to 1"}]
+}
+```
+
+---
+
+#### GET /usage/articles/{article_id}
+
+**Description**: Get all token usage records for a specific article.
+
+**Auth**: Required (JWT) - Users can only access their own articles' usage
+
+**Response** (200):
+```json
+[
+  {
+    "id": "usage-uuid-1",
+    "user_id": "user-uuid",
+    "operation": "article_generation",
+    "model": "gpt-4.1",
+    "prompt_tokens": 2000,
+    "completion_tokens": 1500,
+    "total_tokens": 3500,
+    "estimated_cost": 0.0525,
+    "metadata": {"topic": "technology"},
+    "created_at": "2026-01-30T10:00:00Z"
+  }
+]
+```
+
+**Response** (404 - Article not found):
+```json
+{
+  "detail": "Article not found"
+}
+```
+
+**Response** (403 - Forbidden):
+```json
+{
+  "detail": "You don't have permission to access this article's usage"
+}
+```
+
+---
+
 ### Token Usage Functions
 
 #### save_token_usage()
@@ -878,6 +969,47 @@ print(f"Total article generation cost: ${total_cost:.4f}")
 ### Token Usage Functions - Deep Dive
 
 #### MongoDB Aggregation Pipelines
+
+##### 왜 Aggregation을 사용하나요?
+
+Aggregation은 데이터베이스에서 "여러 문서를 모아서 계산"하는 방법입니다.
+
+예를 들어, `token_usage` 컬렉션에 이런 데이터가 있다고 해봅시다:
+
+```
+{ user_id: "kim", operation: "dictionary_search", total_tokens: 100 }
+{ user_id: "kim", operation: "dictionary_search", total_tokens: 150 }
+{ user_id: "kim", operation: "article_generation", total_tokens: 2000 }
+{ user_id: "lee", operation: "dictionary_search", total_tokens: 80 }
+```
+
+**방법 1: Python에서 계산** (느림 ❌)
+```python
+# 모든 문서를 가져와서...
+docs = db.find({"user_id": "kim"})  # 3개 문서 전송
+
+# Python에서 합산
+total = 0
+for doc in docs:
+    total += doc["total_tokens"]  # 100 + 150 + 2000 = 2250
+```
+
+**방법 2: MongoDB에서 계산** (빠름 ✅)
+```python
+# MongoDB야, 너가 계산해서 결과만 줘
+result = db.aggregate([
+    {"$match": {"user_id": "kim"}},      # kim 것만 골라서
+    {"$group": {"_id": None, "total": {"$sum": "$total_tokens"}}}  # 합쳐줘
+])
+# 결과: {"total": 2250}  ← 숫자 하나만 전송!
+```
+
+**왜 방법 2가 좋은가요?**
+- 문서가 10,000개면? 방법1은 10,000개 전송, 방법2는 결과 1개만 전송
+- 네트워크 비용 ↓, 속도 ↑
+- 특히 클라우드 환경에서는 DB와 앱 서버가 분리되어 있어 네트워크 비용이 중요
+
+##### Pipeline 상세 설명
 
 `get_user_token_summary()` 함수는 두 개의 aggregation pipeline을 사용합니다:
 
@@ -1076,8 +1208,8 @@ token_summary  token_usage     (Phase 3)
 **Phase 구분:**
 - **Phase 1** ✅: LiteLLM 통합, TokenUsageStats, Dictionary API 로깅
 - **Phase 2** ✅: MongoDB 저장 함수, 집계 함수, 인덱스
-- **Phase 3** 🔜: API 엔드포인트 (`/usage/me`, `/usage/articles/{id}`)
-- **Phase 4** 🔜: Worker에서 article_generation 토큰 추적
+- **Phase 3** ✅: API 엔드포인트 (`/usage/me`, `/usage/articles/{id}`), Authentication/Authorization
+- **Phase 4** 🔜: Worker에서 article_generation 토큰 추적, Frontend dashboard
 
 ---
 

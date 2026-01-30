@@ -71,7 +71,7 @@ def verify_token(token: str) -> Optional[str]:
         return None
 
 
-async def get_current_user(
+def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ) -> Optional[User]:
     """Get current authenticated user from JWT token.
@@ -99,7 +99,7 @@ async def get_current_user(
     return User(**user_dict)
 
 
-async def get_current_user_required(
+def get_current_user_required(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ) -> User:
     """Get current authenticated user from JWT token (required).

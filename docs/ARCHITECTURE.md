@@ -113,13 +113,14 @@ sequenceDiagram
 
 | From | To | Method | Purpose |
 |------|-----|--------|---------|
-| **Web** | **API** | HTTP | Article 생성, Job enqueue |
+| **Web** | **API** | HTTP | Article 생성, Job enqueue, Token usage 조회 |
 | **Web** | **Next.js API** | HTTP | Dictionary API 요청 (프록시), Vocabulary CRUD 요청 (프록시), Dictionary Stats 요청 (프록시) |
 | **Next.js API** | **API** | HTTP | Dictionary API 프록시 요청, Vocabulary CRUD 프록시 요청, Dictionary Stats 프록시 요청 |
 | **API** | **MongoDB** | (via utils.mongodb) | 중복 체크, Article metadata 저장/조회, Vocabulary 저장/조회, Token usage 저장/조회 |
 | **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
 | **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.job_queue` 사용) |
 | **API** | **LLM** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 (lemma, definition, related_words) + Token tracking |
+| **API** | **API** | Internal | Token usage endpoints (`/usage/me`, `/usage/articles/{id}`) |
 | **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
 | **Worker** | **Redis** | `SET` | Job 상태 업데이트 (공통 모듈 `api.job_queue` 사용) |
 | **Worker** | **CrewAI** | Function Call | Article 생성 |
@@ -415,6 +416,90 @@ async def search_word(request: SearchRequest, current_user: User = Depends(get_c
     return SearchResponse(**result)
 ```
 
+#### Token Usage API Endpoints (`src/api/routes/usage.py`)
+
+**GET /usage/me**: Get current user's token usage summary
+```python
+@router.get("/me", response_model=TokenUsageSummary)
+async def get_my_usage(
+    days: int = Query(default=30, ge=1, le=365),
+    current_user: User = Depends(get_current_user_required)
+):
+    # Get aggregated summary from MongoDB
+    summary = get_user_token_summary(user_id=current_user.id, days=days)
+
+    # Convert to response models
+    by_operation = {
+        op_name: OperationUsage(**op_data)
+        for op_name, op_data in summary.get('by_operation', {}).items()
+    }
+    daily_usage = [
+        DailyUsage(**day) for day in summary.get('daily_usage', [])
+    ]
+
+    return TokenUsageSummary(
+        total_tokens=summary.get('total_tokens', 0),
+        total_cost=summary.get('total_cost', 0.0),
+        by_operation=by_operation,
+        daily_usage=daily_usage
+    )
+```
+
+**GET /usage/articles/{article_id}**: Get token usage for specific article
+```python
+@router.get("/articles/{article_id}", response_model=list[TokenUsageRecord])
+async def get_article_usage(
+    article_id: str,
+    current_user: User = Depends(get_current_user_required)
+):
+    # Verify article ownership
+    article = get_article(article_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    if article.get('user_id') != current_user.id:
+        raise HTTPException(status_code=403, detail="You don't have permission")
+
+    # Get all usage records for article
+    usage_records = get_article_token_usage(article_id)
+
+    return [TokenUsageRecord(**record) for record in usage_records]
+```
+
+### Token Usage Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant WebUI as Web UI
+    participant API as FastAPI
+    participant MongoDB
+    participant LLM as LLM Provider
+
+    Note over User,LLM: Dictionary Search with Token Tracking
+    User->>WebUI: Click word
+    WebUI->>API: POST /dictionary/search
+    API->>LLM: Call LLM API
+    LLM-->>API: Response + usage stats
+    API->>MongoDB: save_token_usage()
+    API-->>WebUI: Definition response
+
+    Note over User,MongoDB: Usage Summary Retrieval
+    User->>WebUI: View usage page
+    WebUI->>API: GET /usage/me?days=30
+    API->>MongoDB: get_user_token_summary()
+    MongoDB-->>API: Aggregated summary
+    API-->>WebUI: TokenUsageSummary
+    WebUI-->>User: Display usage charts
+
+    Note over User,MongoDB: Article Usage Details
+    User->>WebUI: View article usage
+    WebUI->>API: GET /usage/articles/{id}
+    API->>MongoDB: get_article_token_usage()
+    MongoDB-->>API: Usage records
+    API-->>WebUI: List of TokenUsageRecord
+    WebUI-->>User: Display usage details
+```
+
 ### Future Enhancements
 
 **Phase 1** (Completed):
@@ -423,14 +508,19 @@ async def search_word(request: SearchRequest, current_user: User = Depends(get_c
 - ✅ MongoDB storage functions
 - ✅ Dictionary API integration with logging
 
-**Phase 2** (In Progress):
-- Database storage of token usage records
-- User token summary endpoint
-- Article token usage tracking
+**Phase 2** (Completed):
+- ✅ Database storage of token usage records
+- ✅ User token summary endpoint
+- ✅ Article token usage tracking
 
-**Phase 3** (Planned):
+**Phase 3** (Completed):
+- ✅ API endpoints for token usage (`/usage/me`, `/usage/articles/{id}`)
+- ✅ Authentication and authorization for usage endpoints
+- ✅ Usage summary with daily breakdown and operation filtering
+
+**Phase 4** (Planned):
 - CrewAI article generation token tracking
-- Usage analytics dashboard
+- Usage analytics dashboard (Frontend)
 - Cost alerts and limits
 - Per-user billing reports
 
@@ -654,6 +744,68 @@ prompt = build_word_definition_prompt(
     word="hängt"
 )
 ```
+
+---
+
+## 📡 Dynamic Endpoint Discovery
+
+### Tag-Based Endpoint Grouping
+
+The `/endpoints` endpoint dynamically generates an HTML page listing all registered API routes, grouped by their tags. This system requires no code changes when new routes are added—they automatically appear in the listing.
+
+**Endpoint**: `GET /endpoints`
+
+**File**: `src/api/routes/endpoints.py`
+
+**How It Works**:
+
+1. **Route Introspection**: Scans `app.routes` to collect all routes with methods and paths
+2. **Tag Extraction**: Reads tags from route definitions (e.g., `tags=["articles"]`, `tags=["usage"]`)
+3. **Dynamic Grouping**: Groups endpoints by tag using `group_endpoints_by_tag()`
+4. **HTML Generation**: Renders grouped endpoints as styled HTML page
+
+**Helper Functions**:
+
+- **`group_endpoints_by_tag(endpoints)`**: Groups endpoints by tag (first tag if multiple), returns `dict[tag, list[endpoints]]`
+  - Uses `defaultdict(list)` to avoid KeyError
+  - Filters out `EXCLUDED_TAGS` (e.g., "meta")
+  - Sorts endpoints within each group by `(path, method)`
+  - Assigns "other" tag if endpoint has no tags
+
+- **`get_sorted_tags(grouped)`**: Returns alphabetically sorted tag list with "other" at end
+
+- **`format_endpoint(ep)`**: Formats single endpoint as HTML with method badge, path, and summary
+
+- **`format_tag_title(tag)`**: Converts tag name to display title (e.g., "articles" → "Articles Endpoints")
+
+**Configuration**:
+
+```python
+# src/api/routes/endpoints.py:13-14
+EXCLUDED_TAGS = {"meta"}  # Tags to hide from listing
+EXCLUDED_PATHS = {"/docs", "/openapi.json", "/redoc"}  # Paths to skip
+```
+
+**Example Route Definition**:
+
+```python
+# src/api/routes/usage.py
+router = APIRouter(tags=["usage"])  # Tag used for grouping
+
+@router.get("/me", summary="Get current user's token usage summary")
+async def get_my_usage(...):
+    """Detailed description..."""
+```
+
+**Benefits**:
+
+- **Zero-maintenance**: New routes automatically appear in listing
+- **Tag-based organization**: Routes grouped by domain (articles, usage, dictionary)
+- **Clean HTML output**: Color-coded HTTP methods (GET=blue, POST=green, DELETE=red)
+- **No hardcoding**: Eliminates manual endpoint lists
+
+**Usage**:
+Visit `/endpoints` in browser to see all available API routes grouped by tag.
 
 ---
 
