@@ -5,7 +5,9 @@ import Link from 'next/link'
 import { Article, ArticleListResponse, ArticleStatus } from '@/types/article'
 import ArticleList from '@/components/ArticleList'
 import ArticleFilter from '@/components/ArticleFilter'
-import { fetchWithAuth } from '@/lib/api'
+import { fetchWithAuth, parseErrorResponse } from '@/lib/api'
+import ErrorAlert from '@/components/ErrorAlert'
+import { usePagination } from '@/hooks/usePagination'
 
 /**
  * Article list page.
@@ -39,17 +41,18 @@ export default function ArticlesPage() {
       params.set('limit', limit.toString())
 
       const response = await fetchWithAuth(`/api/articles?${params.toString()}`)
-      
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to load articles')
+        const errorMsg = await parseErrorResponse(response, 'Failed to load articles')
+        throw new Error(errorMsg)
       }
 
       const data: ArticleListResponse = await response.json()
       setArticles(data.articles)
       setTotal(data.total)
-    } catch (err: any) {
-      setError(err.message || 'Failed to load articles')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load articles'
+      setError(message)
       console.error('Error fetching articles:', err)
     } finally {
       setLoading(false)
@@ -68,20 +71,21 @@ export default function ArticlesPage() {
     setSelectedStatus(status)
   }
 
-  const currentPage = Math.floor(skip / limit) + 1
-  const totalPages = Math.ceil(total / limit)
-  const hasNextPage = skip + limit < total
-  const hasPrevPage = skip > 0
+  const { currentPage, totalPages, hasNextPage, hasPrevPage, nextSkip, prevSkip } = usePagination({
+    total,
+    limit,
+    skip
+  })
 
   const handleNextPage = () => {
     if (hasNextPage) {
-      setSkip(skip + limit)
+      setSkip(nextSkip)
     }
   }
 
   const handlePrevPage = () => {
     if (hasPrevPage) {
-      setSkip(Math.max(0, skip - limit))
+      setSkip(prevSkip)
     }
   }
 
@@ -120,17 +124,7 @@ export default function ArticlesPage() {
         </div>
 
         {/* Error State */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-800">{error}</p>
-            <button
-              onClick={fetchArticles}
-              className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
-            >
-              Try again
-            </button>
-          </div>
-        )}
+        <ErrorAlert error={error} onRetry={fetchArticles} />
 
         {/* Article List */}
         <ArticleList

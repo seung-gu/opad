@@ -292,15 +292,30 @@ The system now supports vocabulary-aware article generation, where CrewAI adjust
   "language": "string",
   "related_words": ["string"],   // All forms in sentence (e.g., verbs with particles)
   "span_id": "string",           // Span ID from markdown for linking
-  "created_at": "datetime"
+  "created_at": "datetime",
+  "pos": "string",               // Part of speech (noun, verb, adjective, etc.)
+  "gender": "string",            // Grammatical gender (der/die/das for German, le/la for French, etc.)
+  "conjugations": {              // Verb conjugations (null for non-verbs)
+    "present": "string",
+    "past": "string",
+    "perfect": "string"
+  },
+  "level": "string"              // CEFR level (A1, A2, B1, B2, C1, C2)
 }
 ```
+
+**New Grammatical Metadata Fields:**
+- `pos`: Part of speech classification (noun, verb, adjective, adverb, preposition, etc.)
+- `gender`: Grammatical gender for nouns in gendered languages (German: der/die/das, French: le/la, Spanish: el/la). Null for non-gendered languages.
+- `conjugations`: Verb conjugation forms across tenses (present, past, perfect). Null for non-verbs.
+- `level`: CEFR difficulty level (A1-C2) for vocabulary tracking and adaptive learning.
 
 #### VocabularyCount Model (Aggregated Response)
 - Groups vocabularies by lemma
 - Returns count of how many times a lemma appears across articles
 - Includes most recent definition and example sentence
 - Lists all article_ids where lemma appears
+- Includes grammatical metadata (pos, gender, conjugations, level) from most recent entry
 
 ### Vocabulary-Aware Generation Flow
 1. User saves vocabulary words from articles (POST /dictionary/vocabulary)
@@ -344,8 +359,27 @@ opad/
 │   ├── web/              # Web 서비스 (Next.js)
 │   │   ├── app/          # Next.js App Router
 │   │   │   ├── api/      # API Routes (프록시)
+│   │   │   ├── articles/ # Article pages
+│   │   │   ├── vocabulary/ # Vocabulary pages
 │   │   │   └── page.tsx  # 메인 페이지
 │   │   ├── components/   # React 컴포넌트
+│   │   │   ├── ArticleCard.tsx
+│   │   │   ├── EmptyState.tsx      # Reusable empty state
+│   │   │   ├── ErrorAlert.tsx      # Reusable error alert
+│   │   │   ├── MarkdownViewer.tsx
+│   │   │   └── VocabularyList.tsx
+│   │   ├── hooks/        # Custom React hooks
+│   │   │   ├── useAsyncFetch.ts    # Generic fetch with loading/error
+│   │   │   ├── usePagination.ts    # Pagination calculations
+│   │   │   ├── useStatusPolling.ts # Job status polling
+│   │   │   └── useVocabularyDelete.ts # Vocabulary deletion
+│   │   ├── lib/          # Frontend utilities
+│   │   │   ├── api.ts           # fetchWithAuth, parseErrorResponse
+│   │   │   ├── auth.ts          # Auth utilities
+│   │   │   ├── formatters.ts    # Date formatting utilities
+│   │   │   └── styleHelpers.ts  # CEFR color/label helpers
+│   │   ├── types/        # TypeScript type definitions
+│   │   ├── tailwind.config.ts # Tailwind config with safelist
 │   │   └── package.json
 │   │
 │   ├── opad/             # CrewAI 로직 (공유)
@@ -416,9 +450,9 @@ prompt = build_word_definition_prompt(
 
 ### Word Definition Endpoint
 
-**Endpoint**: `POST /dictionary/define`
+**Endpoint**: `POST /dictionary/search`
 
-**목적**: 문장 컨텍스트에서 단어의 lemma 및 정의를 추출
+**목적**: 문장 컨텍스트에서 단어의 lemma, 정의 및 문법적 메타데이터를 추출
 
 **요청:**
 ```json
@@ -434,7 +468,15 @@ prompt = build_word_definition_prompt(
 {
   "lemma": "abhängen",
   "definition": "의존하다, ~에 달려있다",
-  "related_words": ["hängt", "ab"]
+  "related_words": ["hängt", "ab"],
+  "pos": "verb",
+  "gender": null,
+  "conjugations": {
+    "present": "hängt ab",
+    "past": "hing ab",
+    "perfect": "hat abgehangen"
+  },
+  "level": "B1"
 }
 ```
 
@@ -442,34 +484,196 @@ prompt = build_word_definition_prompt(
 - **분리동사 처리**: 독일어 등에서 동사가 분리된 경우 전체 lemma 반환 (예: `hängt ... ab` → `abhängen`)
 - **복합어 처리**: 단어가 복합어의 일부인 경우 전체 형태 반환
 - **related_words**: 문장에서 같은 lemma에 속하는 모든 단어들을 배열로 반환 (예: 분리 동사의 경우 모든 부분 포함)
+- **문법적 메타데이터**: 품사(pos), 성(gender), 동사 활용형(conjugations), CEFR 레벨(level) 자동 추출
 - **공통 유틸 사용**: `utils/llm.py`의 `call_openai_chat()` 함수 활용
 - **프롬프트 분리**: `utils/prompts.py`의 `build_word_definition_prompt()` 사용
+- **보안**: Regex injection 방지를 위한 `re.escape()` 적용
 
 **흐름:**
 
 ```mermaid
 sequenceDiagram
     participant Frontend as Frontend<br/>(MarkdownViewer)
-    participant NextAPI as Next.js API<br/>(/api/dictionary/define)
-    participant FastAPI as FastAPI<br/>(/dictionary/define)
+    participant NextAPI as Next.js API<br/>(/api/dictionary/search)
+    participant FastAPI as FastAPI<br/>(/dictionary/search)
     participant Utils as Utils<br/>(prompts.py + llm.py)
     participant OpenAI as OpenAI API
-    
-    Frontend->>NextAPI: POST /api/dictionary/define<br/>{word, sentence, language}
-    NextAPI->>FastAPI: POST /dictionary/define<br/>{word, sentence, language}
-    
+
+    Frontend->>NextAPI: POST /api/dictionary/search<br/>{word, sentence, language}
+    NextAPI->>FastAPI: POST /dictionary/search<br/>{word, sentence, language}
+
     FastAPI->>Utils: build_word_definition_prompt()
     Utils-->>FastAPI: prompt string
-    
+
     FastAPI->>Utils: call_openai_chat(prompt)
     Utils->>OpenAI: POST /v1/chat/completions
-    OpenAI-->>Utils: {lemma, definition, related_words}
+    OpenAI-->>Utils: {lemma, definition, related_words, pos, gender, conjugations, level}
     Utils->>Utils: parse_json_from_content()
-    Utils-->>FastAPI: {lemma, definition, related_words}
-    
-    FastAPI-->>NextAPI: DefineResponse<br/>{lemma, definition, related_words}
-    NextAPI-->>Frontend: {lemma, definition, related_words}
+    Utils-->>FastAPI: {lemma, definition, related_words, pos, gender, conjugations, level}
+
+    FastAPI-->>NextAPI: SearchResponse<br/>{lemma, definition, related_words, pos, gender, conjugations, level}
+    NextAPI-->>Frontend: {lemma, definition, related_words, pos, gender, conjugations, level}
 ```
+
+---
+
+## 🎨 Frontend Architecture
+
+### Code Organization
+
+The frontend follows a modular architecture with clear separation of concerns:
+
+```
+src/web/
+├── app/              # Next.js App Router (pages)
+├── components/       # Reusable React components
+├── hooks/            # Custom React hooks
+├── lib/              # Utility functions
+└── types/            # TypeScript type definitions
+```
+
+### Utility Modules
+
+#### API Client (`lib/api.ts`)
+Centralized API client utilities for consistent request handling:
+- `fetchWithAuth()`: Automatic JWT token injection
+- `parseErrorResponse()`: Consistent error message extraction
+
+**Benefits**:
+- DRY principle: Authentication logic in one place
+- Consistent error handling across all API calls
+- Easy to add global request interceptors
+
+#### Date Formatters (`lib/formatters.ts`)
+Reusable date formatting functions using Intl.DateTimeFormat:
+- `formatDate()`: Customizable date formatting
+- `formatDateShort()`: Short date format
+- `formatDateTime()`: Date with time
+
+**Benefits**:
+- Consistent date display across UI
+- Locale-aware formatting
+- Single source of truth for date formats
+
+#### Style Helpers (`lib/styleHelpers.ts`)
+CEFR level badge styling utilities:
+- `getLevelColor()`: Tailwind classes for level badges
+- `getLevelLabel()`: Human-readable level labels
+
+**Benefits**:
+- Consistent color scheme across UI
+- Dynamic class generation for Tailwind
+- Easy to update color scheme globally
+
+**Important**: CEFR level colors are safelisted in `tailwind.config.ts` to prevent Tailwind's tree-shaking from removing dynamically-generated classes.
+
+### Custom Hooks
+
+#### useAsyncFetch
+Generic hook for async data fetching with automatic state management:
+- Loading state
+- Error handling
+- Automatic 401 redirect
+- Type-safe data state
+
+**Use Cases**:
+- Fetching article lists
+- Loading article details
+- Any API data fetching
+
+#### usePagination
+Pagination calculations and state management:
+- Current page calculation
+- Total pages calculation
+- Next/previous page navigation
+- Skip value computation
+
+**Use Cases**:
+- Article list pagination
+- Vocabulary list pagination
+
+#### useStatusPolling
+Job status polling with automatic interval management:
+- Configurable polling interval
+- Automatic cleanup on completion/error
+- Progress state management
+- Callbacks for status changes
+
+**Use Cases**:
+- Article generation progress tracking
+- Any long-running job monitoring
+
+#### useVocabularyDelete
+Vocabulary deletion with error handling:
+- DELETE request to API
+- Detailed error messages
+- Throws errors for caller to handle
+
+**Use Cases**:
+- Deleting vocabulary entries from vocabulary list
+
+### Reusable Components
+
+#### ErrorAlert
+Consistent error message display:
+- Red background with border
+- Optional retry button
+- Automatic hiding when error is null
+
+#### EmptyState
+Consistent empty state display:
+- Centered layout
+- Optional icon
+- Optional action button
+
+**Benefits**:
+- Consistent UX across all pages
+- Reduces code duplication
+- Easy to update design globally
+
+### Refactoring Impact
+
+**Before Refactoring**:
+- Duplicate fetch logic in every page
+- Inconsistent error handling
+- Duplicate date formatting code
+- Duplicate pagination calculations
+- Duplicate empty state styling
+
+**After Refactoring**:
+- Single source of truth for common operations
+- Consistent error handling with `useAsyncFetch`
+- Reusable date formatters
+- Reusable pagination hook
+- Reusable UI components (`ErrorAlert`, `EmptyState`)
+
+**Code Reduction**:
+- Article detail page: 166 lines reduced
+- Articles list page: 27 lines reduced
+- Vocabulary page: 43 lines reduced
+- Total: 236 lines of code removed through refactoring
+
+### Bug Fixes
+
+#### 1. Conjugations Type Conversion
+**Issue**: Frontend expected conjugations as object, but backend returned null for non-verbs, causing type mismatches.
+
+**Fix**: Ensure conjugations field is properly typed and handled as nullable in TypeScript types.
+
+#### 2. Tailwind Safelist for Dynamic Classes
+**Issue**: CEFR level color classes (generated dynamically by `getLevelColor()`) were being purged by Tailwind's tree-shaking.
+
+**Fix**: Added safelist to `tailwind.config.ts` to preserve dynamic color classes:
+```typescript
+safelist: [
+  'bg-gray-100', 'text-gray-600',   // Unknown level
+  'bg-green-100', 'text-green-700', // A1-A2
+  'bg-yellow-100', 'text-yellow-700', // B1-B2
+  'bg-red-100', 'text-red-700',     // C1-C2
+]
+```
+
+**Impact**: CEFR level badges now display correctly with proper colors
 
 ### Vocabulary Management Endpoints
 

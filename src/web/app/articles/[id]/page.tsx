@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import MarkdownViewer from '@/components/MarkdownViewer'
@@ -8,6 +8,9 @@ import ArticleStatusBadge from '@/components/ArticleStatusBadge'
 import VocabularyList from '@/components/VocabularyList'
 import { Article, Vocabulary } from '@/types/article'
 import { fetchWithAuth } from '@/lib/api'
+import { useVocabularyDelete } from '@/hooks/useVocabularyDelete'
+import { formatDate } from '@/lib/formatters'
+import { useStatusPolling } from '@/hooks/useStatusPolling'
 
 /**
  * Article detail page.
@@ -23,15 +26,52 @@ export default function ArticleDetailPage() {
   const params = useParams()
   const router = useRouter()
   const articleId = params.id as string
+  const { deleteVocabulary } = useVocabularyDelete()
 
   const [article, setArticle] = useState<Article | null>(null)
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [progress, setProgress] = useState({ current_task: '', progress: 0, message: '', error: null as string | null })
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [vocabularies, setVocabularies] = useState<Vocabulary[]>([])
-  const statusPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Reload article data (used by status polling on completion)
+  const reloadArticleData = useCallback(async () => {
+    try {
+      const metadataResponse = await fetchWithAuth(`/api/articles/${articleId}`)
+      if (metadataResponse.ok) {
+        const articleData: Article = await metadataResponse.json()
+        setArticle(articleData)
+        if (articleData.job_id) {
+          setCurrentJobId(articleData.job_id)
+        } else {
+          setCurrentJobId(null)
+        }
+      }
+
+      const contentResponse = await fetchWithAuth(`/api/articles/${articleId}/content`)
+      if (contentResponse.ok) {
+        const contentText = await contentResponse.text()
+        setContent(contentText)
+      }
+    } catch (err) {
+      console.error('Error reloading article:', err)
+    }
+  }, [articleId])
+
+  // Use status polling hook
+  const { progress } = useStatusPolling({
+    jobId: currentJobId,
+    enabled: article?.status === 'running',
+    onComplete: () => {
+      setCurrentJobId(null)
+      reloadArticleData()
+    },
+    onError: () => {
+      setCurrentJobId(null)
+      reloadArticleData()
+    }
+  })
 
   // Load article metadata and content
   useEffect(() => {
@@ -78,8 +118,9 @@ export default function ArticleDetailPage() {
         } catch (vocabErr) {
           console.error('Error fetching vocabularies:', vocabErr)
         }
-      } catch (err: any) {
-        setError(err.message || 'Failed to load article')
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to load article'
+        setError(message)
         console.error('Error fetching article:', err)
       } finally {
         setLoading(false)
@@ -118,124 +159,12 @@ export default function ArticleDetailPage() {
   // Handle vocabulary deletion
   const handleDeleteVocabulary = async (vocabId: string) => {
     try {
-      const response = await fetchWithAuth(`/api/dictionary/vocabularies/${vocabId}`, {
-        method: 'DELETE'
-      })
-
-      if (response.ok) {
-        setVocabularies(prev => prev.filter(v => v.id !== vocabId))
-      }
+      await deleteVocabulary(vocabId)
+      setVocabularies(prev => prev.filter(v => v.id !== vocabId))
     } catch (error) {
       console.error('Failed to delete vocabulary:', error)
     }
   }
-
-  // Poll status when article is running (same logic as main page)
-  useEffect(() => {
-    // Only poll if article is running
-    if (!article || article.status !== 'running') {
-      // Clear interval when not running
-      if (statusPollIntervalRef.current) {
-        clearInterval(statusPollIntervalRef.current)
-        statusPollIntervalRef.current = null
-      }
-      return
-    }
-
-    const loadStatus = () => {
-      // If no jobId, don't poll
-      if (!currentJobId) {
-        return
-      }
-
-      fetchWithAuth(`/api/status?job_id=${currentJobId}`)
-        .then(res => res.json())
-        .then(data => {
-          // Only update progress if it actually changed
-          setProgress(prev => {
-            const newProgress = {
-              current_task: data.current_task || '',
-              progress: data.progress || 0,
-              message: data.message || '',
-              error: data.error || null
-            }
-            // Only update if something actually changed
-            if (prev.current_task !== newProgress.current_task || 
-                prev.progress !== newProgress.progress || 
-                prev.message !== newProgress.message ||
-                prev.error !== newProgress.error) {
-              return newProgress
-            }
-            return prev
-          })
-          
-          if (data.status === 'completed') {
-            setCurrentJobId(null) // Clear jobId (same as main page)
-            // Reload article metadata and content
-            const fetchArticle = async () => {
-              try {
-                const metadataResponse = await fetchWithAuth(`/api/articles/${articleId}`)
-                if (metadataResponse.ok) {
-                  const articleData: Article = await metadataResponse.json()
-                  setArticle(articleData)
-                }
-
-                const contentResponse = await fetchWithAuth(`/api/articles/${articleId}/content`)
-                if (contentResponse.ok) {
-                  const contentText = await contentResponse.text()
-                  setContent(contentText)
-                }
-              } catch (err) {
-                console.error('Error reloading article:', err)
-              }
-            }
-            fetchArticle()
-            // Clear interval immediately
-            if (statusPollIntervalRef.current) {
-              clearInterval(statusPollIntervalRef.current)
-              statusPollIntervalRef.current = null
-            }
-          } else if (data.status === 'error') {
-            setCurrentJobId(null) // Clear jobId (same as main page)
-            // Reload article metadata to reflect failed status
-            const fetchArticle = async () => {
-              try {
-                const metadataResponse = await fetchWithAuth(`/api/articles/${articleId}`)
-                if (metadataResponse.ok) {
-                  const articleData: Article = await metadataResponse.json()
-                  setArticle(articleData)
-                }
-              } catch (err) {
-                console.error('Error reloading article:', err)
-              }
-            }
-            fetchArticle()
-            // Clear interval on error
-            if (statusPollIntervalRef.current) {
-              clearInterval(statusPollIntervalRef.current)
-              statusPollIntervalRef.current = null
-            }
-          }
-        })
-        .catch((err) => {
-          console.error('Failed to fetch status:', err)
-        })
-    }
-    
-    // Load immediately
-    loadStatus()
-    
-    // Set up polling interval
-    const interval = setInterval(loadStatus, 5000) // Poll every 5 seconds
-    statusPollIntervalRef.current = interval
-    
-    return () => {
-      if (statusPollIntervalRef.current) {
-        clearInterval(statusPollIntervalRef.current)
-        statusPollIntervalRef.current = null
-      }
-    }
-  }, [article, currentJobId, articleId])
 
   if (loading) {
     return (
@@ -272,21 +201,6 @@ export default function ArticleDetailPage() {
         </div>
       </div>
     )
-  }
-
-  const formatDate = (dateString: string) => {
-    try {
-      const date = new Date(dateString)
-      return new Intl.DateTimeFormat('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      }).format(date)
-    } catch {
-      return dateString
-    }
   }
 
   return (
@@ -348,8 +262,9 @@ export default function ArticleDetailPage() {
         {/* Content */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           {content ? (
-            <MarkdownViewer 
-              content={content} 
+            <MarkdownViewer
+              key={articleId}
+              content={content}
               language={article?.language}
               articleId={articleId}
               vocabularies={vocabularies}

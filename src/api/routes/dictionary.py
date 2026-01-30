@@ -11,7 +11,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.middleware.auth import get_current_user_required
-from api.models import DefineRequest, DefineResponse, User, VocabularyRequest, VocabularyResponse, VocabularyCount
+from api.models import SearchRequest, SearchResponse, User, VocabularyRequest, VocabularyResponse, VocabularyCount
 from utils.llm import call_openai_chat, parse_json_from_content, get_llm_error_response
 from utils.prompts import build_word_definition_prompt
 from utils.mongodb import (
@@ -27,9 +27,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dictionary", tags=["dictionary"])
 
 
-@router.post("/search", response_model=DefineResponse)
+@router.post("/search", response_model=SearchResponse)
 async def search_word(
-    request: DefineRequest,
+    request: SearchRequest,
     current_user: User = Depends(get_current_user_required)
 ):
     """Search for word definition and lemma using OpenAI API.
@@ -37,11 +37,11 @@ async def search_word(
     Requires authentication to prevent API abuse.
 
     Args:
-        request: Define request with word, sentence, and language
+        request: Search request with word, sentence, and language
         current_user: Authenticated user (required)
 
     Returns:
-        DefineResponse with lemma and definition
+        SearchResponse with lemma, definition, and grammatical metadata
     """
     prompt = build_word_definition_prompt(
         language=request.language,
@@ -64,22 +64,37 @@ async def search_word(
             lemma = result.get("lemma", request.word)
             definition = result.get("definition", "Definition not found")
             related_words = result.get("related_words", None)
-            
+            pos = result.get("pos", None)
+            gender = result.get("gender", None)
+            conjugations = result.get("conjugations", None)
+            level = result.get("level", None)
+
             logger.info("Word definition extracted", extra={
                 "word": request.word,
                 "lemma": lemma,
                 "related_words": related_words,
+                "pos": pos,
+                "gender": gender,
+                "level": level,
                 "language": request.language
             })
-            
-            return DefineResponse(lemma=lemma, definition=definition, related_words=related_words)
+
+            return SearchResponse(
+                lemma=lemma,
+                definition=definition,
+                related_words=related_words,
+                pos=pos,
+                gender=gender,
+                conjugations=conjugations,
+                level=level
+            )
         else:
             # Fallback: return content as definition if JSON parsing fails
             logger.warning("Failed to parse JSON, using content as definition", extra={
                 "word": request.word,
                 "content_preview": content[:200]
             })
-            return DefineResponse(
+            return SearchResponse(
                 lemma=request.word,
                 definition=content if len(content) < 500 else "Definition not found"
             )
@@ -113,7 +128,11 @@ async def add_vocabulary(
         language=request.language,
         related_words=request.related_words,
         span_id=request.span_id,
-        user_id=current_user.id
+        user_id=current_user.id,
+        pos=request.pos,
+        gender=request.gender,
+        conjugations=request.conjugations,
+        level=request.level
     )
 
     if not vocabulary_id:

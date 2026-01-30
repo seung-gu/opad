@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { Article } from '@/types/article'
 import ArticleStatusBadge from './ArticleStatusBadge'
+import { formatDateTime } from '@/lib/formatters'
 
 interface ArticleCardProps {
   article: Article
@@ -19,21 +20,6 @@ interface ArticleCardProps {
  * - Link to article detail page
  */
 export default function ArticleCard({ article }: ArticleCardProps) {
-  const formatDate = (dateString: string) => {
-    try {
-      const date = new Date(dateString)
-      return new Intl.DateTimeFormat('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      }).format(date)
-    } catch {
-      return dateString
-    }
-  }
-
   return (
     <Link
       href={`/articles/${article.id}`}
@@ -54,7 +40,7 @@ export default function ArticleCard({ article }: ArticleCardProps) {
           </div>
 
           <div className="text-xs text-gray-500">
-            Created: {formatDate(article.created_at)}
+            Created: {formatDateTime(article.created_at)}
           </div>
         </div>
 

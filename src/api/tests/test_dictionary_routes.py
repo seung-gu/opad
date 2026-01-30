@@ -44,8 +44,16 @@ class TestSearchWordRoute(unittest.TestCase):
         # Mock prompt builder
         mock_prompt.return_value = "test prompt"
 
-        # Mock LLM response with valid JSON
-        mock_llm.return_value = '{"lemma": "test", "definition": "a procedure", "related_words": ["test", "testing"]}'
+        # Mock LLM response with valid JSON including new fields
+        mock_llm.return_value = '''{
+            "lemma": "test",
+            "definition": "a procedure",
+            "related_words": ["test", "testing"],
+            "pos": "noun",
+            "gender": null,
+            "conjugations": null,
+            "level": "B1"
+        }'''
 
         response = self.client.post(
             "/dictionary/search",
@@ -61,6 +69,10 @@ class TestSearchWordRoute(unittest.TestCase):
         self.assertEqual(data["lemma"], "test")
         self.assertEqual(data["definition"], "a procedure")
         self.assertEqual(data["related_words"], ["test", "testing"])
+        self.assertEqual(data["pos"], "noun")
+        self.assertIsNone(data["gender"])
+        self.assertIsNone(data["conjugations"])
+        self.assertEqual(data["level"], "B1")
 
     @patch('api.routes.dictionary.call_openai_chat')
     @patch('api.routes.dictionary.build_word_definition_prompt')
@@ -84,6 +96,11 @@ class TestSearchWordRoute(unittest.TestCase):
         self.assertEqual(data["lemma"], "run")
         self.assertEqual(data["definition"], "to move quickly")
         self.assertIsNone(data["related_words"])
+        # New fields should be None if not provided by LLM
+        self.assertIsNone(data["pos"])
+        self.assertIsNone(data["gender"])
+        self.assertIsNone(data["conjugations"])
+        self.assertIsNone(data["level"])
 
     @patch('api.routes.dictionary.call_openai_chat')
     @patch('api.routes.dictionary.build_word_definition_prompt')
@@ -239,6 +256,81 @@ class TestSearchWordRoute(unittest.TestCase):
         # Should return 500 for RuntimeError from OpenAI API
         self.assertEqual(response.status_code, 500)
 
+    @patch('api.routes.dictionary.call_openai_chat')
+    @patch('api.routes.dictionary.build_word_definition_prompt')
+    def test_search_word_with_verb_conjugations(self, mock_prompt, mock_llm):
+        """Test word search for verb with conjugations."""
+        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        mock_prompt.return_value = "test prompt"
+
+        # Mock LLM response with verb conjugations
+        mock_llm.return_value = '''{
+            "lemma": "gehen",
+            "definition": "to go, to walk",
+            "related_words": ["gehen"],
+            "pos": "verb",
+            "gender": null,
+            "conjugations": {
+                "present": "gehe, gehst, geht",
+                "past": "ging",
+                "perfect": "gegangen"
+            },
+            "level": "A1"
+        }'''
+
+        response = self.client.post(
+            "/dictionary/search",
+            json={
+                "word": "gehen",
+                "sentence": "Ich gehe nach Hause.",
+                "language": "German"
+            }
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["lemma"], "gehen")
+        self.assertEqual(data["pos"], "verb")
+        self.assertIsNotNone(data["conjugations"])
+        self.assertEqual(data["conjugations"]["past"], "ging")
+        self.assertEqual(data["conjugations"]["perfect"], "gegangen")
+        self.assertEqual(data["level"], "A1")
+
+    @patch('api.routes.dictionary.call_openai_chat')
+    @patch('api.routes.dictionary.build_word_definition_prompt')
+    def test_search_word_with_german_noun_gender(self, mock_prompt, mock_llm):
+        """Test word search for German noun with gender."""
+        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        mock_prompt.return_value = "test prompt"
+
+        # Mock LLM response with German noun gender
+        mock_llm.return_value = '''{
+            "lemma": "Hund",
+            "definition": "dog",
+            "related_words": ["Hund"],
+            "pos": "noun",
+            "gender": "der",
+            "conjugations": null,
+            "level": "A1"
+        }'''
+
+        response = self.client.post(
+            "/dictionary/search",
+            json={
+                "word": "Hund",
+                "sentence": "Der Hund ist groß.",
+                "language": "German"
+            }
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["lemma"], "Hund")
+        self.assertEqual(data["pos"], "noun")
+        self.assertEqual(data["gender"], "der")
+        self.assertIsNone(data["conjugations"])
+        self.assertEqual(data["level"], "A1")
+
 
 class TestGetVocabulariesList(unittest.TestCase):
     """Test cases for GET /dictionary/vocabularies endpoint."""
@@ -277,7 +369,11 @@ class TestGetVocabulariesList(unittest.TestCase):
                 'created_at': datetime.now(timezone.utc),
                 'related_words': None,
                 'span_id': None,
-                'user_id': 'test-user-123'
+                'user_id': 'test-user-123',
+                'pos': 'noun',
+                'gender': None,
+                'conjugations': None,
+                'level': 'B1'
             }
         ]
 
@@ -288,6 +384,8 @@ class TestGetVocabulariesList(unittest.TestCase):
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['lemma'], 'test')
         self.assertEqual(data[0]['count'], 5)
+        self.assertEqual(data[0]['pos'], 'noun')
+        self.assertEqual(data[0]['level'], 'B1')
 
     @patch('api.routes.dictionary.get_vocabulary_counts')
     def test_get_vocabularies_list_with_language_filter(self, mock_get_counts):

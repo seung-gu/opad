@@ -4,8 +4,12 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { VocabularyCount } from '@/types/article'
-import { fetchWithAuth } from '@/lib/api'
+import { fetchWithAuth, parseErrorResponse } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
+import { useVocabularyDelete } from '@/hooks/useVocabularyDelete'
+import { getLevelColor } from '@/lib/styleHelpers'
+import ErrorAlert from '@/components/ErrorAlert'
+import EmptyState from '@/components/EmptyState'
 
 /**
  * Vocabulary list page.
@@ -20,6 +24,7 @@ import { useAuth } from '@/contexts/AuthContext'
 export default function VocabularyPage() {
   const router = useRouter()
   const { isAuthenticated } = useAuth()
+  const { deleteVocabulary } = useVocabularyDelete()
   const [vocabularies, setVocabularies] = useState<VocabularyCount[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -36,19 +41,32 @@ export default function VocabularyPage() {
           router.push('/login')
           return
         }
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || errorData.detail || 'Failed to load vocabularies')
+        const errorMsg = await parseErrorResponse(response, 'Failed to load vocabularies')
+        throw new Error(errorMsg)
       }
 
       const data: VocabularyCount[] = await response.json()
       setVocabularies(data)
-    } catch (err: any) {
-      setError(err.message || 'Failed to load vocabularies')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load vocabularies'
+      setError(message)
       console.error('Error fetching vocabularies:', err)
     } finally {
       setLoading(false)
     }
   }, [router])
+
+  const handleDeleteVocabulary = async (vocabId: string) => {
+    try {
+      await deleteVocabulary(vocabId)
+      // Remove from state on success
+      setVocabularies(prev => prev.filter(v => v.id !== vocabId))
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to delete vocabulary'
+      console.error('Failed to delete vocabulary:', err)
+      setError(message)
+    }
+  }
 
   useEffect(() => {
     // Redirect to login if not authenticated
@@ -95,17 +113,7 @@ export default function VocabularyPage() {
         </div>
 
         {/* Error State */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-800">{error}</p>
-            <button
-              onClick={fetchVocabularies}
-              className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
-            >
-              Try again
-            </button>
-          </div>
-        )}
+        <ErrorAlert error={error} onRetry={fetchVocabularies} />
 
         {/* Loading State */}
         {loading && (
@@ -116,18 +124,14 @@ export default function VocabularyPage() {
 
         {/* Empty State */}
         {!loading && vocabularies.length === 0 && !error && (
-          <div className="bg-white rounded-lg shadow-lg p-8 text-center">
-            <p className="text-gray-500 text-lg mb-4">No vocabulary words found.</p>
-            <p className="text-gray-400">
-              Click on words while reading articles to save them to your vocabulary.
-            </p>
-            <Link
-              href="/articles"
-              className="inline-block mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Go to Articles
-            </Link>
-          </div>
+          <EmptyState
+            title="No vocabulary words found."
+            description="Click on words while reading articles to save them to your vocabulary."
+            action={{
+              label: 'Go to Articles',
+              onClick: () => router.push('/articles')
+            }}
+          />
         )}
 
         {/* Vocabulary List by Language */}
@@ -148,45 +152,98 @@ export default function VocabularyPage() {
                   {/* Words Grid */}
                   <div className="p-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {groups.map((group) => (
-                        <div
-                          key={`${group.language}-${group.lemma}`}
-                          className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:border-emerald-300 transition-colors flex flex-col"
-                        >
-                          <div className="flex items-start justify-between mb-2">
-                            <span className="text-lg font-semibold text-gray-900">{group.lemma}</span>
-                            {group.count > 1 && (
-                              <span className="text-sm font-medium text-emerald-600 bg-emerald-100 px-2 py-1 rounded">
-                                {group.count}×
-                              </span>
+                      {groups.map((group) => {
+                        return (
+                          <div
+                            key={`${group.language}-${group.lemma}`}
+                            className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:border-emerald-300 transition-colors flex flex-col"
+                          >
+                            {/* Header: Lemma with gender + badges */}
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-baseline gap-1 flex-wrap">
+                                {/* Gender prefix (if available) */}
+                                {group.gender && (
+                                  <span className="text-sm font-medium text-gray-500">{group.gender}</span>
+                                )}
+                                {/* Lemma */}
+                                <span className="text-lg font-semibold text-gray-900">{group.lemma}</span>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {/* Count badge */}
+                                {group.count > 1 && (
+                                  <span className="text-sm font-medium text-emerald-600 bg-emerald-100 px-2 py-1 rounded">
+                                    {group.count}×
+                                  </span>
+                                )}
+                                {/* Delete button */}
+                                <button
+                                  onClick={() => handleDeleteVocabulary(group.id)}
+                                  className="px-2 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                                  title="Remove from vocabulary"
+                                >
+                                  −
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Metadata badges: POS + Level */}
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                              {group.pos && (
+                                <span className="text-xs font-medium bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                                  {group.pos}
+                                </span>
+                              )}
+                              {group.level && (
+                                <span className={`text-xs font-medium px-2 py-0.5 rounded ${getLevelColor(group.level)}`}>
+                                  {group.level}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Original word form (if different from lemma) */}
+                            {group.word !== group.lemma && (
+                              <p className="text-xs text-gray-500 italic mb-1">({group.word})</p>
                             )}
+
+                            {/* Definition */}
+                            <p className="text-sm text-gray-700 mb-2">{group.definition}</p>
+
+                            {/* Conjugations (if verb) */}
+                            {group.conjugations && (group.conjugations.present || group.conjugations.past || group.conjugations.perfect) && (
+                              <div className="text-xs text-gray-600 mb-2 bg-gray-100 rounded p-2">
+                                {[group.conjugations.present, group.conjugations.past, group.conjugations.perfect]
+                                  .filter(Boolean)
+                                  .join(' - ')}
+                              </div>
+                            )}
+
+                            {/* Example sentence */}
+                            <p className="text-xs text-gray-500 italic mb-2 line-clamp-2">
+                              &ldquo;{group.sentence}&rdquo;
+                            </p>
+
+                            {/* Footer: Date + Article count */}
+                            <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+                              <span>
+                                {new Date(group.created_at).toLocaleDateString()}
+                              </span>
+                              <span>
+                                {group.article_ids.length} article{group.article_ids.length !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+
+                            {/* Article link - most recent only, fixed at bottom */}
+                            <div className="mt-auto">
+                              <Link
+                                href={`/articles/${group.article_id}`}
+                                className="text-xs text-blue-600 hover:text-blue-800 underline"
+                              >
+                                View in Article
+                              </Link>
+                            </div>
                           </div>
-                          {group.word !== group.lemma && (
-                            <p className="text-xs text-gray-500 italic mb-1">({group.word})</p>
-                          )}
-                          <p className="text-sm text-gray-700 mb-2">{group.definition}</p>
-                          <p className="text-xs text-gray-500 italic mb-2 line-clamp-2">
-                            &ldquo;{group.sentence}&rdquo;
-                          </p>
-                          <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
-                            <span>
-                              {new Date(group.created_at).toLocaleDateString()}
-                            </span>
-                            <span>
-                              {group.article_ids.length} article{group.article_ids.length !== 1 ? 's' : ''}
-                            </span>
-                          </div>
-                          {/* Article link - most recent only, fixed at bottom */}
-                          <div className="mt-auto">
-                            <Link
-                              href={`/articles/${group.article_id}`}
-                              className="text-xs text-blue-600 hover:text-blue-800 underline"
-                            >
-                              View in Article
-                            </Link>
-                          </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 </div>
