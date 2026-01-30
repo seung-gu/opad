@@ -98,7 +98,7 @@ export default function ArticleDetailPage() {
         
         if (!contentResponse.ok) {
           if (contentResponse.status === 404) {
-            setContent('# Article content not found\n\nThe article may still be processing.')
+            setContent('## Article content is loading...')
             return
           }
           throw new Error('Failed to load article content')
@@ -262,8 +262,16 @@ export default function ArticleDetailPage() {
         {/* Content */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           {content ? (
+            /*
+             * Key prop pattern forces component remount on content change.
+             * Pattern: ${articleId}-${content.length}
+             * - Prevents React hydration mismatches
+             * - Resets data-processed attribute (MarkdownViewer.tsx:456)
+             * - Clears stale event listeners
+             * See: docs/ARCHITECTURE.md "React Component Remounting Pattern"
+             */
             <MarkdownViewer
-              key={articleId}
+              key={`${articleId}-${content.length}`}
               content={content}
               language={article?.language}
               articleId={articleId}
