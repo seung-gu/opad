@@ -39,10 +39,10 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(data, { status: 201 })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Registration error:', error)
     return NextResponse.json(
-      { detail: error.message || 'Internal server error' },
+      { detail: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     )
   }

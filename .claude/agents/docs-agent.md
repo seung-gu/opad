@@ -1,7 +1,7 @@
 ---
 name: docs-agent
 description: "Updates API docs, architecture diagrams, setup guides, and JSDoc comments. Keeps documentation in sync with code changes."
-model: sonnet
+model: opus
 color: orange
 ---
 

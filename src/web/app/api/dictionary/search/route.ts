@@ -12,7 +12,7 @@ export const fetchCache = 'force-no-store'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { sentence, word, language } = body
+    const { sentence, word, language, article_id } = body
 
     if (!sentence || !word) {
       return NextResponse.json(
@@ -43,7 +43,8 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         word: word,
         sentence: sentence,
-        language: language
+        language: language,
+        article_id: article_id
       })
     })
 
@@ -57,10 +58,11 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json()
     return NextResponse.json(data)
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Dictionary Proxy] Error:', error)
+    const message = error instanceof Error ? error.message : String(error)
     return NextResponse.json(
-      { error: 'Internal server error', message: error?.message || String(error) },
+      { error: 'Internal server error', message },
       { status: 500 }
     )
   }

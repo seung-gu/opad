@@ -487,21 +487,19 @@ sequenceDiagram
     API->>MongoDB: save_token_usage()
     API-->>WebUI: Definition response
 
-    Note over User,MongoDB: Article Generation with Token Tracking
+    Note over User,MongoDB: Article Generation with Token Tracking (Phase 6)
     User->>WebUI: Generate article
     WebUI->>API: POST /articles/generate
     API->>Redis: Enqueue job
     Redis-->>Worker: Dequeue job
-    Worker->>Worker: Set litellm.callbacks = [ArticleGenerationTokenTracker]
     Worker->>CrewAI: run_crew()
-    CrewAI->>LiteLLM: LLM API calls
-    LiteLLM->>LLM: Multiple API calls
-    LLM-->>LiteLLM: Responses
-    LiteLLM->>Worker: Callback: log_success_event()
-    Worker->>MongoDB: save_token_usage() (per LLM call)
-    CrewAI-->>Worker: Article result
+    CrewAI->>LLM: Multiple API calls (agents execute)
+    LLM-->>CrewAI: Responses (usage tracked internally)
+    CrewAI-->>Worker: CrewResult (with crew_instance)
+    Worker->>Worker: result.get_agent_usage()
+    Worker->>Worker: calculate_cost() per agent
+    Worker->>MongoDB: save_crew_token_usage() (per agent)
     Worker->>MongoDB: Save article
-    Worker->>Worker: litellm.callbacks = [] (cleanup)
 
     Note over User,MongoDB: Usage Summary Retrieval
     User->>WebUI: View usage page
@@ -549,7 +547,14 @@ sequenceDiagram
 - ✅ Proper LiteLLM callback lifecycle management
 - ✅ Nested context support with callback state preservation
 
-**Phase 6** (Planned):
+**Phase 6** (Completed):
+- ✅ Token usage module (`src/utils/token_usage.py`)
+- ✅ CrewAI built-in token tracking (via `agent.llm.get_token_usage_summary()`)
+- ✅ `CrewResult` class with `get_agent_usage()` method
+- ✅ `calculate_cost()` function using LiteLLM pricing database
+- ✅ `save_crew_token_usage()` for per-agent MongoDB storage
+
+**Phase 7** (Planned):
 - Usage analytics dashboard (Frontend)
 - Cost alerts and limits
 - Per-user billing reports
@@ -710,34 +715,151 @@ def __exit__(self, exc_type, exc_val, exc_tb) -> None:
 
 ---
 
-## 🔧 Worker Token Tracking (Phase 4-5)
+## 🔧 Worker Token Tracking (Phase 4-6)
 
 ### Overview
 
-The Worker service tracks token usage during CrewAI article generation using LiteLLM's callback system. Phase 5 introduced the **JobTracker coordinator pattern** that unifies job progress tracking and token usage tracking into a single context manager with proper lifecycle management.
+The Worker service tracks token usage during CrewAI article generation. **Phase 6** introduced a new approach using **CrewAI's built-in token tracking** instead of LiteLLM callbacks, which provides more reliable per-agent usage metrics.
 
 ### Architecture
 
-**Data Flow:**
+**Phase 6 Data Flow (Current):**
 ```
-Worker → process_job() → JobTracker.__enter__() → Set litellm.callbacks → run_crew() → CrewAI agents
-                                ↓                                                            ↓
-                    JobProgressListener (task events)                            Multiple LLM calls
-                    ArticleGenerationTokenTracker (token tracking)                         ↓
-                                                                            LiteLLM intercepts each call
-                                                                                        ↓
-                                                            ArticleGenerationTokenTracker.log_success_event()
-                                                                                        ↓
-                                                                            save_token_usage() → MongoDB
-                                                                                        ↓
-                                                                    JobTracker.__exit__() → Cleanup
+Worker → process_job() → run_crew() → CrewAI agents execute
+                                            ↓
+                                     CrewAI tracks usage internally
+                                            ↓
+                                     CrewResult.get_agent_usage()
+                                            ↓
+                                     calculate_cost() (LiteLLM pricing)
+                                            ↓
+                                     save_crew_token_usage() → MongoDB
 ```
+
+**Key Design Decision (Phase 6):**
+CrewAI manages LLM calls internally through its agent.llm instances. Each agent has a separate LLM instance with independent usage tracking via `agent.llm.get_token_usage_summary()`. This approach is preferred over LiteLLM callbacks because:
+- CrewAI's internal tracking is more reliable for per-agent metrics
+- No need to intercept LLM calls at the LiteLLM layer
+- Simpler implementation without callback lifecycle management
+
+### Token Usage Module (Phase 6)
+
+**File**: `src/utils/token_usage.py`
+
+**Purpose**: Token usage utilities for cost calculation and tracking. Provides functions to calculate LLM costs using LiteLLM's pricing database and save CrewAI agent token usage to MongoDB.
+
+**Functions**:
+
+#### calculate_cost()
+
+```python
+def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """Calculate estimated cost using LiteLLM's pricing data.
+
+    Note: LiteLLM pricing may become outdated. Costs are estimates only.
+
+    Args:
+        model: Model name (e.g., 'gpt-4.1', 'gpt-4.1-mini')
+        prompt_tokens: Number of input tokens
+        completion_tokens: Number of output tokens
+
+    Returns:
+        Estimated cost in USD, or 0.0 if pricing unavailable
+    """
+```
+
+**Error Handling**:
+- Returns 0.0 if model not in LiteLLM pricing database
+- Gracefully handles KeyError, ValueError, AttributeError
+- Logs unexpected errors at debug level
+
+#### save_crew_token_usage()
+
+```python
+def save_crew_token_usage(
+    result: CrewResult,
+    user_id: str,
+    article_id: str | None,
+    job_id: str
+) -> None:
+    """Save token usage for each CrewAI agent to MongoDB.
+
+    Uses CrewAI's built-in token tracking (agent.llm.get_token_usage_summary())
+    to get per-agent, per-model usage metrics.
+    """
+```
+
+**Behavior**:
+- Iterates through all agents in CrewResult
+- Skips agents with zero token usage
+- Calculates cost using `calculate_cost()` with LiteLLM pricing
+- Saves each agent's usage as separate MongoDB record
+- Non-fatal: failures don't crash job processing
+
+**Data Saved per Agent**:
+```json
+{
+  "user_id": "user-uuid",
+  "operation": "article_generation",
+  "model": "gpt-4.1",
+  "prompt_tokens": 2000,
+  "completion_tokens": 1500,
+  "estimated_cost": 0.0525,
+  "article_id": "article-uuid",
+  "metadata": {"job_id": "job-uuid"}
+}
+```
+
+---
+
+### CrewResult Class (Phase 6)
+
+**File**: `src/crew/main.py`
+
+**Purpose**: Container for crew execution result with usage metrics extraction.
+
+```python
+class CrewResult:
+    """Container for crew execution result and usage metrics."""
+
+    def __init__(self, result, crew_instance):
+        self.raw = result.raw
+        self.result = result
+        self.crew_instance = crew_instance
+
+    def get_agent_usage(self) -> list[dict]:
+        """Get token usage per agent with model info.
+
+        Returns:
+            List of dicts with agent_role, model, prompt_tokens,
+            completion_tokens, total_tokens, successful_requests
+        """
+```
+
+**Usage Example**:
+```python
+result = run_crew(inputs=ctx.inputs)
+agent_usage = result.get_agent_usage()
+# [
+#   {'agent_role': 'News Researcher', 'model': 'gpt-4.1', 'prompt_tokens': 500, ...},
+#   {'agent_role': 'Content Writer', 'model': 'gpt-4.1', 'prompt_tokens': 2000, ...},
+#   ...
+# ]
+```
+
+**Why CrewAI Built-in Tracking?**
+- Each CrewAI agent has its own LLM instance with independent usage tracking
+- `agent.llm.get_token_usage_summary()` provides accurate per-agent metrics
+- More reliable than intercepting LLM calls at LiteLLM callback layer
+- Simpler implementation without callback lifecycle management
+
+---
 
 ### JobTracker Coordinator (Phase 5)
 
 **File**: `src/worker/job_tracker.py`
 
-**Purpose**: Unified coordinator that manages both job progress tracking (CrewAI events) and token usage tracking (LiteLLM callbacks) with proper lifecycle management.
+**Purpose**: Unified coordinator that manages job progress tracking via CrewAI events. (Note: Token tracking moved to `save_crew_token_usage()` in Phase 6.)
 
 **Architecture**:
 ```python
@@ -1117,7 +1239,8 @@ opad/
 │       ├── mongodb.py    # MongoDB 연결 및 작업
 │       ├── logging.py    # Structured logging 설정
 │       ├── llm.py        # OpenAI API 공통 함수
-│       └── prompts.py    # LLM 프롬프트 템플릿
+│       ├── prompts.py    # LLM 프롬프트 템플릿
+│       └── token_usage.py # Token usage calculation and tracking (Phase 6)
 │
 └── Dockerfile.*          # 서비스별 Dockerfile (이슈 #9)
 ```
@@ -1592,6 +1715,90 @@ safelist: [
 ```
 
 **Impact**: CEFR level badges now display correctly with proper colors
+
+### Token Usage Display
+
+The article detail page (`src/web/app/articles/[id]/page.tsx`) displays token usage with smart aggregation and auto-refresh functionality.
+
+#### TokenUsageSection Component
+
+**Location**: `src/web/app/articles/[id]/page.tsx:46-181`
+
+**Purpose**: Displays token usage breakdown for an article with aggregation logic.
+
+**Features**:
+- Displays total tokens, prompt tokens, completion tokens, and estimated cost
+- Shows detailed breakdown per operation with agent names
+- Aggregates dictionary searches into cumulative totals
+- Uses expandable details for viewing individual operations
+
+#### Aggregation Logic
+
+```typescript
+// dictionary_search: aggregate by operation+model
+// article_generation: keep separate using record id
+const key = record.operation === 'dictionary_search'
+  ? `op:dictionary_search:${record.model}`
+  : `id:${record.id}`
+```
+
+**Rationale**:
+- **Article generation records**: Kept separate to show individual agent contributions (Article Search, Article Selection, Article Rewrite)
+- **Dictionary search records**: Aggregated into cumulative totals per model since individual lookups are less meaningful
+
+#### Agent Names
+
+Article generation records include `agent_name` in metadata:
+- `Article Search`: Research agent that finds relevant articles
+- `Article Selection`: Agent that selects the best article for adaptation
+- `Article Rewrite`: Agent that rewrites content for the target level
+
+The `formatOperationName()` helper prioritizes `agent_name` over the raw operation type for display.
+
+#### Auto-Refresh Mechanism
+
+**Flow**:
+```
+User clicks word in MarkdownViewer
+    |
+    v
+Dictionary API call (POST /dictionary/search)
+    |
+    v
+Token usage record saved to MongoDB
+    |
+    v
+onTokenUsageUpdate callback triggered
+    |
+    v
+fetchTokenUsage(true) called with isRefresh=true
+    |
+    v
+Token usage section updates without loading spinner
+```
+
+**Implementation** (`src/web/app/articles/[id]/page.tsx`):
+
+1. **MarkdownViewer receives callback**: `onTokenUsageUpdate?: () => void`
+2. **After dictionary search**: Callback is invoked in `handleWordClick` (line 328)
+3. **Article page passes handler**: `onTokenUsageUpdate={() => fetchTokenUsage(true)}`
+4. **Silent refresh**: `isRefresh=true` skips loading state to prevent UI flicker
+
+```typescript
+const fetchTokenUsage = useCallback(async (isRefresh = false) => {
+  if (article?.status !== 'completed') return
+
+  if (!isRefresh) {
+    setTokenUsageLoading(true)  // Only show loading on initial fetch
+  }
+  // ... fetch logic
+}, [article?.status, articleId])
+```
+
+**Benefits**:
+- Users see updated token costs immediately after word lookups
+- No full page reload required
+- Silent refresh prevents disruptive UI changes
 
 ### Vocabulary Management Endpoints
 

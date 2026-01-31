@@ -33,6 +33,10 @@ graph TB
         FE --> API__api_dictionary_vocabularies_id
         API__api_dictionary_stats["GET /api/dictionary/stats"]
         FE --> API__api_dictionary_stats
+        API__api_usage_me["GET /api/usage/me"]
+        FE --> API__api_usage_me
+        API__api_usage_articles["GET /api/usage/articles/[id]"]
+        FE --> API__api_usage_articles
     end
 
     subgraph Backend["Backend - FastAPI"]
@@ -68,6 +72,10 @@ graph TB
         end
         subgraph ArticleVocab["Articles - Vocabularies"]
             FastAPI__articles_vocabularies["GET /articles/{article_id}/vocabularies"]
+        end
+        subgraph Usage["Usage"]
+            FastAPI__usage_me["GET /usage/me"]
+            FastAPI__usage_articles["GET /usage/articles/{article_id}"]
         end
         subgraph Uncategorized["Uncategorized"]
             FastAPI__root["GET /"]
@@ -783,9 +791,13 @@ generateResponse.status === 409  ← Response handling!
 
 #### GET /usage/articles/{article_id}
 
-**Description**: Get all token usage records for a specific article.
+**Description**: Get all token usage records for a specific article. Returns both article generation and dictionary search records.
 
 **Auth**: Required (JWT) - Users can only access their own articles' usage
+
+**Operation Types**:
+- `article_generation`: Token usage from CrewAI agents (Article Search, Article Selection, Article Rewrite). Each agent generates a separate record with `agent_name` in metadata.
+- `dictionary_search`: Token usage from word lookups within the article. Multiple searches are recorded individually but can be aggregated for display.
 
 **Response** (200):
 ```json
@@ -799,11 +811,41 @@ generateResponse.status === 409  ← Response handling!
     "completion_tokens": 1500,
     "total_tokens": 3500,
     "estimated_cost": 0.0525,
-    "metadata": {"topic": "technology"},
+    "metadata": {"job_id": "job-uuid", "agent_name": "Article Search"},
     "created_at": "2026-01-30T10:00:00Z"
+  },
+  {
+    "id": "usage-uuid-2",
+    "user_id": "user-uuid",
+    "operation": "article_generation",
+    "model": "gpt-4.1",
+    "prompt_tokens": 3000,
+    "completion_tokens": 2000,
+    "total_tokens": 5000,
+    "estimated_cost": 0.075,
+    "metadata": {"job_id": "job-uuid", "agent_name": "Article Rewrite"},
+    "created_at": "2026-01-30T10:01:00Z"
+  },
+  {
+    "id": "usage-uuid-3",
+    "user_id": "user-uuid",
+    "operation": "dictionary_search",
+    "model": "gpt-4.1-mini",
+    "prompt_tokens": 100,
+    "completion_tokens": 50,
+    "total_tokens": 150,
+    "estimated_cost": 0.00025,
+    "metadata": {"query": "abhangen", "language": "German"},
+    "created_at": "2026-01-30T10:05:00Z"
   }
 ]
 ```
+
+**Frontend Display**:
+The article detail page displays token usage with smart aggregation:
+- **Article generation records**: Kept separate, showing individual agent names (Article Search, Article Selection, Article Rewrite)
+- **Dictionary search records**: Aggregated into a single cumulative total per model
+- **Auto-refresh**: Token usage automatically refreshes after each dictionary search
 
 **Response** (404 - Article not found):
 ```json
@@ -1175,6 +1217,7 @@ def get_user_token_summary(user_id: str, days: int = 30) -> dict:
 
 #### Token Tracking Data Flow
 
+**Dictionary Search Flow (API-level):**
 ```
 [API 호출]
     │
@@ -1196,12 +1239,46 @@ logger.info()       │
                     ▼
               MongoDB insert
               (token_usage 컬렉션)
+```
+
+**Article Generation Flow (Phase 6 - CrewAI-level):**
+```
+[Worker job]
+    │
+    ▼
+run_crew(inputs)
+    │
+    ├── CrewAI 실행 (multiple agents)
+    │   └── 각 agent가 LLM 호출, 내부적으로 usage 추적
+    │
+    └── CrewResult 반환
+            │
+            ▼
+    result.get_agent_usage()
+            │
+            ▼
+    ┌───────────────┐
+    │ per agent:    │
+    │ calculate_cost()
+    │       │       │
+    │       ▼       │
+    │ save_token_usage()
+    └───────────────┘
+            │
+            ▼
+      MongoDB insert
+      (token_usage 컬렉션, per agent)
+```
+
+**Retrieval Flow:**
+```
+              token_usage 컬렉션
                     │
     ┌───────────────┼───────────────┐
     │               │               │
     ▼               ▼               ▼
 get_user_      get_article_    Dashboard
-token_summary  token_usage     (Phase 3)
+token_summary  token_usage     (Phase 7)
     │               │
     ▼               ▼
 {total_tokens,  [usage records
@@ -1214,7 +1291,10 @@ token_summary  token_usage     (Phase 3)
 - **Phase 1** ✅: LiteLLM 통합, TokenUsageStats, Dictionary API 로깅
 - **Phase 2** ✅: MongoDB 저장 함수, 집계 함수, 인덱스
 - **Phase 3** ✅: API 엔드포인트 (`/usage/me`, `/usage/articles/{id}`), Authentication/Authorization
-- **Phase 4** 🔜: Worker에서 article_generation 토큰 추적, Frontend dashboard
+- **Phase 4** ✅: Worker에서 article_generation 토큰 추적 (LiteLLM callbacks)
+- **Phase 5** ✅: JobTracker coordinator pattern
+- **Phase 6** ✅: CrewAI built-in tracking (`token_usage.py`, `CrewResult.get_agent_usage()`)
+- **Phase 7** 🔜: Frontend dashboard, cost alerts
 
 ---
 
@@ -1949,6 +2029,205 @@ call_count = len(records)
 ```
 
 **Total**: 4300 tokens, $0.0645
+
+---
+
+### Token Usage Utility Functions (Phase 6)
+
+#### calculate_cost()
+
+**Module**: `utils/token_usage.py`
+
+**Description**: Calculate estimated LLM cost using LiteLLM's pricing database.
+
+**Signature**:
+```python
+def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float
+```
+
+**Parameters**:
+- `model`: Model name (e.g., `"gpt-4.1"`, `"gpt-4.1-mini"`)
+- `prompt_tokens`: Number of input tokens
+- `completion_tokens`: Number of output tokens
+
+**Returns**: Estimated cost in USD, or `0.0` if pricing unavailable
+
+**Error Handling**:
+- Returns `0.0` for models not in LiteLLM pricing database
+- Handles KeyError, ValueError, AttributeError gracefully
+- Logs unexpected errors at debug level
+
+**Example**:
+```python
+from utils.token_usage import calculate_cost
+
+cost = calculate_cost(
+    model="gpt-4.1-mini",
+    prompt_tokens=1000,
+    completion_tokens=500
+)
+print(f"Estimated cost: ${cost:.6f}")
+```
+
+**Note**: LiteLLM pricing data may become outdated. Costs are estimates only.
+
+---
+
+#### save_crew_token_usage()
+
+**Module**: `utils/token_usage.py`
+
+**Description**: Save token usage for each CrewAI agent to MongoDB after article generation.
+
+**Signature**:
+```python
+def save_crew_token_usage(
+    result: CrewResult,
+    user_id: str,
+    article_id: str | None,
+    job_id: str
+) -> None
+```
+
+**Parameters**:
+- `result`: CrewResult containing crew_instance with agents
+- `user_id`: User ID who initiated the generation
+- `article_id`: Article ID being generated (optional)
+- `job_id`: Job ID for metadata
+
+**Behavior**:
+1. Calls `result.get_agent_usage()` to get per-agent token metrics
+2. Skips agents with zero token usage
+3. Calculates cost using `calculate_cost()` for each agent
+4. Saves each agent's usage as separate MongoDB record via `save_token_usage()`
+5. Logs total number of agents saved
+
+**Error Handling**:
+- **Non-fatal**: Failures don't crash job processing
+- Logs warning with job_id and error details on failure
+- Article generation continues even if token tracking fails
+
+**Data Saved per Agent**:
+```json
+{
+  "_id": "usage-uuid",
+  "user_id": "user-uuid",
+  "operation": "article_generation",
+  "model": "gpt-4.1",
+  "prompt_tokens": 2000,
+  "completion_tokens": 1500,
+  "total_tokens": 3500,
+  "estimated_cost": 0.0525,
+  "article_id": "article-uuid",
+  "metadata": {"job_id": "job-uuid"},
+  "created_at": "2026-01-30T10:00:00Z"
+}
+```
+
+**Example**:
+```python
+from crew.main import run as run_crew
+from utils.token_usage import save_crew_token_usage
+
+# Execute CrewAI
+result = run_crew(inputs={"language": "German", "level": "B1", ...})
+
+# Save token usage for all agents
+save_crew_token_usage(
+    result=result,
+    user_id="user-123",
+    article_id="article-456",
+    job_id="job-789"
+)
+```
+
+**Integration in Worker**:
+```python
+# src/worker/processor.py
+result = run_crew(inputs=ctx.inputs)
+
+# Save token usage after successful generation
+if ctx.user_id:
+    save_crew_token_usage(
+        result=result,
+        user_id=ctx.user_id,
+        article_id=ctx.article_id,
+        job_id=ctx.job_id
+    )
+```
+
+---
+
+### CrewResult Class
+
+**Module**: `src/crew/main.py`
+
+**Description**: Container for crew execution result with usage metrics extraction.
+
+**Class**:
+```python
+class CrewResult:
+    """Container for crew execution result and usage metrics."""
+
+    def __init__(self, result, crew_instance):
+        self.raw = result.raw
+        self.result = result
+        self.crew_instance = crew_instance
+```
+
+**Attributes**:
+- `raw`: Raw output string from crew execution
+- `result`: Full CrewAI result object
+- `crew_instance`: Reference to the crew with agents
+
+#### get_agent_usage()
+
+**Signature**:
+```python
+def get_agent_usage(self) -> list[dict]
+```
+
+**Returns**: List of dicts with per-agent usage metrics
+
+**Return Format**:
+```python
+[
+    {
+        'agent_role': str,           # Agent role name (e.g., 'News Researcher')
+        'model': str,                # Model name (e.g., 'gpt-4.1')
+        'prompt_tokens': int,        # Input tokens
+        'completion_tokens': int,    # Output tokens
+        'total_tokens': int,         # Total tokens
+        'successful_requests': int   # Number of successful LLM calls
+    },
+    ...
+]
+```
+
+**Behavior**:
+- Iterates through all agents in crew_instance
+- Skips agents without LLM configured
+- Uses `agent.llm.get_token_usage_summary()` for metrics
+- Safely handles missing attributes with defaults
+
+**Example**:
+```python
+from crew.main import run as run_crew
+
+result = run_crew(inputs={"language": "German", "level": "B1", ...})
+
+for usage in result.get_agent_usage():
+    print(f"Agent: {usage['agent_role']}")
+    print(f"  Model: {usage['model']}")
+    print(f"  Tokens: {usage['total_tokens']}")
+    print(f"  Requests: {usage['successful_requests']}")
+```
+
+**Why CrewAI Built-in Tracking?**
+- CrewAI manages LLM calls internally through agent.llm instances
+- Each agent has independent usage tracking
+- More reliable than LiteLLM callback interception
+- Simpler implementation without callback lifecycle management
 
 ---
 

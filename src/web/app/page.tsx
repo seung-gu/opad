@@ -136,11 +136,12 @@ Choose a topic you're interested in and start learning with content that matches
     // Don't auto-load when generating becomes false - let the completion handler manage that
     if (!generating) {
       // Only load if currentArticleId is set, or if content is empty (show welcome message)
+      // Note: 'content' is intentionally omitted from deps to prevent infinite loops
       if (currentArticleId || !content) {
         loadContent(true)
       }
     }
-    
+
     // Cleanup: cancel any pending fetch when article_id changes or component unmounts
     return () => {
       if (fetchAbortControllerRef.current) {
@@ -148,6 +149,7 @@ Choose a topic you're interested in and start learning with content that matches
         fetchAbortControllerRef.current = null
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- content omitted to prevent infinite loop
   }, [currentArticleId, generating, loadContent])
   
   // Poll status when generating
@@ -161,32 +163,35 @@ Choose a topic you're interested in and start learning with content that matches
       return
     }
 
+    // Helper: create progress update function to reduce nesting
+    const createProgressUpdate = (data: { current_task?: string; progress?: number; message?: string; error?: string | null }) => {
+      return (prev: typeof progress) => {
+        const newProgress = {
+          current_task: data.current_task || '',
+          progress: data.progress || 0,
+          message: data.message || '',
+          error: data.error || null
+        }
+        if (prev.current_task !== newProgress.current_task ||
+            prev.progress !== newProgress.progress ||
+            prev.message !== newProgress.message ||
+            prev.error !== newProgress.error) {
+          return newProgress
+        }
+        return prev
+      }
+    }
+
     const loadStatus = () => {
       // jobId가 없으면 폴링하지 않음
       if (!currentJobId) {
         return
       }
-      
+
       fetchWithAuth(`/api/status?job_id=${currentJobId}`)
         .then(res => res.json())
         .then(data => {
-          // Only update progress if it actually changed
-          setProgress(prev => {
-            const newProgress = {
-              current_task: data.current_task || '',
-              progress: data.progress || 0,
-              message: data.message || '',
-              error: data.error || null
-            }
-            // Only update if something actually changed
-            if (prev.current_task !== newProgress.current_task || 
-                prev.progress !== newProgress.progress || 
-                prev.message !== newProgress.message ||
-                prev.error !== newProgress.error) {
-              return newProgress
-            }
-            return prev
-          })
+          setProgress(createProgressUpdate(data))
           
           if (data.status === 'completed') {
             setGenerating(false)
@@ -232,9 +237,41 @@ Choose a topic you're interested in and start learning with content that matches
         statusPollIntervalRef.current = null
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- currentArticleId/router omitted to prevent unintended re-polls
   }, [generating, currentJobId, loadContent])
   
   // No need to poll content - status polling will trigger loadContent when completed
+
+  // Helper: Handle user's choice to use existing job (called when user cancels regeneration)
+  const handleUseExistingJob = useCallback((job: { id: string; status: string; error?: string; progress?: number }, articleId?: string) => {
+    if (job.status === 'completed' && articleId) {
+      if (currentArticleId !== articleId) {
+        loadContent(false, articleId)
+        setCurrentArticleId(articleId)
+      }
+      setGenerating(false)
+      return
+    }
+    if (job.status === 'running' || job.status === 'queued') {
+      setCurrentJobId(job.id)
+      if (articleId) {
+        setCurrentArticleId(articleId)
+      }
+      setGenerating(true)
+      return
+    }
+    if (job.status === 'failed') {
+      const errorMessage = `# ❌ Generation Failed\n\n**Error:** ${job.error || 'Unknown error occurred'}\n\nPlease try generating a new article.`
+      setContent(errorMessage)
+      setProgress(prev => ({
+        ...prev,
+        error: job.error || 'Generation failed',
+        message: 'Previous generation failed',
+        progress: 0
+      }))
+    }
+    setGenerating(false)
+  }, [currentArticleId, loadContent])
 
   const handleGenerate = async (inputs: {
     language: string
@@ -266,7 +303,7 @@ Choose a topic you're interested in and start learning with content that matches
         // If existing_job is null, job status data couldn't be retrieved
         if (!data.existing_job) {
           // Still show message and allow regeneration
-          const shouldRegenerate = window.confirm(
+          const shouldRegenerate = globalThis.confirm(
             'A duplicate job was detected, but its status could not be retrieved. Do you want to generate a new article anyway?'
           )
           if (shouldRegenerate) {
@@ -286,42 +323,12 @@ Choose a topic you're interested in and start learning with content that matches
         }
         
         // User confirms: generate new job (OK = true)
-        if (window.confirm(messages[job.status])) {
+        if (globalThis.confirm(messages[job.status])) {
           return await handleGenerate(inputs, true)
         }
         
         // User cancels: use existing job (Cancel = false)
-        if (job.status === 'completed' && data.article_id) {
-          // Load content directly without showing loading state to prevent flicker
-          if (currentArticleId !== data.article_id) {
-            // Load content first (generating is still true, so useEffect won't trigger)
-            loadContent(false, data.article_id)
-            // Then update state and set generating to false
-            // useEffect will see generating=false but content is already loaded
-            setCurrentArticleId(data.article_id)
-          }
-          setGenerating(false)
-        } else if (job.status === 'running' || job.status === 'queued') {
-          // Set both jobId and articleId so content can be loaded when job completes
-          setCurrentJobId(job.id)
-          if (data.article_id) {
-            setCurrentArticleId(data.article_id)
-          }
-          setGenerating(true)
-        } else if (job.status === 'failed') {
-          // Failed job: show error message to user
-          const errorMessage = `# ❌ Generation Failed\n\n**Error:** ${job.error || 'Unknown error occurred'}\n\nPlease try generating a new article.`
-          setContent(errorMessage)
-          setProgress(prev => ({
-            ...prev,
-            error: job.error || 'Generation failed',
-            message: 'Previous generation failed',
-            progress: 0
-          }))
-          setGenerating(false)
-        } else {
-          setGenerating(false)
-        }
+        handleUseExistingJob(job, data.article_id)
         return
       }
 
@@ -343,8 +350,9 @@ Choose a topic you're interested in and start learning with content that matches
       
       // generating state is already true, useEffect will handle polling
 
-    } catch (error: any) {
-      alert(`Error: ${error.message}`)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      alert(`Error: ${message}`)
       setGenerating(false)
       setCurrentJobId(null) // Clear jobId on error
     }

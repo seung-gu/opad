@@ -60,22 +60,31 @@ export async function GET(request: NextRequest) {
     // - queued: Job is waiting in queue (not yet picked up by worker)
     // - running: Job is actively being processed by worker
     // - completed/error: Terminal states (stop polling)
+    // Map job status to current_task
+    const currentTaskMap: Record<string, string> = {
+      running: 'processing',
+      queued: 'queued'
+    }
+    const currentTask = currentTaskMap[jobData.status] || ''
+
+    // Map job status to response status
+    const responseStatus = jobData.status === 'failed' ? 'error' : (jobData.status || 'idle')
+
     return NextResponse.json({
-      current_task: jobData.status === 'running' ? 'processing' : 
-                   jobData.status === 'queued' ? 'queued' : '',
+      current_task: currentTask,
       progress: jobData.progress || 0,
-      status: jobData.status === 'failed' ? 'error' : 
-             jobData.status || 'idle',
+      status: responseStatus,
       message: jobData.message || '',
       error: jobData.error || null,  // Include error message for failed jobs
       updated_at: jobData.updated_at || new Date().toISOString()
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     console.error(JSON.stringify({
       source: 'web',
       level: 'error',
       endpoint: '/api/status',
-      message: `Error fetching job status: ${error.message}`
+      message: `Error fetching job status: ${errorMessage}`
     }))
     return NextResponse.json({
       current_task: 'idle',

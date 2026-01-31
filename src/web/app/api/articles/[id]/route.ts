@@ -53,24 +53,18 @@ export async function GET(
     }
 
     const article = await response.json()
-    
-    console.log(JSON.stringify({
-      source: 'web',
-      level: 'info',
-      endpoint: `/api/articles/${articleId}`,
-      message: `Successfully loaded article: ${articleId}`
-    }))
 
     return NextResponse.json(article)
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to load article'
     console.error(JSON.stringify({
       source: 'web',
       level: 'error',
       endpoint: `/api/articles/${params.id}`,
-      message: `Failed to load article: ${error.message}`
+      message: `Failed to load article: ${errorMessage}`
     }))
     return NextResponse.json(
-      { error: error.message || 'Failed to load article' },
+      { error: errorMessage },
       { status: 500 }
     )
   }

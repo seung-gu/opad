@@ -46,10 +46,11 @@ export async function GET(
 
     const data = await response.json()
     return NextResponse.json(data)
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Article Vocabularies API] Error:', error)
+    const message = error instanceof Error ? error.message : String(error)
     return NextResponse.json(
-      { error: 'Internal server error', message: error?.message || String(error) },
+      { error: 'Internal server error', message },
       { status: 500 }
     )
   }
