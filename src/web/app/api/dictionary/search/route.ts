@@ -37,15 +37,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Forward request to FastAPI
+    // Only include article_id if it's a valid non-empty string
+    const requestBody: Record<string, string> = {
+      word: word,
+      sentence: sentence,
+      language: language
+    }
+    if (article_id && typeof article_id === 'string' && article_id.trim()) {
+      requestBody.article_id = article_id
+    }
+
     const response = await fetch(`${apiUrl}/dictionary/search`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        word: word,
-        sentence: sentence,
-        language: language,
-        article_id: article_id
-      })
+      body: JSON.stringify(requestBody)
     })
 
     if (!response.ok) {

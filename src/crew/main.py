@@ -4,6 +4,8 @@ import warnings
 import logging
 from pathlib import Path
 
+import yaml
+
 # Add src to path for imports when running standalone
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
@@ -19,6 +21,23 @@ if __name__ == "__main__":
     setup_structured_logging()
 
 logger = logging.getLogger(__name__)
+
+
+def _load_agent_names() -> dict[str, str]:
+    """Load agent display names from agents.yaml (role -> name mapping)."""
+    yaml_path = Path(__file__).parent / "config" / "agents.yaml"
+    with open(yaml_path) as f:
+        config = yaml.safe_load(f)
+    # Build role -> name mapping (normalize role by stripping whitespace)
+    return {
+        agent['role'].strip(): agent['name']
+        for agent in config.values()
+        if 'role' in agent and 'name' in agent
+    }
+
+
+# Load once at module level
+_AGENT_NAMES = _load_agent_names()
 
 
 class CrewResult:
@@ -43,7 +62,7 @@ class CrewResult:
 
             model = getattr(agent.llm, 'model', 'unknown')
             agent_role = getattr(agent, 'role', 'unknown')
-            agent_name = getattr(agent, 'name', None)  # Short display name
+            agent_name = _AGENT_NAMES.get(agent_role.strip())  # Display name from agents.yaml
 
             # Safely get usage metrics with defaults
             usage = agent.llm.get_token_usage_summary()

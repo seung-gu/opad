@@ -77,8 +77,8 @@ class SearchRequest(BaseModel):
     language: str = Field(..., min_length=2, max_length=50, description="Language of the sentence")
     article_id: Optional[str] = Field(
         None,
-        pattern=r"^[a-fA-F0-9]{24}$",
-        description="Article ID for token usage tracking (MongoDB ObjectId format)"
+        pattern=r"^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+        description="Article ID for token usage tracking (UUID format)"
     )
 
 

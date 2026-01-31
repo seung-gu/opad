@@ -66,6 +66,7 @@ async def search_word(
             prompt_tokens=stats.prompt_tokens,
             completion_tokens=stats.completion_tokens,
             estimated_cost=stats.estimated_cost,
+            article_id=request.article_id,
             metadata={"word": request.word, "language": request.language}
         )
 

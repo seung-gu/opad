@@ -168,8 +168,8 @@ function TokenUsageSection({ loading, records }: Readonly<{
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {aggregatedRecords.map((record) => (
-                  <tr key={`${record.operation}-${record.model}-${record.agent_name || 'default'}`} className="text-gray-700">
+                {aggregatedRecords.map((record, idx) => (
+                  <tr key={`${record.operation}-${record.model}-${record.agent_name || 'default'}-${idx}`} className="text-gray-700">
                     <td className="py-2 pr-4">
                       {formatOperationName(record.operation, record.agent_name)}
                     </td>

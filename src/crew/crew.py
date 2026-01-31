@@ -19,22 +19,18 @@ class ReadingMaterialCreator():
     @agent
     def paragraph_finder(self) -> Agent:
         return Agent(
-            config=self.agents_config['paragraph_finder'], 
+            config=self.agents_config['paragraph_finder'],
             tools=[SerperDevTool()],
             memory=True
         )
 
     @agent
     def article_picker(self) -> Agent:
-        return Agent(
-            config=self.agents_config['article_picker']
-        )
+        return Agent(config=self.agents_config['article_picker'])
 
     @agent
     def paragraph_writer(self) -> Agent:
-        return Agent(
-            config=self.agents_config['paragraph_writer']
-        )
+        return Agent(config=self.agents_config['paragraph_writer'])
 
     @task
     def find_news_articles(self) -> Task:
