@@ -1,16 +1,198 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import MarkdownViewer from '@/components/MarkdownViewer'
 import ArticleStatusBadge from '@/components/ArticleStatusBadge'
 import VocabularyList from '@/components/VocabularyList'
 import { Article, Vocabulary } from '@/types/article'
+import { TokenUsageRecord } from '@/types/usage'
 import { fetchWithAuth } from '@/lib/api'
 import { useVocabularyDelete } from '@/hooks/useVocabularyDelete'
 import { formatDate } from '@/lib/formatters'
 import { useStatusPolling } from '@/hooks/useStatusPolling'
+
+/**
+ * Extract agent name from metadata with proper type checking and fallback.
+ */
+function extractAgentName(metadata?: { agent_name?: unknown; agent_role?: unknown }): string | undefined {
+  const rawAgentName = metadata?.agent_name
+  if (typeof rawAgentName === 'string' && rawAgentName) {
+    return rawAgentName
+  }
+  const rawAgentRole = metadata?.agent_role
+  if (typeof rawAgentRole === 'string' && rawAgentRole) {
+    return rawAgentRole
+  }
+  return undefined
+}
+
+/**
+ * Helper to format operation names for display.
+ */
+function formatOperationName(operation: string, agentName?: string): string {
+  // Use agent name if available (e.g., "Article Search", "Article Selection", "Article Rewrite")
+  if (agentName) {
+    return agentName
+  }
+  // Default: convert snake_case to Title Case
+  return operation.replaceAll('_', ' ').replaceAll(/\b\w/g, c => c.toUpperCase())
+}
+
+/**
+ * Aggregated usage data for display.
+ */
+interface AggregatedUsage {
+  operation: string
+  model: string
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  estimated_cost: number
+  agent_name?: string // Display name (e.g., "Article Search", "Article Selection")
+}
+
+/**
+ * Token usage section component.
+ * Displays loading, empty, or data states without nested ternaries.
+ * Aggregates dictionary_search records into cumulative totals.
+ */
+function TokenUsageSection({ loading, records }: Readonly<{
+  loading: boolean
+  records: TokenUsageRecord[]
+}>) {
+
+  if (loading) {
+    return (
+      <div className="mt-6 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <span aria-hidden="true">📊</span>
+          <span>Token Usage</span>
+        </h2>
+        <div className="animate-pulse space-y-2">
+          <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+          <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+        </div>
+      </div>
+    )
+  }
+
+  if (records.length === 0) {
+    return (
+      <div className="mt-6 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <span aria-hidden="true">📊</span>
+          <span>Token Usage</span>
+        </h2>
+        <p className="text-gray-500 text-sm">No token usage data available.</p>
+      </div>
+    )
+  }
+
+  const totalTokens = records.reduce((sum, r) => sum + r.total_tokens, 0)
+  const promptTokens = records.reduce((sum, r) => sum + r.prompt_tokens, 0)
+  const completionTokens = records.reduce((sum, r) => sum + r.completion_tokens, 0)
+  const totalCost = records.reduce((sum, r) => sum + r.estimated_cost, 0)
+
+  // Aggregate dictionary_search only, keep article_generation records separate
+  const aggregatedMap = new Map<string, AggregatedUsage>()
+  for (const record of records) {
+    const agentName = extractAgentName(record.metadata)
+    // dictionary_search: aggregate by operation+model
+    // article_generation: keep separate using record id
+    const key = record.operation === 'dictionary_search'
+      ? `op:dictionary_search:${record.model}`
+      : `id:${record.id}`
+
+    const existing = aggregatedMap.get(key)
+    if (existing) {
+      existing.prompt_tokens += record.prompt_tokens
+      existing.completion_tokens += record.completion_tokens
+      existing.total_tokens += record.total_tokens
+      existing.estimated_cost += record.estimated_cost
+    } else {
+      aggregatedMap.set(key, {
+        operation: record.operation,
+        model: record.model,
+        prompt_tokens: record.prompt_tokens,
+        completion_tokens: record.completion_tokens,
+        total_tokens: record.total_tokens,
+        estimated_cost: record.estimated_cost,
+        agent_name: agentName
+      })
+    }
+  }
+  const aggregatedRecords = Array.from(aggregatedMap.values())
+
+  return (
+    <div className="mt-6 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        <span aria-hidden="true">📊</span>
+        <span>Token Usage</span>
+      </h2>
+      <div className="space-y-4">
+        {/* Summary */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+          <div>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Total Tokens</p>
+            <p className="text-lg font-semibold text-gray-900">{totalTokens.toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Prompt</p>
+            <p className="text-lg font-semibold text-gray-900">{promptTokens.toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Completion</p>
+            <p className="text-lg font-semibold text-gray-900">{completionTokens.toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">Est. Cost</p>
+            <p className="text-lg font-semibold text-green-600">${totalCost.toFixed(4)}</p>
+          </div>
+        </div>
+
+        {/* Detailed Records - uncontrolled to avoid scroll on re-render */}
+        <details className="group">
+          <summary className="cursor-pointer text-sm text-blue-600 hover:text-blue-800 font-medium">
+            View detailed breakdown ({aggregatedRecords.length} {aggregatedRecords.length === 1 ? 'operation' : 'operations'})
+          </summary>
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-500 uppercase tracking-wide border-b">
+                  <th className="pb-2 pr-4">Operation</th>
+                  <th className="pb-2 pr-4">Model</th>
+                  <th className="pb-2 pr-4 text-right">Tokens</th>
+                  <th className="pb-2 text-right">Cost</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {aggregatedRecords.map((record) => (
+                  <tr key={`${record.operation}-${record.model}-${record.agent_name || 'default'}`} className="text-gray-700">
+                    <td className="py-2 pr-4">
+                      {formatOperationName(record.operation, record.agent_name)}
+                    </td>
+                    <td className="py-2 pr-4 font-mono text-xs text-gray-500">{record.model}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">
+                      {record.total_tokens.toLocaleString()}
+                      <span className="text-gray-400 text-xs ml-1">
+                        ({record.prompt_tokens.toLocaleString()} + {record.completion_tokens.toLocaleString()})
+                      </span>
+                    </td>
+                    <td className="py-2 text-right tabular-nums text-green-600">
+                      ${record.estimated_cost.toFixed(4)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+    </div>
+  )
+}
 
 /**
  * Article detail page.
@@ -24,7 +206,6 @@ import { useStatusPolling } from '@/hooks/useStatusPolling'
  */
 export default function ArticleDetailPage() {
   const params = useParams()
-  const router = useRouter()
   const articleId = params.id as string
   const { deleteVocabulary } = useVocabularyDelete()
 
@@ -34,6 +215,8 @@ export default function ArticleDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [vocabularies, setVocabularies] = useState<Vocabulary[]>([])
+  const [tokenUsage, setTokenUsage] = useState<TokenUsageRecord[]>([])
+  const [tokenUsageLoading, setTokenUsageLoading] = useState(false)
 
   // Reload article data (used by status polling on completion)
   const reloadArticleData = useCallback(async () => {
@@ -54,8 +237,8 @@ export default function ArticleDetailPage() {
         const contentText = await contentResponse.text()
         setContent(contentText)
       }
-    } catch (err) {
-      console.error('Error reloading article:', err)
+    } catch (error_) {
+      console.error('Error reloading article:', error_)
     }
   }, [articleId])
 
@@ -112,16 +295,15 @@ export default function ArticleDetailPage() {
           const vocabResponse = await fetchWithAuth(`/api/articles/${articleId}/vocabularies`)
           if (vocabResponse.ok) {
             const vocabData = await vocabResponse.json()
-            console.log('[Vocab] Loaded vocabularies:', vocabData.map((v: Vocabulary) => ({ word: v.word, span_id: v.span_id })))
             setVocabularies(vocabData)
           }
-        } catch (vocabErr) {
-          console.error('Error fetching vocabularies:', vocabErr)
+        } catch (error_) {
+          console.error('Error fetching vocabularies:', error_)
         }
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Failed to load article'
+      } catch (error_: unknown) {
+        const message = error_ instanceof Error ? error_.message : 'Failed to load article'
         setError(message)
-        console.error('Error fetching article:', err)
+        console.error('Error fetching article:', error_)
       } finally {
         setLoading(false)
       }
@@ -132,18 +314,51 @@ export default function ArticleDetailPage() {
     }
   }, [articleId])
   
+  // Helper to filter out a vocabulary by ID
+  const removeVocabularyById = useCallback((vocabId: string) => {
+    setVocabularies(prev => prev.filter(v => v.id !== vocabId))
+  }, [])
+
   // Listen for vocabulary removal events
   useEffect(() => {
     const handleVocabularyRemoved = (event: CustomEvent) => {
-      const vocabId = event.detail
-      setVocabularies(prev => prev.filter(v => v.id !== vocabId))
+      removeVocabularyById(event.detail)
     }
-    
-    window.addEventListener('vocabulary-removed', handleVocabularyRemoved as EventListener)
+
+    globalThis.addEventListener('vocabulary-removed', handleVocabularyRemoved as EventListener)
     return () => {
-      window.removeEventListener('vocabulary-removed', handleVocabularyRemoved as EventListener)
+      globalThis.removeEventListener('vocabulary-removed', handleVocabularyRemoved as EventListener)
     }
-  }, [])
+  }, [removeVocabularyById])
+
+  // Fetch token usage function (reusable)
+  // isRefresh: true when refreshing existing data (skip loading state to preserve UI)
+  const fetchTokenUsage = useCallback(async (isRefresh = false) => {
+    if (article?.status !== 'completed') return
+
+    if (!isRefresh) {
+      setTokenUsageLoading(true)
+    }
+    try {
+      const response = await fetchWithAuth(`/api/usage/articles/${articleId}`)
+      if (response.ok) {
+        const usageData = await response.json()
+        setTokenUsage(usageData)
+      }
+    } catch (error_) {
+      console.error('Error fetching token usage:', error_)
+      // Silent fail - token usage is not critical
+    } finally {
+      if (!isRefresh) {
+        setTokenUsageLoading(false)
+      }
+    }
+  }, [article?.status, articleId])
+
+  // Fetch token usage when article is completed
+  useEffect(() => {
+    fetchTokenUsage()
+  }, [fetchTokenUsage])
   
   // Handle vocabulary addition
   const handleAddVocabulary = (newVocab: Vocabulary) => {
@@ -161,8 +376,8 @@ export default function ArticleDetailPage() {
     try {
       await deleteVocabulary(vocabId)
       setVocabularies(prev => prev.filter(v => v.id !== vocabId))
-    } catch (error) {
-      console.error('Failed to delete vocabulary:', error)
+    } catch (error_) {
+      console.error('Failed to delete vocabulary:', error_)
     }
   }
 
@@ -277,6 +492,7 @@ export default function ArticleDetailPage() {
               articleId={articleId}
               vocabularies={vocabularies}
               onAddVocabulary={handleAddVocabulary}
+              onTokenUsageUpdate={() => fetchTokenUsage(true)}
             />
           ) : (
             <div className="text-center py-12">
@@ -290,10 +506,18 @@ export default function ArticleDetailPage() {
         </div>
         
         {/* Vocabulary List */}
-        <VocabularyList 
+        <VocabularyList
           vocabularies={vocabularies}
           onDelete={handleDeleteVocabulary}
         />
+
+        {/* Token Usage Section */}
+        {article.status === 'completed' && (
+          <TokenUsageSection
+            loading={tokenUsageLoading}
+            records={tokenUsage}
+          />
+        )}
       </div>
     </div>
   )

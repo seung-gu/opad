@@ -5,24 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Added
-**Phase 5: Worker/CrewAI Token Tracking**
-- `src/worker/job_tracker.py` - JobTracker coordinator class that unifies JobProgressListener (CrewAI task events) and ArticleGenerationTokenTracker (LiteLLM token tracking) into a single context manager
-- `src/worker/token_tracker.py` - ArticleGenerationTokenTracker class extending LiteLLM's CustomLogger to intercept all LLM API calls made by CrewAI and save token usage to MongoDB
-- LiteLLM callback integration for automatic token tracking during article generation (log_success_event, async_log_success_event, log_failure_event, async_log_failure_event methods)
-- Token usage saved to MongoDB with cost calculation during CrewAI execution
-- Graceful error handling with non-fatal tracking failures to prevent worker crashes
-- 36 comprehensive tests for JobTracker covering initialization, context manager protocol, callback setup/restoration, and edge cases
-- 28 comprehensive tests for ArticleGenerationTokenTracker covering success tracking, cost calculation, failure handling, and MongoDB persistence
-
-### Changed
-- `src/worker/processor.py` - Refactored to use JobTracker coordinator pattern instead of separate listener/tracker creation
-- Job tracking now integrated as unified context manager (with JobTracker context) for automatic setup and cleanup
-- Token tracking callbacks properly saved and restored for safe nested context handling in CrewAI pipeline
-
-## [0.8.0] - 2026-01-30
+## [0.8.0] - 2026-01-31
 
 ### Added
 **Phase 1: LLM Abstraction Layer**
@@ -59,35 +42,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive test coverage for token usage API endpoints in `src/api/tests/test_usage_routes.py`
 - Unit tests for token usage utilities in `src/utils/tests/test_token_usage.py`
 
-**Phase 4: Worker Token Tracking**
-- `src/worker/token_tracker.py` - LiteLLM callback for article generation token tracking
-- Token usage tracking integration for all CrewAI LLM calls during article generation
-- Each agent's token usage saved to MongoDB with article_id association
-- Token tracking callbacks for input tokens, output tokens, and cost calculation
-- 28 comprehensive tests for token_tracker.py covering all tracking scenarios
+**Phase 4: Dictionary Integration**
+- `src/api/routes/dictionary.py` - Token usage tracking on dictionary search operations
+- Token usage saved with word and language metadata for analytics
+
+**Phase 5: Article Generation (Worker/CrewAI)**
+- `src/utils/token_usage.py` - Token usage utilities with LiteLLM cost calculation
+  - `calculate_cost()`: Calculate LLM costs using LiteLLM's pricing database
+  - `save_crew_token_usage()`: Save per-agent token usage to MongoDB with model information
+- `src/crew/main.py` - Added `CrewResult` wrapper class with `get_agent_usage()` method
+- `src/worker/processor.py` - Integrated token tracking after CrewAI execution using native CrewAI metrics
+- Per-agent token usage tracking for all CrewAI agents during article generation
+
+**Phase 6: Frontend Dashboard**
+- `src/web/app/usage/page.tsx` - Token usage dashboard with period selector (7/30/90/365 days)
+- `src/web/components/UsageSummary.tsx` - Reusable component for displaying token usage statistics
+- `src/web/types/usage.ts` - TypeScript types (TokenUsageRecord, TokenUsageSummary, OperationUsage, DailyUsage)
+- Token usage display on article detail page showing per-operation costs
+- Agent name display (Article Search, Article Selection, Article Rewrite)
 
 **Development Infrastructure**
 - `.claude/hooks/check-complexity.sh` - Automatic radon complexity checker for Python file edits
 - Updated `.claude/agents/code-reviewer.md` with complexity guidelines and thresholds
 
 ### Changed
-- `src/worker/processor.py` - Integration with token tracking callback for CrewAI article generation
-- Token tracking now connected to article generation pipeline with callback registration
-- Refactored `src/utils/llm.py` to use LiteLLM for multi-provider LLM support (removed OpenAI-specific code)
+- `src/worker/processor.py` - Simplified token tracking to use CrewAI's native `agent.llm.get_token_usage_summary()`
+  - Switched from LiteLLM callbacks to CrewAI's native token tracking (resolves CrewAI callback limitation)
+  - Token usage now saved only for authenticated users to optimize database storage
+- Token cost calculation refactored to use `litellm.cost_per_token()` which returns TOTAL cost (not per-token rate)
+- Added agent name field to CrewAI agents config (`src/crew/config/agents.yaml`) for better operation identification
+- `src/web/app/articles/[id]/page.tsx` - Enhanced to display token usage with agent breakdown
+- `src/web/components/MarkdownViewer.tsx` - Improved event handling for better performance and stability
+- Migrated web linting from ESLint to Biome for faster linting and formatting
+- Refactored `src/utils/llm.py` to use LiteLLM for multi-provider LLM support
 - Dictionary search endpoint (`POST /dictionary/search`) now records token usage to database
 - Enhanced `src/api/models.py` with TokenUsageSummary, TokenUsageRecord, OperationUsage, and DailyUsage data models
-- Registered usage router in FastAPI application (`src/api/main.py`)
-- All LLM calls now tracked and costed automatically through the token usage system
-- Refactored `/endpoints` page from hardcoded path-based grouping to dynamic tag-based grouping for automatic API discovery
-- Enhanced `/endpoints` listing to automatically display new routes without requiring code changes
-- Added VS Code debug configuration for no-reload mode to support breakpoint debugging
-- Enhanced REFERENCE.md with educational "Why Aggregation" section explaining MongoDB aggregation pipeline design patterns
 
 ### Fixed
-- Fixed test_processor.py mock locations: Updated to use worker.context.update_job_status for correct module path resolution
+- Token tracking stability: Non-fatal error handling ensures token tracking failures don't crash job processing
+- Scroll issue when clicking words (caused by controlled details element re-render)
+- Details expand state preservation during token usage updates
+- Fixed test_processor.py mock locations for correct module path resolution
 
 ### Removed
-- OpenAI-specific code from `src/utils/llm.py`: call_openai_chat, MODEL_PRICING, get_openai_api_key functions
+- `src/worker/job_tracker.py` - JobTracker coordinator class (replaced by native CrewAI tracking)
+- `src/worker/token_tracker.py` - ArticleGenerationTokenTracker class (replaced by CrewAI built-in tracking)
+- `src/worker/tests/test_job_tracker.py`, `test_token_tracker.py` - Tests superseded by token_usage tests
+- OpenAI-specific code from `src/utils/llm.py`
 
 ## [0.7.1] - 2026-01-30
 
