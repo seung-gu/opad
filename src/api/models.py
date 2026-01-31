@@ -75,6 +75,11 @@ class SearchRequest(BaseModel):
     word: str = Field(..., min_length=1, max_length=100, description="Word to search")
     sentence: str = Field(..., min_length=1, max_length=2000, description="Sentence containing the word")
     language: str = Field(..., min_length=2, max_length=50, description="Language of the sentence")
+    article_id: Optional[str] = Field(
+        None,
+        pattern=r"^[a-fA-F0-9]{24}$",
+        description="Article ID for token usage tracking (MongoDB ObjectId format)"
+    )
 
 
 class SearchResponse(BaseModel):

@@ -6,6 +6,7 @@ from crewai.memory.storage.rag_storage import RAGStorage
 from crewai.memory.storage.ltm_sqlite_storage import LTMSQLiteStorage
 
 from crew.models import NewsArticleList, SelectedArticle
+from crew.guardrails import repair_json_output
 
 
 @CrewBase
@@ -39,14 +40,16 @@ class ReadingMaterialCreator():
     def find_news_articles(self) -> Task:
         return Task(
             config=self.tasks_config['find_news_articles'],
-            output_pydantic=NewsArticleList
+            output_pydantic=NewsArticleList,
+            guardrail=repair_json_output
         )
 
     @task
     def pick_best_article(self) -> Task:
         return Task(
             config=self.tasks_config['pick_best_article'],
-            output_pydantic=SelectedArticle
+            output_pydantic=SelectedArticle,
+            guardrail=repair_json_output
         )
 
     @task

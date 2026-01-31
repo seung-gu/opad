@@ -21,6 +21,44 @@ if __name__ == "__main__":
 logger = logging.getLogger(__name__)
 
 
+class CrewResult:
+    """Container for crew execution result and usage metrics."""
+
+    def __init__(self, result, crew_instance):
+        self.raw = result.raw
+        self.result = result
+        self.crew_instance = crew_instance
+
+    def get_agent_usage(self) -> list[dict]:
+        """Get token usage per agent with model info.
+
+        Returns:
+            List of dicts with agent_role, model, prompt_tokens, completion_tokens, total_tokens
+        """
+        usage_list = []
+        for agent in self.crew_instance.agents:
+            # Skip agents without LLM configured
+            if not hasattr(agent, 'llm') or agent.llm is None:
+                continue
+
+            model = getattr(agent.llm, 'model', 'unknown')
+            agent_role = getattr(agent, 'role', 'unknown')
+            agent_name = getattr(agent, 'name', None)  # Short display name
+
+            # Safely get usage metrics with defaults
+            usage = agent.llm.get_token_usage_summary()
+            usage_list.append({
+                'agent_role': agent_role,
+                'agent_name': agent_name,
+                'model': model,
+                'prompt_tokens': getattr(usage, 'prompt_tokens', 0),
+                'completion_tokens': getattr(usage, 'completion_tokens', 0),
+                'total_tokens': getattr(usage, 'total_tokens', 0),
+                'successful_requests': getattr(usage, 'successful_requests', 0)
+            })
+        return usage_list
+
+
 def run(inputs):
     """
     Run the reading material creator crew.
@@ -38,23 +76,23 @@ def run(inputs):
             - vocabulary_list: (Optional) List of vocabulary words to incorporate
 
     Returns:
-        CrewOutput: Result from crew execution
-    """   
+        CrewResult: Result container with raw output and agent usage metrics
+    """
 
     try:
         logger.info("Starting crew execution...")
-        
+
         # Create crew instance
         crew_instance = ReadingMaterialCreator().crew()
-        
+
         # Execute crew - tasks will run sequentially
         # Note: If JobProgressListener was created elsewhere (e.g., in worker/processor.py),
         # it will automatically catch TaskStartedEvent/TaskCompletedEvent via global event bus
         result = crew_instance.kickoff(inputs=inputs)
-        
+
         logger.info("=== READING MATERIAL CREATED ===")
-        
-        return result
+
+        return CrewResult(result, crew_instance)
     except Exception as e:
         logger.error(f"An error occurred while running the crew: {e}")
         raise
