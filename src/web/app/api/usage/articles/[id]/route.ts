@@ -14,10 +14,10 @@ export const fetchCache = 'force-no-store'
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id: articleId } = await params
+    const { id: articleId } = params
 
     // FastAPI base URL
     const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
