@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from api.middleware.auth import get_current_user_required
 from api.models import SearchRequest, SearchResponse, User, VocabularyRequest, VocabularyResponse, VocabularyCount
-from utils.llm import call_openai_chat, parse_json_from_content, get_llm_error_response
+from utils.llm import call_llm_with_tracking, parse_json_from_content, get_llm_error_response
 from utils.prompts import build_word_definition_prompt
 from utils.mongodb import (
     delete_vocabulary,
@@ -20,6 +20,7 @@ from utils.mongodb import (
     get_vocabulary_by_id,
     get_vocabulary_counts,
     save_vocabulary,
+    save_token_usage,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,13 +51,25 @@ async def search_word(
     )
     
     try:
-        content = await call_openai_chat(
-            prompt=prompt,
+        content, stats = await call_llm_with_tracking(
+            messages=[{"role": "user", "content": prompt}],
             model="gpt-4.1-mini",
             max_tokens=200,
             temperature=0
         )
-        
+
+        # Save token usage to database
+        save_token_usage(
+            user_id=current_user.id,
+            operation="dictionary_search",
+            model=stats.model,
+            prompt_tokens=stats.prompt_tokens,
+            completion_tokens=stats.completion_tokens,
+            estimated_cost=stats.estimated_cost,
+            article_id=request.article_id,
+            metadata={"word": request.word, "language": request.language}
+        )
+
         # Parse JSON response
         result = parse_json_from_content(content)
         

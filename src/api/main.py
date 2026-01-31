@@ -3,6 +3,7 @@
 import os
 import sys
 import logging
+import tomllib
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +19,7 @@ load_dotenv()
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.routes import articles, jobs, health, endpoints, stats, dictionary, auth
+from api.routes import articles, jobs, health, endpoints, stats, dictionary, auth, usage
 from utils.logging import setup_structured_logging
 from utils.mongodb import ensure_indexes
 
@@ -27,7 +28,11 @@ setup_structured_logging()
 
 logger = logging.getLogger(__name__)
 
-VERSION = "0.6.0"
+# Read version from pyproject.toml (single source of truth)
+_project_root = _src_path.parent
+with open(_project_root / "pyproject.toml", "rb") as f:
+    VERSION = tomllib.load(f)["project"]["version"]
+
 SERVICE_NAME = "One Story A Day API"
 
 # Create FastAPI app
@@ -75,6 +80,7 @@ app.include_router(endpoints.router)
 app.include_router(stats.router)
 app.include_router(dictionary.router)
 app.include_router(auth.router)
+app.include_router(usage.router)
 
 
 @app.on_event("startup")

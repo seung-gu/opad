@@ -4,6 +4,83 @@ import { NextRequest, NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
 
+const LOG_ENDPOINT = '/api/articles'
+
+function logError(message: string, extra?: Record<string, unknown>) {
+  console.error(JSON.stringify({
+    source: 'web',
+    level: 'error',
+    endpoint: LOG_ENDPOINT,
+    message,
+    ...extra
+  }))
+}
+
+interface ArticleQueryParams {
+  skip: number
+  limit: number
+  status?: string
+  language?: string
+  level?: string
+  user_id?: string
+}
+
+function buildQueryString(params: ArticleQueryParams): string {
+  const queryParams = new URLSearchParams()
+  if (params.skip > 0) queryParams.set('skip', params.skip.toString())
+  queryParams.set('limit', params.limit.toString())
+  if (params.status) queryParams.set('status', params.status)
+  if (params.language) queryParams.set('language', params.language)
+  if (params.level) queryParams.set('level', params.level)
+  if (params.user_id) queryParams.set('user_id', params.user_id)
+  return queryParams.toString()
+}
+
+function parseQueryParams(searchParams: URLSearchParams): ArticleQueryParams {
+  return {
+    skip: Number.parseInt(searchParams.get('skip') || '0', 10),
+    limit: Number.parseInt(searchParams.get('limit') || '20', 10),
+    status: searchParams.get('status') || undefined,
+    language: searchParams.get('language') || undefined,
+    level: searchParams.get('level') || undefined,
+    user_id: searchParams.get('user_id') || undefined
+  }
+}
+
+async function fetchFromApi(
+  url: string,
+  authorization: string | null,
+  apiBaseUrl: string
+): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 30000)
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authorization ? { 'Authorization': authorization } : {}),
+      },
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
+    return response
+  } catch (fetchError: unknown) {
+    clearTimeout(timeoutId)
+    const error = fetchError instanceof Error ? fetchError : new Error('Unknown fetch error')
+    const isTimeout = error.name === 'AbortError'
+    logError(
+      isTimeout ? 'Fetch timeout after 30s' : `Fetch error: ${error.message}`,
+      { errorType: error.name, url, apiBaseUrl }
+    )
+    const errorMsg = isTimeout
+      ? `Connection timeout: API server at ${apiBaseUrl} did not respond within 30 seconds`
+      : `Failed to connect to API server at ${apiBaseUrl}: ${error.message}`
+    throw new Error(errorMsg)
+  }
+}
+
 /**
  * Get article list from FastAPI.
  * 
@@ -22,109 +99,27 @@ export const fetchCache = 'force-no-store'
  */
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams
-    
-    // Extract query parameters
-    const skip = parseInt(searchParams.get('skip') || '0', 10)
-    const limit = parseInt(searchParams.get('limit') || '20', 10)
-    const status = searchParams.get('status') || undefined
-    const language = searchParams.get('language') || undefined
-    const level = searchParams.get('level') || undefined
-    const user_id = searchParams.get('user_id') || undefined
-
-    // FastAPI base URL
+    const params = parseQueryParams(request.nextUrl.searchParams)
     const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
-
-    // Build query string
-    const queryParams = new URLSearchParams()
-    if (skip > 0) queryParams.set('skip', skip.toString())
-    queryParams.set('limit', limit.toString()) // Always include limit
-    if (status) queryParams.set('status', status)
-    if (language) queryParams.set('language', language)
-    if (level) queryParams.set('level', level)
-    if (user_id) queryParams.set('user_id', user_id)
-
-    const queryString = queryParams.toString()
-    const url = `${apiBaseUrl}/articles${queryString ? `?${queryString}` : ''}`
-
-    // Get Authorization header from client request
+    const queryString = buildQueryString(params)
+    const url = `${apiBaseUrl}/articles${queryString ? '?' + queryString : ''}`
     const authorization = request.headers.get('authorization')
 
-    console.log(JSON.stringify({
-      source: 'web',
-      level: 'info',
-      endpoint: '/api/articles',
-      message: `Calling FastAPI at ${url}`,
-      apiBaseUrl
-    }))
-
-    // Call FastAPI to get article list with timeout
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
-
-    let response: Response
-    try {
-      response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(authorization ? { 'Authorization': authorization } : {}),
-        },
-        signal: controller.signal,
-      })
-      clearTimeout(timeoutId)
-    } catch (fetchError: any) {
-      clearTimeout(timeoutId)
-      const isTimeout = fetchError.name === 'AbortError'
-      console.error(JSON.stringify({
-        source: 'web',
-        level: 'error',
-        endpoint: '/api/articles',
-        message: isTimeout ? 'Fetch timeout after 30s' : `Fetch error: ${fetchError.message}`,
-        errorType: fetchError.name,
-        url,
-        apiBaseUrl
-      }))
-      throw new Error(isTimeout 
-        ? `Connection timeout: API server at ${apiBaseUrl} did not respond within 30 seconds`
-        : `Failed to connect to API server at ${apiBaseUrl}: ${fetchError.message}`)
-    }
+    const response = await fetchFromApi(url, authorization, apiBaseUrl)
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
-      console.error(JSON.stringify({
-        source: 'web',
-        level: 'error',
-        endpoint: '/api/articles',
-        message: `API returned error: ${response.status} ${response.statusText}`,
-        errorData,
-        url
-      }))
+      logError(`API returned error: ${response.status} ${response.statusText}`, { errorData, url })
       throw new Error(errorData.detail || `Failed to fetch articles: ${response.status} ${response.statusText}`)
     }
 
     const data = await response.json()
-    
-    console.log(JSON.stringify({
-      source: 'web',
-      level: 'info',
-      endpoint: '/api/articles',
-      message: `Successfully loaded ${data.articles?.length || 0} articles`,
-      total: data.total,
-      skip: data.skip,
-      limit: data.limit
-    }))
-
     return NextResponse.json(data)
-  } catch (error: any) {
-    console.error(JSON.stringify({
-      source: 'web',
-      level: 'error',
-      endpoint: '/api/articles',
-      message: `Failed to load articles: ${error.message}`
-    }))
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to load articles'
+    logError(`Failed to load articles: ${message}`)
     return NextResponse.json(
-      { error: error.message || 'Failed to load articles' },
+      { error: message },
       { status: 500 }
     )
   }

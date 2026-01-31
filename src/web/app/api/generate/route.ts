@@ -121,15 +121,16 @@ export async function POST(request: NextRequest) {
       article_id: articleId,
       message: 'Article generation started. Use job_id to track progress.'
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error'
     console.error(JSON.stringify({
       source: 'web',
       level: 'error',
       endpoint: '/api/generate',
-      message: error.message || 'Internal server error'
+      message: errorMessage
     }))
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
+      { error: errorMessage },
       { status: 500 }
     )
   }

@@ -1,8 +1,10 @@
+/* eslint-disable unicorn/prefer-global-this */
 /**
  * Test setup and global configuration for Vitest
+ * Note: Using `window` directly for mocking is intentional in test setup
  */
 
-import { expect, afterEach, vi } from 'vitest'
+import { afterEach, vi } from 'vitest'
 
 /**
  * Clean up after each test
@@ -56,19 +58,3 @@ Object.defineProperty(window, 'sessionStorage', {
   value: sessionStorageMock,
 })
 
-/**
- * Suppress console errors in tests (optional)
- * Uncomment if needed for cleaner test output
- */
-// const originalError = console.error
-// beforeAll(() => {
-//   console.error = (...args: any[]) => {
-//     if (
-//       typeof args[0] === 'string' &&
-//       args[0].includes('Warning: ReactDOM.render')
-//     ) {
-//       return
-//     }
-//     originalError.call(console, ...args)
-//   }
-// })

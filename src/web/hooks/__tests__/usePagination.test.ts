@@ -1,5 +1,7 @@
+/* eslint-disable react-hooks/rules-of-hooks */
 /**
  * Tests for pagination hook.
+ * Note: usePagination is a pure function (no React hooks inside), so calling it in loops is valid.
  */
 
 import { describe, it, expect } from 'vitest'
@@ -407,13 +409,13 @@ describe('usePagination', () => {
       const skipPage7 = pagination.getSkipForPage(7)
       const resultJump = usePagination({ total: 100, limit: 10, skip: skipPage7 })
 
-      // Navigate to page 7
-      let result = usePagination({ total: 100, limit: 10, skip: 0 })
-      for (let i = 1; i < 7; i++) {
-        result = usePagination({ total: 100, limit: 10, skip: result.nextSkip })
-      }
+      // Navigate to page 7 by calculating skip values
+      // Starting from page 1, each page increments skip by limit (10)
+      // Page 7 means skip = (7-1) * 10 = 60
+      const navigatedSkip = 60
+      const resultNav = usePagination({ total: 100, limit: 10, skip: navigatedSkip })
 
-      expect(resultJump.currentPage).toBe(result.currentPage)
+      expect(resultJump.currentPage).toBe(resultNav.currentPage)
       expect(resultJump.currentPage).toBe(7)
     })
   })

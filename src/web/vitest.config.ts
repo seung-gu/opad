@@ -1,13 +1,18 @@
 import { defineConfig } from 'vitest/config'
+import react from '@vitejs/plugin-react'
 import path from 'path'
 
 export default defineConfig({
+  plugins: [react()],
   test: {
     // Use jsdom for DOM simulation
     environment: 'jsdom',
 
     // Global test setup
     globals: true,
+
+    // Setup file for jest-dom matchers
+    setupFiles: ['./vitest.setup.ts'],
 
     // Include test files
     include: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],

@@ -75,6 +75,11 @@ class SearchRequest(BaseModel):
     word: str = Field(..., min_length=1, max_length=100, description="Word to search")
     sentence: str = Field(..., min_length=1, max_length=2000, description="Sentence containing the word")
     language: str = Field(..., min_length=2, max_length=50, description="Language of the sentence")
+    article_id: Optional[str] = Field(
+        None,
+        pattern=r"^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+        description="Article ID for token usage tracking (UUID format)"
+    )
 
 
 class SearchResponse(BaseModel):
@@ -165,3 +170,46 @@ class User(BaseModel):
     updated_at: datetime = Field(..., description="Last update timestamp")
     last_login: Optional[datetime] = Field(None, description="Last login timestamp")
     provider: str = Field("email", description="Authentication provider")
+
+
+# Token Usage Models
+class OperationUsage(BaseModel):
+    """Token usage breakdown by operation type."""
+    tokens: int = Field(..., description="Total tokens used for this operation")
+    cost: float = Field(..., description="Total cost in USD for this operation")
+    count: int = Field(..., description="Number of API calls for this operation")
+
+
+class DailyUsage(BaseModel):
+    """Token usage for a single day."""
+    date: str = Field(..., description="Date in YYYY-MM-DD format")
+    tokens: int = Field(..., description="Total tokens used on this day")
+    cost: float = Field(..., description="Total cost in USD on this day")
+
+
+class TokenUsageSummary(BaseModel):
+    """Summary of user's token usage over a time period."""
+    total_tokens: int = Field(..., description="Total tokens used")
+    total_cost: float = Field(..., description="Total estimated cost in USD")
+    by_operation: dict[str, OperationUsage] = Field(
+        default_factory=dict,
+        description="Usage breakdown by operation type (dictionary_search, article_generation)"
+    )
+    daily_usage: list[DailyUsage] = Field(
+        default_factory=list,
+        description="Daily usage breakdown sorted by date ascending"
+    )
+
+
+class TokenUsageRecord(BaseModel):
+    """Single token usage record."""
+    id: str = Field(..., description="Usage record ID")
+    user_id: str = Field(..., description="User ID who incurred the usage")
+    operation: str = Field(..., description="Operation type: dictionary_search or article_generation")
+    model: str = Field(..., description="Model name used")
+    prompt_tokens: int = Field(..., description="Number of input tokens")
+    completion_tokens: int = Field(..., description="Number of output tokens")
+    total_tokens: int = Field(..., description="Total tokens (prompt + completion)")
+    estimated_cost: float = Field(..., description="Estimated cost in USD")
+    metadata: dict = Field(default_factory=dict, description="Additional metadata")
+    created_at: datetime = Field(..., description="Timestamp of the API call")

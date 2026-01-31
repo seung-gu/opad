@@ -5,6 +5,91 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-01-31
+
+### Added
+**Phase 1: LLM Abstraction Layer**
+- LiteLLM integration for provider-agnostic LLM calls supporting OpenAI, Anthropic, and Google
+- `call_llm_with_tracking()` function with automatic cost calculation using LiteLLM's completion_cost()
+- TokenUsageStats dataclass for tracking token consumption and associated costs
+- `parse_json_from_content()` utility for flexible JSON extraction from LLM responses
+- `get_llm_error_response()` function for consistent error handling across LLM operations
+- Support for multiple LLM providers: OpenAI (gpt-4.1-mini, gpt-4.1), Anthropic (claude-4.5-sonnet), Google (gemini-2.0-flash)
+
+**Phase 2: MongoDB Storage Layer**
+- token_usage collection in MongoDB for persisting token usage records
+- `save_token_usage()` function to persist token usage records with user and operation tracking
+- `get_user_token_summary()` function with MongoDB aggregation pipeline for:
+  - Total tokens consumed and associated costs
+  - Breakdown by operation type (dictionary_search, article_generation, etc.)
+  - Daily usage statistics for trend analysis
+- `get_article_token_usage()` function for article-specific token consumption queries
+- 4 MongoDB indexes for optimized token usage queries:
+  - Compound index on (user_id, created_at) for user-specific queries
+  - Sparse index on article_id for article-specific lookups
+  - Index on created_at for time-based range queries
+  - Compound index on (operation, created_at) for operation analysis
+- Index conflict resolution helpers (_create_index_safe, _resolve_index_conflict) for safe schema migrations
+
+**Phase 3: API Endpoints**
+- Token usage tracking API: automatic token consumption logging on dictionary search operations
+- New endpoint: `GET /usage/me` - retrieve user's token usage summary with daily and operation breakdown
+- New endpoint: `GET /usage/articles/{article_id}` - query token usage records for specific articles
+- TokenUsageSummary model with daily usage breakdown and operation-specific metrics
+- TokenUsageRecord model for detailed token consumption per operation
+- OperationUsage and DailyUsage models for granular usage analytics
+- New route module: `src/api/routes/usage.py` for token usage endpoints
+- Comprehensive test coverage for token usage API endpoints in `src/api/tests/test_usage_routes.py`
+- Unit tests for token usage utilities in `src/utils/tests/test_token_usage.py`
+
+**Phase 4: Dictionary Integration**
+- `src/api/routes/dictionary.py` - Token usage tracking on dictionary search operations
+- Token usage saved with word and language metadata for analytics
+
+**Phase 5: Article Generation (Worker/CrewAI)**
+- `src/utils/token_usage.py` - Token usage utilities with LiteLLM cost calculation
+  - `calculate_cost()`: Calculate LLM costs using LiteLLM's pricing database
+  - `save_crew_token_usage()`: Save per-agent token usage to MongoDB with model information
+- `src/crew/main.py` - Added `CrewResult` wrapper class with `get_agent_usage()` method
+- `src/worker/processor.py` - Integrated token tracking after CrewAI execution using native CrewAI metrics
+- Per-agent token usage tracking for all CrewAI agents during article generation
+
+**Phase 6: Frontend Dashboard**
+- `src/web/app/usage/page.tsx` - Token usage dashboard with period selector (7/30/90/365 days)
+- `src/web/components/UsageSummary.tsx` - Reusable component for displaying token usage statistics
+- `src/web/types/usage.ts` - TypeScript types (TokenUsageRecord, TokenUsageSummary, OperationUsage, DailyUsage)
+- Token usage display on article detail page showing per-operation costs
+- Agent name display (Article Search, Article Selection, Article Rewrite)
+
+**Development Infrastructure**
+- `.claude/hooks/check-complexity.sh` - Automatic radon complexity checker for Python file edits
+- Updated `.claude/agents/code-reviewer.md` with complexity guidelines and thresholds
+
+### Changed
+- `src/worker/processor.py` - Simplified token tracking to use CrewAI's native `agent.llm.get_token_usage_summary()`
+  - Switched from LiteLLM callbacks to CrewAI's native token tracking (resolves CrewAI callback limitation)
+  - Token usage now saved only for authenticated users to optimize database storage
+- Token cost calculation refactored to use `litellm.cost_per_token()` which returns TOTAL cost (not per-token rate)
+- Added agent name field to CrewAI agents config (`src/crew/config/agents.yaml`) for better operation identification
+- `src/web/app/articles/[id]/page.tsx` - Enhanced to display token usage with agent breakdown
+- `src/web/components/MarkdownViewer.tsx` - Improved event handling for better performance and stability
+- Migrated web linting from ESLint to Biome for faster linting and formatting
+- Refactored `src/utils/llm.py` to use LiteLLM for multi-provider LLM support
+- Dictionary search endpoint (`POST /dictionary/search`) now records token usage to database
+- Enhanced `src/api/models.py` with TokenUsageSummary, TokenUsageRecord, OperationUsage, and DailyUsage data models
+
+### Fixed
+- Token tracking stability: Non-fatal error handling ensures token tracking failures don't crash job processing
+- Scroll issue when clicking words (caused by controlled details element re-render)
+- Details expand state preservation during token usage updates
+- Fixed test_processor.py mock locations for correct module path resolution
+
+### Removed
+- `src/worker/job_tracker.py` - JobTracker coordinator class (replaced by native CrewAI tracking)
+- `src/worker/token_tracker.py` - ArticleGenerationTokenTracker class (replaced by CrewAI built-in tracking)
+- `src/worker/tests/test_job_tracker.py`, `test_token_tracker.py` - Tests superseded by token_usage tests
+- OpenAI-specific code from `src/utils/llm.py`
+
 ## [0.7.1] - 2026-01-30
 
 ### Fixed

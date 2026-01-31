@@ -1,11 +1,11 @@
 [project]
 name = "opad"
-version = "0.7.1"
+version = "0.8.0"
 description = "opad using crewAI"
 authors = [{ name = "Your Name", email = "you@example.com" }]
 requires-python = ">=3.10,<3.14"
 dependencies = [
-    "crewai[tools]==1.7.2",
+    "crewai[tools]==1.9.3",
     "boto3",
     "python-dotenv",
     "fastapi>=0.104.0",
@@ -17,7 +17,8 @@ dependencies = [
     "httpx>=0.25.0",
     "python-jose[cryptography]>=3.3.0",
     "bcrypt>=4.0.0",
-    "python-multipart>=0.0.6"
+    "python-multipart>=0.0.6",
+    "litellm>=1.50.0",
 ]
 
 [build-system]
@@ -29,6 +30,11 @@ packages = ["src/crew", "src/api", "src/worker", "src/utils"]
 
 [tool.crewai]
 type = "crew"
+
+[dependency-groups]
+dev = [
+    "radon>=6.0.1",
+]
 
 [project.scripts]
 opad = "crew.main:run"

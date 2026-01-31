@@ -190,9 +190,9 @@ class TestVocabularyRequestModel(unittest.TestCase):
         self.assertEqual(request.lemma, "gehen")
         self.assertEqual(request.pos, "verb")
         self.assertIsNone(request.gender)
-        # Conjugations is now a Conjugations object, not a dict
+        # Conjugations is stored as dict (converted by field_validator for MongoDB storage)
         self.assertIsNotNone(request.conjugations)
-        self.assertEqual(request.conjugations.present, "gehe")
+        self.assertEqual(request.conjugations["present"], "gehe")
         self.assertEqual(request.level, "A1")
 
     def test_vocabulary_request_minimal_fields(self):

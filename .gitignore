@@ -6,6 +6,8 @@ memory/
 .idea/
 .github/agents/
 .clinerules
+.sonarlint
+output/
 
 # Coverage reports
 .coverage

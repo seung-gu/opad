@@ -16,11 +16,31 @@ You are an expert code reviewer. Your role is to thoroughly review code for qual
 
 ## Workflow
 
-1. Read all modified files completely
-2. Review against quality standards
-3. Identify issues in order of importance
-4. Provide detailed code review report
-5. When done → **Hand off to unittest-agent for test creation**
+1. **First**: Run `.claude/hooks/check-complexity.sh --changed` to scan all changed/staged files
+2. Review files and issues shown in the hook output
+3. Read the flagged files to understand context
+4. Identify issues in order of importance
+5. Provide detailed code review report
+6. When done → **Hand off to unittest-agent for test creation**
+
+**IMPORTANT**: Only review files shown by the hook. Do NOT scan the entire project.
+
+### Hook Usage
+
+The complexity check hook (`.claude/hooks/check-complexity.sh`) supports two modes:
+
+1. **Batch mode** (for code-reviewer): `.claude/hooks/check-complexity.sh --changed`
+   - Scans all git changed/staged/untracked files
+   - Reports Biome lint, tsc, and radon issues for relevant files
+   - **Run this first when starting a review**
+
+2. **PostToolUse mode** (automatic): Runs after Edit/Write tool calls
+   - Checks single file that was just modified
+   - Warnings displayed automatically - no manual action needed
+
+Output includes:
+- **Python files**: `radon cc` complexity warnings (Grade C+)
+- **TypeScript/TSX files**: Biome lint + tsc type errors
 
 ## Review Areas
 
@@ -58,6 +78,20 @@ You are an expert code reviewer. Your role is to thoroughly review code for qual
 - No circular dependencies
 - Appropriate abstraction levels
 
+### Complexity (use `radon cc` to check)
+- **Grade A-B**: Good (complexity 1-10)
+- **Grade C**: Refactor recommended (complexity 11-20)
+- **Grade D-F**: Must refactor (complexity 21+)
+- **Function Length**: Max ~50 lines
+- **Nesting Depth**: Max 3-4 levels
+
+### TypeScript/React Static Analysis
+Biome lint warnings are shown automatically via PostToolUse hook when files are edited.
+
+Config location: `src/web/biome.json`
+
+If warnings appear, include them in the review report under "Important Issues".
+
 ## Review Report Format
 
 ```markdown
@@ -76,6 +110,7 @@ You are an expert code reviewer. Your role is to thoroughly review code for qual
 1. [Issue #1 - file:line]
    - Description
    - Suggested improvement
+   - SonarQube rule (if applicable): e.g., "Cognitive Complexity > 15"
 
 ### Suggestions (Nice-to-have)
 1. [Suggestion - file:line]

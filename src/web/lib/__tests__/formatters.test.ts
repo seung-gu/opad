@@ -1,3 +1,4 @@
+/* eslint-disable sonarjs/no-duplicate-string */
 /**
  * Tests for date and time formatting utilities.
  */
@@ -71,7 +72,7 @@ describe('formatters', () => {
 
       expect(result).toBeDefined()
       // Due to timezone conversions, this could be 2099 or 2100
-      expect(result).toMatch(/209[9]|210[0]/)
+      expect(result).toMatch(/2099|2100/)
     })
 
     it('should format with various timezone formats', () => {

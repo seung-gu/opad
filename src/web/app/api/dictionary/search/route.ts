@@ -12,7 +12,7 @@ export const fetchCache = 'force-no-store'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { sentence, word, language } = body
+    const { sentence, word, language, article_id } = body
 
     if (!sentence || !word) {
       return NextResponse.json(
@@ -37,14 +37,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Forward request to FastAPI
+    // Only include article_id if it's a valid non-empty string
+    const requestBody: Record<string, string> = {
+      word: word,
+      sentence: sentence,
+      language: language
+    }
+    if (article_id && typeof article_id === 'string' && article_id.trim()) {
+      requestBody.article_id = article_id
+    }
+
     const response = await fetch(`${apiUrl}/dictionary/search`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        word: word,
-        sentence: sentence,
-        language: language
-      })
+      body: JSON.stringify(requestBody)
     })
 
     if (!response.ok) {
@@ -57,10 +63,11 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json()
     return NextResponse.json(data)
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Dictionary Proxy] Error:', error)
+    const message = error instanceof Error ? error.message : String(error)
     return NextResponse.json(
-      { error: 'Internal server error', message: error?.message || String(error) },
+      { error: 'Internal server error', message },
       { status: 500 }
     )
   }
