@@ -16,10 +16,22 @@ class ReadingMaterialCreator():
     agents_config = 'config/agents.yaml'
     tasks_config = 'config/tasks.yaml'
 
+    def get_role_to_key_map(self) -> dict[str, str]:
+        """Get mapping of agent role -> agent key for display names.
+
+        Returns:
+            Dict mapping role string to key (e.g., "News article finder..." -> "article_finder")
+        """
+        return {
+            config['role'].strip(): key
+            for key, config in self.agents_config.items()
+            if 'role' in config
+        }
+
     @agent
-    def paragraph_finder(self) -> Agent:
+    def article_finder(self) -> Agent:
         return Agent(
-            config=self.agents_config['paragraph_finder'],
+            config=self.agents_config['article_finder'],
             tools=[SerperDevTool()],
             memory=True
         )
@@ -29,8 +41,8 @@ class ReadingMaterialCreator():
         return Agent(config=self.agents_config['article_picker'])
 
     @agent
-    def paragraph_writer(self) -> Agent:
-        return Agent(config=self.agents_config['paragraph_writer'])
+    def article_rewriter(self) -> Agent:
+        return Agent(config=self.agents_config['article_rewriter'])
 
     @task
     def find_news_articles(self) -> Task:

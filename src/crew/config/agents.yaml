@@ -1,5 +1,4 @@
-paragraph_finder:
-  name: Article Search
+article_finder:
   role: >
     News article finder that searches for recent news articles matching the specified topic, language, and difficulty level
   goal: >
@@ -14,7 +13,6 @@ paragraph_finder:
   llm: openai/gpt-4.1-mini
 
 article_picker:
-  name: Article Selection
   role: >
     Article evaluator and selector that chooses the best news article from multiple options
   goal: >
@@ -35,8 +33,7 @@ article_picker:
     You always verify articles exist at their URLs. You never include author names that cannot be verified on the source page.
   llm: openai/gpt-4.1
 
-paragraph_writer:
-  name: Article Rewrite
+article_rewriter:
   role: >
     Educational content writer that adapts news articles to appropriate difficulty levels for language learners
   goal: >

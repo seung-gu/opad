@@ -94,6 +94,10 @@ def save_crew_token_usage(
                 completion_tokens=usage['completion_tokens']
             )
 
+            # Use agent_name if it's a non-empty string, otherwise fallback to agent_role
+            agent_name = usage.get('agent_name')
+            display_name = agent_name if isinstance(agent_name, str) and agent_name else usage['agent_role']
+
             save_token_usage(
                 user_id=user_id,
                 operation="article_generation",
@@ -102,7 +106,7 @@ def save_crew_token_usage(
                 completion_tokens=usage['completion_tokens'],
                 estimated_cost=estimated_cost,
                 article_id=article_id,
-                metadata={"job_id": job_id, "agent_name": usage.get('agent_name') or usage['agent_role']}
+                metadata={"job_id": job_id, "agent_name": display_name}
             )
             total_saved += 1
 

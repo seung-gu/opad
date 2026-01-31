@@ -4,8 +4,6 @@ import warnings
 import logging
 from pathlib import Path
 
-import yaml
-
 # Add src to path for imports when running standalone
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
@@ -23,21 +21,13 @@ if __name__ == "__main__":
 logger = logging.getLogger(__name__)
 
 
-def _load_agent_names() -> dict[str, str]:
-    """Load agent display names from agents.yaml (role -> name mapping)."""
-    yaml_path = Path(__file__).parent / "config" / "agents.yaml"
-    with open(yaml_path) as f:
-        config = yaml.safe_load(f)
-    # Build role -> name mapping (normalize role by stripping whitespace)
-    return {
-        agent['role'].strip(): agent['name']
-        for agent in config.values()
-        if 'role' in agent and 'name' in agent
-    }
+def _format_agent_key(key: str) -> str:
+    """Format agent key as display name: 'article_finder' -> 'Article Finder'."""
+    return key.replace('_', ' ').title()
 
 
-# Load once at module level
-_AGENT_NAMES = _load_agent_names()
+# Load role->key mapping once at module level
+_AGENT_KEYS = ReadingMaterialCreator().get_role_to_key_map()
 
 
 class CrewResult:
@@ -55,14 +45,17 @@ class CrewResult:
             List of dicts with agent_role, model, prompt_tokens, completion_tokens, total_tokens
         """
         usage_list = []
-        for agent in self.crew_instance.agents:
+        agents = getattr(self.crew_instance, 'agents', None) or []
+        for agent in agents:
             # Skip agents without LLM configured
             if not hasattr(agent, 'llm') or agent.llm is None:
                 continue
 
             model = getattr(agent.llm, 'model', 'unknown')
             agent_role = getattr(agent, 'role', 'unknown')
-            agent_name = _AGENT_NAMES.get(agent_role.strip())  # Display name from agents.yaml
+            # Get agent key from YAML, format as display name, fallback to agent.name (for mocks)
+            agent_key = _AGENT_KEYS.get(agent_role.strip())
+            agent_name = _format_agent_key(agent_key) if agent_key else getattr(agent, 'name', None)
 
             # Safely get usage metrics with defaults
             usage = agent.llm.get_token_usage_summary()
