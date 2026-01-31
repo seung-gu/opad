@@ -113,17 +113,18 @@ sequenceDiagram
 
 | From | To | Method | Purpose |
 |------|-----|--------|---------|
-| **Web** | **API** | HTTP | Article 생성, Job enqueue |
+| **Web** | **API** | HTTP | Article 생성, Job enqueue, Token usage 조회 |
 | **Web** | **Next.js API** | HTTP | Dictionary API 요청 (프록시), Vocabulary CRUD 요청 (프록시), Dictionary Stats 요청 (프록시) |
 | **Next.js API** | **API** | HTTP | Dictionary API 프록시 요청, Vocabulary CRUD 프록시 요청, Dictionary Stats 프록시 요청 |
-| **API** | **MongoDB** | (via utils.mongodb) | 중복 체크, Article metadata 저장/조회, Vocabulary 저장/조회 |
+| **API** | **MongoDB** | (via utils.mongodb) | 중복 체크, Article metadata 저장/조회, Vocabulary 저장/조회, Token usage 저장/조회 |
 | **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
 | **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.job_queue` 사용) |
-| **API** | **OpenAI** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 (lemma, definition, related_words) |
+| **API** | **LLM** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 (lemma, definition, related_words) + Token tracking |
+| **API** | **API** | Internal | Token usage endpoints (`/usage/me`, `/usage/articles/{id}`) |
 | **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
 | **Worker** | **Redis** | `SET` | Job 상태 업데이트 (공통 모듈 `api.job_queue` 사용) |
 | **Worker** | **CrewAI** | Function Call | Article 생성 |
-| **Worker** | **MongoDB** | (via utils.mongodb) | Article content 저장 |
+| **Worker** | **MongoDB** | (via utils.mongodb) | Article content 저장, Token usage 저장 |
 
 **참고**: API와 Worker 모두 `api.job_queue` 모듈을 통해 Redis에 접근합니다. MongoDB 접근은 `utils.mongodb` 모듈을 통해 합니다.
 
@@ -209,7 +210,7 @@ Queue: opad:jobs (List)
 ### 4. **데이터 저장소**
 
 #### MongoDB: Article Storage
-- **Article metadata 및 content 저장**
+- **Article metadata 및 content 저장** (`articles` 컬렉션)
   - 중복 체크 (24시간 내 동일 입력 파라미터)
   - Article 조회 및 리스트
 
@@ -217,6 +218,11 @@ Queue: opad:jobs (List)
   - 단어, lemma, 정의, 문장 컨텍스트 저장
   - `related_words` 배열 포함 (분리 동사 등 복잡한 언어 구조 지원)
   - Article별로 그룹화하여 관리
+
+- **Token Usage 추적** (`token_usage` 컬렉션)
+  - LLM API 호출 시 토큰 사용량 및 비용 추적
+  - 사용자별, 작업별 (dictionary_search, article_generation) 집계
+  - 일별 사용량 통계 및 비용 분석
   
 **Article Status** (MongoDB, 영구 저장):
 - `running`: Article 생성 시 초기 상태 (처리 중)
@@ -251,6 +257,833 @@ queued → running → completed / failed
 - **Article Status (MongoDB)**: Article의 최종 상태 (영구 저장)
 - **Job Status (Redis)**: Job 처리의 실시간 상태 (24시간 후 자동 삭제)
 - Article은 `running` 상태로 생성되고, Job이 완료되면 `completed` 또는 `failed`로 업데이트됨
+
+---
+
+## 💰 Token Usage Tracking
+
+### Overview
+The system tracks LLM API token usage and costs for all API calls, enabling cost monitoring, user billing, and usage analytics.
+
+### Architecture
+
+#### 1. LLM Utility Module (`utils/llm.py`)
+Provider-agnostic LLM API calls using LiteLLM with automatic token tracking.
+
+**Functions**:
+- `call_llm_with_tracking()`: Makes LLM API calls and returns content + token statistics
+- `parse_json_from_content()`: Parses JSON from LLM responses (handles markdown code blocks)
+- `get_llm_error_response()`: Converts LLM exceptions to HTTP status codes
+
+**TokenUsageStats Dataclass**:
+```python
+@dataclass
+class TokenUsageStats:
+    model: str              # Model name (e.g., "gpt-4.1-mini")
+    prompt_tokens: int      # Input tokens
+    completion_tokens: int  # Output tokens
+    total_tokens: int       # Total tokens used
+    estimated_cost: float   # Cost in USD (calculated by LiteLLM)
+    provider: str | None    # Provider name (openai, anthropic, google)
+```
+
+**Supported Providers** (via LiteLLM):
+- OpenAI: `"gpt-4.1-mini"`, `"gpt-4.1"`
+- Anthropic: `"anthropic/claude-4.5-sonnet"`
+- Google: `"gemini/gemini-2.0-flash"`
+
+**Example Usage**:
+```python
+from utils.llm import call_llm_with_tracking, TokenUsageStats
+
+content, stats = await call_llm_with_tracking(
+    messages=[{"role": "user", "content": "Hello"}],
+    model="gpt-4.1-mini",
+    max_tokens=200
+)
+
+# stats.model = "gpt-4.1-mini"
+# stats.prompt_tokens = 8
+# stats.completion_tokens = 12
+# stats.estimated_cost = 0.000015
+```
+
+#### 2. MongoDB Storage (`utils/mongodb.py`)
+
+**save_token_usage()**: Save token usage record
+```python
+def save_token_usage(
+    user_id: str,
+    operation: str,  # "dictionary_search" | "article_generation"
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    estimated_cost: float,
+    article_id: Optional[str] = None,
+    metadata: Optional[dict] = None
+) -> Optional[str]:
+    """Save token usage record to MongoDB."""
+```
+
+**get_user_token_summary()**: Get user's token usage summary
+```python
+def get_user_token_summary(user_id: str, days: int = 30) -> dict:
+    """
+    Returns:
+    {
+        'total_tokens': int,
+        'total_cost': float,
+        'by_operation': {
+            'operation_type': {'tokens': int, 'cost': float, 'count': int}
+        },
+        'daily_usage': [
+            {'date': 'YYYY-MM-DD', 'tokens': int, 'cost': float}
+        ]
+    }
+    """
+```
+
+**get_article_token_usage()**: Get token usage for specific article
+```python
+def get_article_token_usage(article_id: str) -> list[dict]:
+    """Returns all token usage records for an article."""
+```
+
+#### 3. Token Usage Collection Schema (MongoDB)
+
+```json
+{
+  "_id": "uuid",
+  "user_id": "uuid",
+  "operation": "dictionary_search | article_generation",
+  "model": "string",
+  "prompt_tokens": 100,
+  "completion_tokens": 50,
+  "total_tokens": 150,
+  "estimated_cost": 0.00025,
+  "article_id": "uuid (optional)",
+  "metadata": {
+    "query": "...",
+    "language": "..."
+  },
+  "created_at": "datetime"
+}
+```
+
+**Indexes**:
+- `(user_id, created_at)`: User usage queries (descending)
+- `article_id`: Article-specific queries (sparse)
+- `created_at`: Time-based queries (descending)
+- `(operation, created_at)`: Operation-type queries
+
+### Integration
+
+#### Dictionary API (`src/api/routes/dictionary.py`)
+
+```python
+@router.post("/search", response_model=SearchResponse)
+async def search_word(request: SearchRequest, current_user: User = Depends(get_current_user_required)):
+    # Build prompt
+    prompt = build_word_definition_prompt(
+        language=request.language,
+        sentence=request.sentence,
+        word=request.word
+    )
+
+    # Call LLM with tracking
+    content, stats = await call_llm_with_tracking(
+        messages=[{"role": "user", "content": prompt}],
+        model="gpt-4.1-mini",
+        max_tokens=200
+    )
+
+    # Log token usage
+    logger.info("Token usage for dictionary search", extra=stats.to_dict())
+
+    # Save to database (Phase 2)
+    save_token_usage(
+        user_id=current_user.id,
+        operation="dictionary_search",
+        model=stats.model,
+        prompt_tokens=stats.prompt_tokens,
+        completion_tokens=stats.completion_tokens,
+        estimated_cost=stats.estimated_cost,
+        metadata={"query": request.word, "language": request.language}
+    )
+
+    # Parse and return response
+    result = parse_json_from_content(content)
+    return SearchResponse(**result)
+```
+
+#### Token Usage API Endpoints (`src/api/routes/usage.py`)
+
+**GET /usage/me**: Get current user's token usage summary
+```python
+@router.get("/me", response_model=TokenUsageSummary)
+async def get_my_usage(
+    days: int = Query(default=30, ge=1, le=365),
+    current_user: User = Depends(get_current_user_required)
+):
+    # Get aggregated summary from MongoDB
+    summary = get_user_token_summary(user_id=current_user.id, days=days)
+
+    # Convert to response models
+    by_operation = {
+        op_name: OperationUsage(**op_data)
+        for op_name, op_data in summary.get('by_operation', {}).items()
+    }
+    daily_usage = [
+        DailyUsage(**day) for day in summary.get('daily_usage', [])
+    ]
+
+    return TokenUsageSummary(
+        total_tokens=summary.get('total_tokens', 0),
+        total_cost=summary.get('total_cost', 0.0),
+        by_operation=by_operation,
+        daily_usage=daily_usage
+    )
+```
+
+**GET /usage/articles/{article_id}**: Get token usage for specific article
+```python
+@router.get("/articles/{article_id}", response_model=list[TokenUsageRecord])
+async def get_article_usage(
+    article_id: str,
+    current_user: User = Depends(get_current_user_required)
+):
+    # Verify article ownership
+    article = get_article(article_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    if article.get('user_id') != current_user.id:
+        raise HTTPException(status_code=403, detail="You don't have permission")
+
+    # Get all usage records for article
+    usage_records = get_article_token_usage(article_id)
+
+    return [TokenUsageRecord(**record) for record in usage_records]
+```
+
+### Token Usage Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant WebUI as Web UI
+    participant API as FastAPI
+    participant Redis
+    participant Worker
+    participant CrewAI
+    participant LiteLLM
+    participant MongoDB
+    participant LLM as LLM Provider
+
+    Note over User,LLM: Dictionary Search with Token Tracking
+    User->>WebUI: Click word
+    WebUI->>API: POST /dictionary/search
+    API->>LLM: Call LLM API (via utils/llm.py)
+    LLM-->>API: Response + usage stats
+    API->>MongoDB: save_token_usage()
+    API-->>WebUI: Definition response
+
+    Note over User,MongoDB: Article Generation with Token Tracking (Phase 6)
+    User->>WebUI: Generate article
+    WebUI->>API: POST /articles/generate
+    API->>Redis: Enqueue job
+    Redis-->>Worker: Dequeue job
+    Worker->>CrewAI: run_crew()
+    CrewAI->>LLM: Multiple API calls (agents execute)
+    LLM-->>CrewAI: Responses (usage tracked internally)
+    CrewAI-->>Worker: CrewResult (with crew_instance)
+    Worker->>Worker: result.get_agent_usage()
+    Worker->>Worker: calculate_cost() per agent
+    Worker->>MongoDB: save_crew_token_usage() (per agent)
+    Worker->>MongoDB: Save article
+
+    Note over User,MongoDB: Usage Summary Retrieval
+    User->>WebUI: View usage page
+    WebUI->>API: GET /usage/me?days=30
+    API->>MongoDB: get_user_token_summary()
+    MongoDB-->>API: Aggregated summary
+    API-->>WebUI: TokenUsageSummary
+    WebUI-->>User: Display usage charts
+
+    Note over User,MongoDB: Article Usage Details
+    User->>WebUI: View article usage
+    WebUI->>API: GET /usage/articles/{id}
+    API->>MongoDB: get_article_token_usage()
+    MongoDB-->>API: Usage records (all LLM calls)
+    API-->>WebUI: List of TokenUsageRecord
+    WebUI-->>User: Display usage details
+```
+
+### Future Enhancements
+
+**Phase 1** (Completed):
+- ✅ LiteLLM integration with token tracking
+- ✅ TokenUsageStats dataclass
+- ✅ MongoDB storage functions
+- ✅ Dictionary API integration with logging
+
+**Phase 2** (Completed):
+- ✅ Database storage of token usage records
+- ✅ User token summary endpoint
+- ✅ Article token usage tracking
+
+**Phase 3** (Completed):
+- ✅ API endpoints for token usage (`/usage/me`, `/usage/articles/{id}`)
+- ✅ Authentication and authorization for usage endpoints
+- ✅ Usage summary with daily breakdown and operation filtering
+
+**Phase 4** (Completed):
+- ✅ CrewAI article generation token tracking via LiteLLM callbacks
+- ✅ ArticleGenerationTokenTracker class for worker integration
+- ✅ Automatic token tracking for authenticated users during article generation
+
+**Phase 5** (Completed):
+- ✅ JobTracker coordinator pattern for unified tracking
+- ✅ Context manager protocol for automatic setup/cleanup
+- ✅ Proper LiteLLM callback lifecycle management
+- ✅ Nested context support with callback state preservation
+
+**Phase 6** (Completed):
+- ✅ Token usage module (`src/utils/token_usage.py`)
+- ✅ CrewAI built-in token tracking (via `agent.llm.get_token_usage_summary()`)
+- ✅ `CrewResult` class with `get_agent_usage()` method
+- ✅ `calculate_cost()` function using LiteLLM pricing database
+- ✅ `save_crew_token_usage()` for per-agent MongoDB storage
+
+**Phase 7** (Planned):
+- Usage analytics dashboard (Frontend)
+- Cost alerts and limits
+- Per-user billing reports
+
+---
+
+## 🎯 JobTracker Architecture (Phase 5)
+
+### Overview
+
+JobTracker is a coordinator pattern that unifies two parallel tracking systems during article generation:
+1. **JobProgressListener** - Tracks CrewAI task progress (task-level events)
+2. **ArticleGenerationTokenTracker** - Tracks LLM token usage (API-level callbacks)
+
+### Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph Worker["Worker Process"]
+        ProcessJob[process_job]
+        JobTracker[JobTracker Context Manager]
+
+        subgraph Trackers["Tracking Components"]
+            ProgressListener[JobProgressListener<br/>CrewAI Events]
+            TokenTracker[ArticleGenerationTokenTracker<br/>LiteLLM Callbacks]
+        end
+
+        CrewAI[run_crew<br/>Article Generation]
+    end
+
+    subgraph Storage["Data Storage"]
+        Redis[(Redis<br/>Job Status)]
+        MongoDB[(MongoDB<br/>Token Usage)]
+    end
+
+    subgraph Events["Event Sources"]
+        CrewAIEvents[CrewAI Event Bus<br/>Task Start/Complete]
+        LiteLLMCallbacks[LiteLLM Callbacks<br/>API Success/Failure]
+    end
+
+    ProcessJob -->|with JobTracker| JobTracker
+    JobTracker -->|__enter__<br/>creates| ProgressListener
+    JobTracker -->|__enter__<br/>creates| TokenTracker
+    JobTracker -->|runs| CrewAI
+
+    CrewAI -->|emits events| CrewAIEvents
+    CrewAI -->|makes LLM calls| LiteLLMCallbacks
+
+    CrewAIEvents -->|triggers| ProgressListener
+    LiteLLMCallbacks -->|triggers| TokenTracker
+
+    ProgressListener -->|update_job_status| Redis
+    TokenTracker -->|save_token_usage| MongoDB
+
+    JobTracker -->|__exit__<br/>cleanup| ProgressListener
+    JobTracker -->|__exit__<br/>restore callbacks| TokenTracker
+
+    style JobTracker fill:#4a90e2,stroke:#2563eb,color:#fff
+    style ProgressListener fill:#10a37f,stroke:#0d8a6a,color:#fff
+    style TokenTracker fill:#10a37f,stroke:#0d8a6a,color:#fff
+    style Redis fill:#dc382d,stroke:#a12822,color:#fff
+    style MongoDB fill:#13aa52,stroke:#0f8a43,color:#fff
+```
+
+### Context Manager Lifecycle
+
+```python
+# Worker code
+with crewai_event_bus.scoped_handlers():
+    with JobTracker(job_id, user_id, article_id) as tracker:
+        # 1. __enter__() runs automatically
+        #    - Creates JobProgressListener
+        #    - Creates ArticleGenerationTokenTracker (if user_id)
+        #    - Saves litellm.callbacks to _original_callbacks
+        #    - Sets litellm.callbacks = [token_tracker]
+
+        result = run_crew(inputs)
+
+        # 2. During execution
+        #    - CrewAI emits task events → JobProgressListener → Redis
+        #    - CrewAI makes LLM calls → LiteLLM → TokenTracker → MongoDB
+
+        # 3. Check for failures
+        if tracker.listener.task_failed:
+            return False
+
+    # 4. __exit__() runs automatically (even on exception)
+    #    - Restores litellm.callbacks = _original_callbacks
+    #    - Prevents callback leakage between jobs
+```
+
+### Key Design Decisions
+
+**Why Context Manager?**
+- Automatic setup and cleanup (no manual litellm.callbacks management)
+- Exception-safe (cleanup always runs via `__exit__`)
+- Pythonic and readable (`with` statement)
+
+**Why Save/Restore Callbacks Instead of Clearing?**
+- Supports nested JobTracker contexts (future-proof)
+- Prevents accidentally clearing callbacks from outer scope
+- More defensive for long-running worker processes
+
+**Why Two Separate Trackers?**
+- Different abstraction levels (task-level vs API-level)
+- Different storage backends (Redis vs MongoDB)
+- Different lifetimes (ephemeral vs permanent)
+- Independent failure modes (one can fail without affecting other)
+
+**Why Coordinate Them?**
+- Shared lifecycle (both track same job)
+- Shared context (job_id, user_id, article_id)
+- Single entry point for worker code
+- Consistent error handling
+
+### Data Flow Comparison
+
+| Aspect | JobProgressListener | ArticleGenerationTokenTracker |
+|--------|---------------------|-------------------------------|
+| **Trigger** | CrewAI task events | LLM API calls |
+| **Frequency** | ~4-5 times per job | ~5-10 times per job |
+| **Granularity** | Coarse (task start/end) | Fine (per API call) |
+| **Data** | Task name, progress % | Model, tokens, cost |
+| **Storage** | Redis (job status) | MongoDB (usage records) |
+| **TTL** | 24 hours (auto-expire) | Permanent |
+| **Consumer** | Frontend polling | Analytics/billing |
+
+### Error Handling
+
+**Non-Fatal Tracking**:
+- Both trackers catch all exceptions internally
+- Failures logged as warnings but never crash worker
+- Article generation continues even if tracking fails
+- Rationale: Tracking is observability, not critical path
+
+**Cleanup Guarantees**:
+```python
+def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    """Always runs, even on exception."""
+    if self.token_tracker is not None:
+        litellm.callbacks = self._original_callbacks  # Always restore
+```
+
+### Testing Considerations
+
+**Unit Tests Should Cover**:
+- `JobTracker.__enter__()` creates both trackers
+- `JobTracker.__exit__()` restores callbacks
+- Anonymous users skip token tracking
+- Callback state preserved across nested contexts
+- Cleanup runs even on exceptions
+
+**Integration Tests Should Cover**:
+- Full article generation with both trackers active
+- Progress updates appear in Redis
+- Token usage records appear in MongoDB
+- Multiple jobs don't interfere with each other
+
+---
+
+## 🔧 Worker Token Tracking (Phase 4-6)
+
+### Overview
+
+The Worker service tracks token usage during CrewAI article generation. **Phase 6** introduced a new approach using **CrewAI's built-in token tracking** instead of LiteLLM callbacks, which provides more reliable per-agent usage metrics.
+
+### Architecture
+
+**Phase 6 Data Flow (Current):**
+```
+Worker → process_job() → run_crew() → CrewAI agents execute
+                                            ↓
+                                     CrewAI tracks usage internally
+                                            ↓
+                                     CrewResult.get_agent_usage()
+                                            ↓
+                                     calculate_cost() (LiteLLM pricing)
+                                            ↓
+                                     save_crew_token_usage() → MongoDB
+```
+
+**Key Design Decision (Phase 6):**
+CrewAI manages LLM calls internally through its agent.llm instances. Each agent has a separate LLM instance with independent usage tracking via `agent.llm.get_token_usage_summary()`. This approach is preferred over LiteLLM callbacks because:
+- CrewAI's internal tracking is more reliable for per-agent metrics
+- No need to intercept LLM calls at the LiteLLM layer
+- Simpler implementation without callback lifecycle management
+
+### Token Usage Module (Phase 6)
+
+**File**: `src/utils/token_usage.py`
+
+**Purpose**: Token usage utilities for cost calculation and tracking. Provides functions to calculate LLM costs using LiteLLM's pricing database and save CrewAI agent token usage to MongoDB.
+
+**Functions**:
+
+#### calculate_cost()
+
+```python
+def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """Calculate estimated cost using LiteLLM's pricing data.
+
+    Note: LiteLLM pricing may become outdated. Costs are estimates only.
+
+    Args:
+        model: Model name (e.g., 'gpt-4.1', 'gpt-4.1-mini')
+        prompt_tokens: Number of input tokens
+        completion_tokens: Number of output tokens
+
+    Returns:
+        Estimated cost in USD, or 0.0 if pricing unavailable
+    """
+```
+
+**Error Handling**:
+- Returns 0.0 if model not in LiteLLM pricing database
+- Gracefully handles KeyError, ValueError, AttributeError
+- Logs unexpected errors at debug level
+
+#### save_crew_token_usage()
+
+```python
+def save_crew_token_usage(
+    result: CrewResult,
+    user_id: str,
+    article_id: str | None,
+    job_id: str
+) -> None:
+    """Save token usage for each CrewAI agent to MongoDB.
+
+    Uses CrewAI's built-in token tracking (agent.llm.get_token_usage_summary())
+    to get per-agent, per-model usage metrics.
+    """
+```
+
+**Behavior**:
+- Iterates through all agents in CrewResult
+- Skips agents with zero token usage
+- Calculates cost using `calculate_cost()` with LiteLLM pricing
+- Saves each agent's usage as separate MongoDB record
+- Non-fatal: failures don't crash job processing
+
+**Data Saved per Agent**:
+```json
+{
+  "user_id": "user-uuid",
+  "operation": "article_generation",
+  "model": "gpt-4.1",
+  "prompt_tokens": 2000,
+  "completion_tokens": 1500,
+  "estimated_cost": 0.0525,
+  "article_id": "article-uuid",
+  "metadata": {"job_id": "job-uuid"}
+}
+```
+
+---
+
+### CrewResult Class (Phase 6)
+
+**File**: `src/crew/main.py`
+
+**Purpose**: Container for crew execution result with usage metrics extraction.
+
+```python
+class CrewResult:
+    """Container for crew execution result and usage metrics."""
+
+    def __init__(self, result, crew_instance):
+        self.raw = result.raw
+        self.result = result
+        self.crew_instance = crew_instance
+
+    def get_agent_usage(self) -> list[dict]:
+        """Get token usage per agent with model info.
+
+        Returns:
+            List of dicts with agent_role, model, prompt_tokens,
+            completion_tokens, total_tokens, successful_requests
+        """
+```
+
+**Usage Example**:
+```python
+result = run_crew(inputs=ctx.inputs)
+agent_usage = result.get_agent_usage()
+# [
+#   {'agent_role': 'News Researcher', 'model': 'gpt-4.1', 'prompt_tokens': 500, ...},
+#   {'agent_role': 'Content Writer', 'model': 'gpt-4.1', 'prompt_tokens': 2000, ...},
+#   ...
+# ]
+```
+
+**Why CrewAI Built-in Tracking?**
+- Each CrewAI agent has its own LLM instance with independent usage tracking
+- `agent.llm.get_token_usage_summary()` provides accurate per-agent metrics
+- More reliable than intercepting LLM calls at LiteLLM callback layer
+- Simpler implementation without callback lifecycle management
+
+---
+
+### JobTracker Coordinator (Phase 5)
+
+**File**: `src/worker/job_tracker.py`
+
+**Purpose**: Unified coordinator that manages job progress tracking via CrewAI events. (Note: Token tracking moved to `save_crew_token_usage()` in Phase 6.)
+
+**Architecture**:
+```python
+class JobTracker:
+    """Coordinator for job progress and token tracking during article generation.
+
+    Unifies:
+    1. JobProgressListener - Real-time task progress updates via CrewAI events
+    2. ArticleGenerationTokenTracker - LLM token usage tracking via LiteLLM callbacks
+    """
+```
+
+**Key Features**:
+- **Context Manager Protocol**: Automatic setup (`__enter__`) and cleanup (`__exit__`)
+- **Callback Lifecycle Management**: Saves and restores LiteLLM callbacks for nested contexts
+- **Conditional Tracking**: Only tracks tokens for authenticated users (user_id exists)
+- **Memory Leak Prevention**: Always clears callbacks in `__exit__`, even on exceptions
+
+**Usage Pattern** (`src/worker/processor.py`):
+
+```python
+def process_job(job_data: dict) -> bool:
+    ctx = JobContext.from_dict(job_data)
+
+    try:
+        from crewai.events.event_bus import crewai_event_bus
+
+        with crewai_event_bus.scoped_handlers():
+            with JobTracker(ctx.job_id, ctx.user_id, ctx.article_id) as tracker:
+                # Fetch vocabulary for personalized generation
+                if ctx.user_id and ctx.inputs.get('language'):
+                    vocab = get_user_vocabulary_for_generation(ctx.user_id, ctx.inputs['language'], 50)
+                    if vocab:
+                        ctx.inputs['vocabulary_list'] = vocab
+
+                # Execute CrewAI (all LLM calls automatically tracked)
+                result = run_crew(inputs=ctx.inputs)
+
+                # Check for task failures
+                if tracker.listener.task_failed:
+                    logger.warning("Task failed during execution")
+                    if ctx.article_id:
+                        update_article_status(ctx.article_id, 'failed')
+                    return False
+
+        # Save to MongoDB
+        save_article(ctx.article_id, result.raw, ctx.started_at)
+        ctx.update_status('completed', 100, 'Article generated successfully!')
+        return True
+
+    except Exception as e:
+        logger.error(f"Job failed: {e}")
+        ctx.mark_failed(translate_error(e), f"{type(e).__name__}: {str(e)[:200]}")
+        return False
+```
+
+**Lifecycle**:
+
+1. **`__enter__()`** (lines 80-121):
+   - Creates `JobProgressListener` for CrewAI task progress events
+   - Creates `ArticleGenerationTokenTracker` for token tracking (if user_id exists)
+   - Saves original `litellm.callbacks` to `_original_callbacks`
+   - Sets `litellm.callbacks = [tracker]` to enable token tracking
+   - Returns self for use in context manager
+
+2. **`__exit__()`** (lines 123-150):
+   - Restores original `litellm.callbacks` from `_original_callbacks`
+   - Prevents callback interference between jobs
+   - Always executes, even on exceptions (cleanup guaranteed)
+
+**Benefits**:
+- **Single Responsibility**: Each tracker handles one concern (progress vs tokens)
+- **Proper Cleanup**: Context manager ensures callbacks never leak between jobs
+- **Nested Context Support**: Saves/restores callbacks for nested JobTracker usage
+- **Fail-Safe**: Cleanup happens even on exceptions
+
+### ArticleGenerationTokenTracker Class
+
+**File**: `src/worker/token_tracker.py`
+
+**Purpose**: LiteLLM callback handler that intercepts all LLM API calls during article generation and records token usage to MongoDB.
+
+**Key Methods**:
+
+1. `log_success_event(kwargs, response_obj, start_time, end_time)` (lines 67-157)
+   - Called by LiteLLM after each successful LLM API call
+   - Extracts model name, prompt_tokens, completion_tokens from response
+   - Calculates estimated cost using `litellm.completion_cost()`
+   - Saves token usage to MongoDB via `save_token_usage()`
+   - Never crashes worker on tracking failures (catch-all exception handler)
+
+2. `log_failure_event(kwargs, response_obj, start_time, end_time)` (lines 179-216)
+   - Called when LLM API call fails
+   - Logs failure for observability (does not save to MongoDB)
+   - Truncates error messages to 200 chars to prevent log bloat
+
+**Integration**: Now managed by `JobTracker` coordinator (see above)
+
+### How LiteLLM Callbacks Work
+
+**LiteLLM Integration**:
+- LiteLLM provides a `CustomLogger` base class for callback handlers
+- When `litellm.callbacks = [tracker]` is set, all LLM API calls are intercepted
+- CrewAI agents use LiteLLM internally, so all agent LLM calls are tracked
+- Callbacks are invoked automatically:
+  - `log_success_event()` on successful API call
+  - `log_failure_event()` on failed API call
+
+**Per-Call Tracking**:
+- Each LLM API call during article generation generates a separate token usage record
+- An article generation may involve 5-10 LLM calls (research, writing, editing, etc.)
+- Total article cost = sum of all individual call costs
+- All records share the same `article_id` for aggregation
+
+**Callback Lifecycle with JobTracker**:
+```
+1. Worker starts job
+2. JobTracker.__enter__():
+   - Save original callbacks: _original_callbacks = litellm.callbacks.copy()
+   - Register new callback: litellm.callbacks = [tracker]
+3. CrewAI agent 1 makes LLM call → tracker.log_success_event() → save to MongoDB
+4. CrewAI agent 2 makes LLM call → tracker.log_success_event() → save to MongoDB
+5. ... (multiple calls)
+6. CrewAI completes
+7. JobTracker.__exit__():
+   - Restore callbacks: litellm.callbacks = _original_callbacks
+   - Prevents interference with next job or nested JobTracker
+```
+
+**Why Save/Restore Callbacks?**
+- Supports nested JobTracker contexts (if needed in future)
+- Prevents accidentally clearing callbacks set by outer scope
+- More robust than simply setting to empty list
+- Defensive programming for long-running worker processes
+
+### Token Usage Record Structure
+
+**Saved to MongoDB** (via `save_token_usage()`):
+```json
+{
+  "_id": "usage-uuid",
+  "user_id": "user-uuid",
+  "operation": "article_generation",
+  "model": "gpt-4.1-mini",
+  "prompt_tokens": 2000,
+  "completion_tokens": 1500,
+  "total_tokens": 3500,
+  "estimated_cost": 0.0525,
+  "article_id": "article-uuid",
+  "metadata": {
+    "job_id": "job-uuid"
+  },
+  "created_at": "2026-01-30T10:00:00Z"
+}
+```
+
+**Multiple Records Per Article**:
+- Each LLM call during generation creates a separate record
+- Aggregation query sums all records with same `article_id`
+- Example: Research agent (500 tokens) + Writing agent (3000 tokens) + Editing agent (800 tokens) = 4300 total tokens
+
+### Error Handling
+
+**Non-Fatal Failures**:
+- Token tracking failures never crash the worker
+- All exceptions caught and logged as warnings
+- Article generation continues even if tracking fails
+- Rationale: Tracking is observability, not critical functionality
+
+**Cost Calculation Fallback**:
+- If `litellm.completion_cost()` fails, cost is set to 0.0
+- Tokens are still tracked (tokens always available in response)
+- Allows cost calculation to be updated retroactively from token counts
+
+### Anonymous User Handling
+
+**Conditional Tracking** (`src/worker/processor.py:54-63`):
+```python
+if ctx.user_id:
+    token_tracker = ArticleGenerationTokenTracker(...)
+    litellm.callbacks = [token_tracker]
+```
+
+- Only tracks for authenticated users (user_id exists)
+- Anonymous users (no user_id) skip token tracking entirely
+- Prevents null user_id records in MongoDB
+- Aligns with dictionary API behavior (requires authentication)
+
+### Security Considerations
+
+**User ID Validation**:
+- `user_id` passed from job queue (validated during job creation in API)
+- Worker trusts job queue data (internal system boundary)
+- No additional validation needed in worker
+
+**Memory Leaks Prevention**:
+- `finally` block always clears `litellm.callbacks = []`
+- Prevents callbacks from affecting subsequent jobs
+- Critical in long-running worker processes
+
+### Testing
+
+**Test File**: `src/worker/tests/test_token_tracker.py`
+
+**Coverage**:
+- Callback registration and cleanup
+- Successful LLM call tracking
+- Failed LLM call handling
+- Cost calculation fallback
+- MongoDB save failures (non-fatal)
+
+### Retrieval API
+
+**Get Article Usage**:
+```python
+# API endpoint: GET /usage/articles/{article_id}
+records = get_article_token_usage(article_id)
+total_cost = sum(r['estimated_cost'] for r in records)
+```
+
+**Returns**:
+- All token usage records for article (multiple LLM calls)
+- Sorted by `created_at` ascending (chronological order)
+- Includes metadata with `job_id` for traceability
 
 ---
 
@@ -367,7 +1200,10 @@ opad/
 │   ├── worker/           # Worker 서비스 (Python)
 │   │   ├── __init__.py
 │   │   ├── main.py       # Worker 진입점
-│   │   └── processor.py  # Job 처리 로직
+│   │   ├── processor.py  # Job 처리 로직
+│   │   ├── job_tracker.py      # JobTracker coordinator (Phase 5)
+│   │   ├── token_tracker.py    # ArticleGenerationTokenTracker
+│   │   └── context.py    # JobContext helper
 │   │
 │   ├── web/              # Web 서비스 (Next.js)
 │   │   ├── app/          # Next.js App Router
@@ -403,7 +1239,8 @@ opad/
 │       ├── mongodb.py    # MongoDB 연결 및 작업
 │       ├── logging.py    # Structured logging 설정
 │       ├── llm.py        # OpenAI API 공통 함수
-│       └── prompts.py    # LLM 프롬프트 템플릿
+│       ├── prompts.py    # LLM 프롬프트 템플릿
+│       └── token_usage.py # Token usage calculation and tracking (Phase 6)
 │
 └── Dockerfile.*          # 서비스별 Dockerfile (이슈 #9)
 ```
@@ -412,34 +1249,60 @@ opad/
 | 폴더 | 역할 | 런타임 | 포트 |
 |------|------|--------|------|
 | `src/api/` | CRUD + Job enqueue + Dictionary API | Python (FastAPI) | 8001 (default) |
-| `src/worker/` | CrewAI 실행 | Python | - |
+| `src/worker/` | CrewAI 실행 + Job/Token Tracking | Python | - |
 | `src/web/` | UI | Node.js (Next.js) | 3000 |
-| `src/opad/` | CrewAI 로직 (공유) | - | - |
+| `src/crew/` | CrewAI 로직 (공유) | - | - |
 | `src/utils/` | 공통 유틸 (공유) | - | - |
+
+### Worker 모듈 구성 (Phase 5)
+| 파일 | 역할 | 의존성 |
+|------|------|--------|
+| `worker/main.py` | Worker 진입점 (infinite loop) | `processor.py` |
+| `worker/processor.py` | Job 처리 로직 (process_job) | `job_tracker.py`, `crew/main.py` |
+| `worker/job_tracker.py` | JobTracker coordinator (context manager) | `token_tracker.py`, `crew/progress_listener.py` |
+| `worker/token_tracker.py` | ArticleGenerationTokenTracker (LiteLLM callback) | `utils/mongodb.py` |
+| `worker/context.py` | JobContext helper (job data validation) | `api/job_queue.py` |
+| `crew/progress_listener.py` | JobProgressListener (CrewAI event listener) | `api/job_queue.py` |
 
 ---
 
 ## 🔑 공통 유틸리티 모듈
 
 ### LLM 유틸리티 (`utils/llm.py`)
-OpenAI API 호출을 위한 공통 함수들:
+Provider-agnostic LLM API 호출 및 토큰 추적을 위한 공통 함수들 (LiteLLM 기반):
 
-- **`get_openai_api_key()`**: 환경변수에서 OpenAI API 키 로딩
-- **`call_openai_chat()`**: OpenAI Chat Completions API 호출 (범용 함수)
+- **`call_llm_with_tracking()`**: LLM API 호출 + 토큰 사용량 추적 (범용 함수)
+  - 반환값: `(content: str, stats: TokenUsageStats)`
+  - OpenAI, Anthropic, Google 등 다양한 프로바이더 지원
+  - 자동 비용 계산 (LiteLLM 내장 가격 데이터베이스 사용)
+- **`TokenUsageStats`**: 토큰 사용량 통계 dataclass
+  - 필드: `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `estimated_cost`, `provider`
 - **`parse_json_from_content()`**: LLM 응답에서 JSON 파싱 (다양한 형식 지원)
+  - 일반 JSON, 마크다운 코드 블록 (```json), 텍스트 내 JSON 추출 지원
 - **`get_llm_error_response()`**: LLM 관련 예외를 HTTP 상태 코드로 변환
 
 **사용 예시:**
 ```python
-from utils.llm import call_openai_chat, parse_json_from_content
+from utils.llm import call_llm_with_tracking, parse_json_from_content
 
-content = await call_openai_chat(
-    prompt="...",
+# LLM 호출 + 토큰 추적
+content, stats = await call_llm_with_tracking(
+    messages=[{"role": "user", "content": "Hello"}],
     model="gpt-4.1-mini",
     max_tokens=200
 )
+
+# 토큰 사용량 로깅
+logger.info("Token usage", extra=stats.to_dict())
+
+# JSON 파싱
 result = parse_json_from_content(content)
 ```
+
+**지원 프로바이더** (LiteLLM):
+- OpenAI: `"gpt-4.1-mini"`, `"gpt-4.1"`
+- Anthropic: `"anthropic/claude-4.5-sonnet"`
+- Google: `"gemini/gemini-2.0-flash"`
 
 ### 프롬프트 템플릿 (`utils/prompts.py`)
 재사용 가능한 LLM 프롬프트 빌더 함수들:
@@ -456,6 +1319,68 @@ prompt = build_word_definition_prompt(
     word="hängt"
 )
 ```
+
+---
+
+## 📡 Dynamic Endpoint Discovery
+
+### Tag-Based Endpoint Grouping
+
+The `/endpoints` endpoint dynamically generates an HTML page listing all registered API routes, grouped by their tags. This system requires no code changes when new routes are added—they automatically appear in the listing.
+
+**Endpoint**: `GET /endpoints`
+
+**File**: `src/api/routes/endpoints.py`
+
+**How It Works**:
+
+1. **Route Introspection**: Scans `app.routes` to collect all routes with methods and paths
+2. **Tag Extraction**: Reads tags from route definitions (e.g., `tags=["articles"]`, `tags=["usage"]`)
+3. **Dynamic Grouping**: Groups endpoints by tag using `group_endpoints_by_tag()`
+4. **HTML Generation**: Renders grouped endpoints as styled HTML page
+
+**Helper Functions**:
+
+- **`group_endpoints_by_tag(endpoints)`**: Groups endpoints by tag (first tag if multiple), returns `dict[tag, list[endpoints]]`
+  - Uses `defaultdict(list)` to avoid KeyError
+  - Filters out `EXCLUDED_TAGS` (e.g., "meta")
+  - Sorts endpoints within each group by `(path, method)`
+  - Assigns "other" tag if endpoint has no tags
+
+- **`get_sorted_tags(grouped)`**: Returns alphabetically sorted tag list with "other" at end
+
+- **`format_endpoint(ep)`**: Formats single endpoint as HTML with method badge, path, and summary
+
+- **`format_tag_title(tag)`**: Converts tag name to display title (e.g., "articles" → "Articles Endpoints")
+
+**Configuration**:
+
+```python
+# src/api/routes/endpoints.py:13-14
+EXCLUDED_TAGS = {"meta"}  # Tags to hide from listing
+EXCLUDED_PATHS = {"/docs", "/openapi.json", "/redoc"}  # Paths to skip
+```
+
+**Example Route Definition**:
+
+```python
+# src/api/routes/usage.py
+router = APIRouter(tags=["usage"])  # Tag used for grouping
+
+@router.get("/me", summary="Get current user's token usage summary")
+async def get_my_usage(...):
+    """Detailed description..."""
+```
+
+**Benefits**:
+
+- **Zero-maintenance**: New routes automatically appear in listing
+- **Tag-based organization**: Routes grouped by domain (articles, usage, dictionary)
+- **Clean HTML output**: Color-coded HTTP methods (GET=blue, POST=green, DELETE=red)
+- **No hardcoding**: Eliminates manual endpoint lists
+
+**Usage**:
+Visit `/endpoints` in browser to see all available API routes grouped by tag.
 
 ---
 
@@ -790,6 +1715,90 @@ safelist: [
 ```
 
 **Impact**: CEFR level badges now display correctly with proper colors
+
+### Token Usage Display
+
+The article detail page (`src/web/app/articles/[id]/page.tsx`) displays token usage with smart aggregation and auto-refresh functionality.
+
+#### TokenUsageSection Component
+
+**Location**: `src/web/app/articles/[id]/page.tsx:46-181`
+
+**Purpose**: Displays token usage breakdown for an article with aggregation logic.
+
+**Features**:
+- Displays total tokens, prompt tokens, completion tokens, and estimated cost
+- Shows detailed breakdown per operation with agent names
+- Aggregates dictionary searches into cumulative totals
+- Uses expandable details for viewing individual operations
+
+#### Aggregation Logic
+
+```typescript
+// dictionary_search: aggregate by operation+model
+// article_generation: keep separate using record id
+const key = record.operation === 'dictionary_search'
+  ? `op:dictionary_search:${record.model}`
+  : `id:${record.id}`
+```
+
+**Rationale**:
+- **Article generation records**: Kept separate to show individual agent contributions (Article Search, Article Selection, Article Rewrite)
+- **Dictionary search records**: Aggregated into cumulative totals per model since individual lookups are less meaningful
+
+#### Agent Names
+
+Article generation records include `agent_name` in metadata:
+- `Article Search`: Research agent that finds relevant articles
+- `Article Selection`: Agent that selects the best article for adaptation
+- `Article Rewrite`: Agent that rewrites content for the target level
+
+The `formatOperationName()` helper prioritizes `agent_name` over the raw operation type for display.
+
+#### Auto-Refresh Mechanism
+
+**Flow**:
+```
+User clicks word in MarkdownViewer
+    |
+    v
+Dictionary API call (POST /dictionary/search)
+    |
+    v
+Token usage record saved to MongoDB
+    |
+    v
+onTokenUsageUpdate callback triggered
+    |
+    v
+fetchTokenUsage(true) called with isRefresh=true
+    |
+    v
+Token usage section updates without loading spinner
+```
+
+**Implementation** (`src/web/app/articles/[id]/page.tsx`):
+
+1. **MarkdownViewer receives callback**: `onTokenUsageUpdate?: () => void`
+2. **After dictionary search**: Callback is invoked in `handleWordClick` (line 328)
+3. **Article page passes handler**: `onTokenUsageUpdate={() => fetchTokenUsage(true)}`
+4. **Silent refresh**: `isRefresh=true` skips loading state to prevent UI flicker
+
+```typescript
+const fetchTokenUsage = useCallback(async (isRefresh = false) => {
+  if (article?.status !== 'completed') return
+
+  if (!isRefresh) {
+    setTokenUsageLoading(true)  // Only show loading on initial fetch
+  }
+  // ... fetch logic
+}, [article?.status, articleId])
+```
+
+**Benefits**:
+- Users see updated token costs immediately after word lookups
+- No full page reload required
+- Silent refresh prevents disruptive UI changes
 
 ### Vocabulary Management Endpoints
 

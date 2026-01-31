@@ -19,6 +19,10 @@ import { usePagination } from '@/hooks/usePagination'
  * - Link to individual article pages
  * - Handle loading and processing states
  */
+function formatArticleCount(total: number): string {
+  return `${total} article${total === 1 ? '' : 's'} found`
+}
+
 export default function ArticlesPage() {
   const [articles, setArticles] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)
@@ -105,7 +109,7 @@ export default function ArticlesPage() {
             </Link>
           </div>
           <p className="text-gray-600">
-            {loading ? 'Loading...' : `${total} article${total !== 1 ? 's' : ''} found`}
+            {loading ? 'Loading...' : formatArticleCount(total)}
           </p>
         </div>
 
@@ -115,12 +119,20 @@ export default function ArticlesPage() {
             selectedStatus={selectedStatus}
             onStatusChange={handleStatusChange}
           />
-          <Link
-            href="/vocabulary"
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 transition-colors font-medium text-sm"
-          >
-            Vocabulary
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/usage"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition-colors font-medium text-sm"
+            >
+              Usage
+            </Link>
+            <Link
+              href="/vocabulary"
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 transition-colors font-medium text-sm"
+            >
+              Vocabulary
+            </Link>
+          </div>
         </div>
 
         {/* Error State */}

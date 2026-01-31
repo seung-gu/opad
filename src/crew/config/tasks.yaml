@@ -19,7 +19,7 @@ find_news_articles:
       ]
     }
     All keys must be in double quotes. All string values must be in double quotes. Use null for optional fields that are not available.
-  agent: paragraph_finder
+  agent: article_finder
   output_file: output/found_articles.json
 
 pick_best_article:
@@ -85,7 +85,7 @@ adapt_news_article:
     The content should be clear, engaging, and suitable as educational reading material.
     The output must start with a source section containing: source name, source URL (as markdown link), publication date, and author (if available).
     The output must NOT include any vocabulary list, key vocabulary section, or word list at the end.
-  agent: paragraph_writer
+  agent: article_rewriter
   context:
     - pick_best_article
   output_file: output/adapted_reading_material.md

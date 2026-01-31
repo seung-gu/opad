@@ -7,6 +7,35 @@ import { split } from 'sentence-splitter'
 import { Vocabulary } from '@/types/article'
 import { fetchWithAuth } from '@/lib/api'
 
+// Data attribute constants to avoid duplication
+const DATA_ATTR = {
+  WORD: 'data-word',
+  SPAN_ID: 'data-span-id',
+  LEMMA: 'data-lemma',
+  DEFINITION: 'data-definition',
+  SENTENCE: 'data-sentence',
+  RELATED_WORDS: 'data-related-words',
+  POS: 'data-pos',
+  GENDER: 'data-gender',
+  CONJUGATIONS: 'data-conjugations',
+  LEVEL: 'data-level',
+  PROCESSED: 'data-processed',
+} as const
+
+// CSS class constants
+const CSS_CLASS = {
+  VOCAB_SAVED: 'vocab-saved',
+  VOCAB_WORD: 'vocab-word',
+  USER_CLICKABLE: 'user-clickable',
+} as const
+
+// Helper: Escape HTML to prevent XSS (module-level for stable reference)
+function escapeHtml(text: string): string {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
+}
+
 interface MarkdownViewerProps {
   content: string
   language?: string // Target language for dictionary API lookups
@@ -14,16 +43,18 @@ interface MarkdownViewerProps {
   articleId?: string // Article ID for vocabulary
   vocabularies?: Vocabulary[] // Current vocabularies
   onAddVocabulary?: (vocab: Vocabulary) => void // Callback when vocabulary is added
+  onTokenUsageUpdate?: () => void // Callback to refresh token usage after dictionary search
   clickable?: boolean // If false, words are not clickable (default: true)
 }
 
-export default function MarkdownViewer({ 
-  content, 
-  language, 
+export default function MarkdownViewer({
+  content,
+  language,
   dark = false,
   articleId,
   vocabularies = [],
   onAddVocabulary,
+  onTokenUsageUpdate,
   clickable = true
 }: MarkdownViewerProps) {
   const [openSpanIds, setOpenSpanIds] = useState<Set<string>>(new Set()) // Track which specific spans are open
@@ -57,7 +88,7 @@ export default function MarkdownViewer({
             const { lemma } = JSON.parse(cached)
             displayLemma = lemma
             meaning = wordDefinitions[lemma] || null
-          } catch (e) {
+          } catch {
             console.warn('[Dictionary] Failed to parse cached value')
           }
         }
@@ -80,20 +111,13 @@ export default function MarkdownViewer({
         try {
           const { related_words } = JSON.parse(cached)
           return related_words
-        } catch (e) {
+        } catch {
           // Ignore parse error
         }
       }
     }
     return undefined
   }, [language])
-
-  // Helper: Escape HTML to prevent XSS
-  const escapeHtml = (text: string): string => {
-    const div = document.createElement('div')
-    div.textContent = text
-    return div.innerHTML
-  }
 
   // Helper: Create vocabulary button HTML
   const createVocabularyButtonHTML = useCallback((
@@ -129,16 +153,16 @@ export default function MarkdownViewer({
       const style = `${baseStyle} background: #10b981;`
       return ` <button class="vocab-btn vocab-add" data-word="${wordEscaped}" data-lemma="${lemmaEscaped}" data-definition="${definitionEscaped}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanIdEscaped}" data-pos="${posStr}" data-gender="${genderStr}" data-conjugations="${conjugationsStr}" data-level="${levelStr}" style="${style}" title="Add to vocabulary">+</button>`
     }
-  }, [escapeHtml])
+  }, [])
 
   // Helper: Handle add vocabulary button click
   const handleAddVocabularyClick = useCallback(async (btn: HTMLElement) => {
-    const word = btn.getAttribute('data-word') || ''
+    const word = btn.getAttribute(DATA_ATTR.WORD) || ''
     const lemma = btn.getAttribute('data-lemma') || ''
     const definition = btn.getAttribute('data-definition') || ''
     const sentence = btn.getAttribute('data-sentence') || ''
     const relatedWordsStr = btn.getAttribute('data-related-words') || ''
-    const spanId = btn.getAttribute('data-span-id') || ''
+    const spanId = btn.getAttribute(DATA_ATTR.SPAN_ID) || ''
     const pos = btn.getAttribute('data-pos') || undefined
     const gender = btn.getAttribute('data-gender') || undefined
     const conjugationsStr = btn.getAttribute('data-conjugations') || ''
@@ -148,7 +172,7 @@ export default function MarkdownViewer({
     if (relatedWordsStr) {
       try {
         relatedWords = JSON.parse(relatedWordsStr.replace(/&quot;/g, '"'))
-      } catch (e) {
+      } catch {
         // Ignore parse error
       }
     }
@@ -157,7 +181,7 @@ export default function MarkdownViewer({
     if (conjugationsStr) {
       try {
         conjugations = JSON.parse(conjugationsStr.replace(/&quot;/g, '"'))
-      } catch (e) {
+      } catch {
         // Ignore parse error
       }
     }
@@ -203,7 +227,7 @@ export default function MarkdownViewer({
         })
 
         if (response.ok) {
-          window.dispatchEvent(new CustomEvent('vocabulary-removed', { detail: vocab.id }))
+          globalThis.dispatchEvent(new CustomEvent('vocabulary-removed', { detail: vocab.id }))
         }
       } catch (error) {
         console.error('Failed to remove vocabulary:', error)
@@ -244,7 +268,8 @@ export default function MarkdownViewer({
     } catch (error) {
       // Fallback to simple split if sentence-splitter fails
       console.warn('sentence-splitter failed, using fallback:', error)
-      const sentences = text.split(/([.!?]+\s+)/).filter(s => s.trim())
+      // Use non-greedy pattern to avoid ReDoS
+      const sentences = text.split(/([.!?]\s*)/).filter(s => s.trim())
       const found = sentences.find(s => s.toLowerCase().includes(word.toLowerCase()))
       return found ? found.trim() : text
     }
@@ -271,9 +296,9 @@ export default function MarkdownViewer({
       if (cached) {
         try {
           const { lemma, definition, related_words, pos, gender, conjugations, level } = JSON.parse(cached)
-          console.log('[Dictionary] Using word-only cache for:', word)
+          // Debug: console.log('[Dictionary] Using word-only cache for:', word)
           return { lemma, definition, related_words, pos, gender, conjugations, level }
-        } catch (e) {
+        } catch {
           console.warn('[Dictionary] Failed to parse cached value, clearing cache')
           lemmaCacheRef.current.delete(wordCacheKey)
         }
@@ -281,13 +306,15 @@ export default function MarkdownViewer({
     }
 
     try {
+      // Debug: console.log('[Dictionary] Sending search request:', { word, language, articleId })
       const response = await fetchWithAuth('/api/dictionary/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sentence: sentence,
           word: word,
-          language: language
+          language: language,
+          article_id: articleId
         })
       })
 
@@ -298,7 +325,7 @@ export default function MarkdownViewer({
       }
 
       const data = await response.json()
-      console.log('[Dictionary] LLM response:', data)
+      // Debug: console.log('[Dictionary] LLM response:', data)
 
       if (data.error) {
         console.error('[Dictionary] LLM API returned error:', data.error)
@@ -320,7 +347,10 @@ export default function MarkdownViewer({
 
         lemmaCacheRef.current.set(wordCacheKey, cacheValue)
 
-        console.log('[Dictionary] Cached definition for:', word, 'lemma:', lemma, 'pos:', pos, 'gender:', gender, 'level:', level)
+        // Refresh token usage after successful dictionary search
+        onTokenUsageUpdate?.()
+
+        // Debug: console.log('[Dictionary] Cached definition for:', word, 'lemma:', lemma, 'pos:', pos, 'gender:', gender, 'level:', level)
         return { lemma, definition, related_words, pos, gender, conjugations, level }
       }
 
@@ -351,19 +381,17 @@ export default function MarkdownViewer({
     
     // First, try to find lemma from cache for this specific word
     const wordCacheKey = `${language}:${word.toLowerCase()}`
-    let cachedLemma: string | null = null
     if (lemmaCacheRef.current.has(wordCacheKey)) {
       const cached = lemmaCacheRef.current.get(wordCacheKey)
       if (cached) {
         try {
           const { lemma } = JSON.parse(cached)
-          cachedLemma = lemma
           // Check if we already have definition for this lemma
           if (wordDefinitions[lemma]) {
-            console.log('[Dictionary] Using cached definition for lemma:', lemma, 'from word:', word)
+            // Debug: console.log('[Dictionary] Using cached definition for lemma:', lemma, 'from word:', word)
             return
           }
-        } catch (e) {
+        } catch {
           console.warn('[Dictionary] Failed to parse cached value, clearing cache')
           lemmaCacheRef.current.delete(wordCacheKey)
         }
@@ -374,24 +402,24 @@ export default function MarkdownViewer({
     if (wordToLemmaRef.current.has(word.toLowerCase())) {
       const lemma = wordToLemmaRef.current.get(word.toLowerCase())
       if (lemma && wordDefinitions[lemma]) {
-        console.log('[Dictionary] Using cached definition for lemma:', lemma, 'from word mapping:', word)
+        // Debug: console.log('[Dictionary] Using cached definition for lemma:', lemma, 'from word mapping:', word)
         return
       }
     }
     
     // If already cached by word (fallback for old cache format)
     if (wordDefinitions[word]) {
-      console.log('[Dictionary] Using cached definition for:', word, wordDefinitions[word])
+      // Debug: console.log('[Dictionary] Using cached definition for:', word, wordDefinitions[word])
       return
     }
     
     // If already loading, don't fetch again (check ref for synchronous check)
     if (loadingWordsRef.current.has(word)) {
-      console.log('[Dictionary] Already loading:', word)
+      // Debug: console.log('[Dictionary] Already loading:', word)
       return
     }
     
-    console.log('[Dictionary] Fetching definition for:', word, 'Current cache:', Object.keys(wordDefinitions))
+    // Debug: console.log('[Dictionary] Fetching definition for:', word, 'Current cache:', Object.keys(wordDefinitions))
     
     // Mark as loading immediately (synchronous)
     loadingWordsRef.current.add(word)
@@ -401,7 +429,7 @@ export default function MarkdownViewer({
     const spanElement = containerRef.current?.querySelector(`[data-span-id="${spanId}"]`) as HTMLElement
     const sentence = spanElement ? extractSentence(spanElement) : ''
     
-    console.log('[Dictionary] Extracted sentence:', sentence)
+    // Debug: console.log('[Dictionary] Extracted sentence:', sentence)
     
     // Get definition and lemma from LLM using sentence context
     const result = await getWordDefinitionFromLLM(word, sentence)
@@ -460,7 +488,7 @@ export default function MarkdownViewer({
      *
      * See: src/web/app/articles/[id]/page.tsx:266
      */
-    if (containerRef.current.getAttribute('data-processed') === 'true') {
+    if (containerRef.current.getAttribute(DATA_ATTR.PROCESSED) === 'true') {
       return
     }
 
@@ -477,13 +505,15 @@ export default function MarkdownViewer({
 
         // Helper: make words in text clickable (skip whitespace-only and punctuation-only)
         // Note: hyphen (-) is NOT included so "long-standing" stays as one word
-        const parts = text.split(/(\s+|[.,;:!?()[\]{}""''—–]+)/)
+        // Punctuation: basic + curly quotes (U+201C-201D, U+2018-2019) + dashes (U+2013-2014)
+        const punctuationPattern = /(\s+|[.,;:!?()[\]{}]+|[\u201C\u201D\u2018\u2019]+|[\u2013\u2014]+)/
+        const parts = text.split(punctuationPattern)
 
         parts.forEach(part => {
           if (!part) return
 
           // If it's whitespace, punctuation, or standalone hyphen, just add as text
-          if (/^(\s+|[.,;:!?()[\]{}""''—–]+|-+)$/.test(part)) {
+          if (/^(\s+|[.,;:!?()[\]{}]+|[\u201C\u201D\u2018\u2019]+|[\u2013\u2014]+|-+)$/.test(part)) {
             fragment.appendChild(document.createTextNode(part))
             return
           }
@@ -492,8 +522,8 @@ export default function MarkdownViewer({
           const spanId = `vocab-${spanIdCounterRef.current++}`
           const wordSpan = document.createElement('span')
           wordSpan.textContent = part
-          wordSpan.setAttribute('data-word', part)
-          wordSpan.setAttribute('data-span-id', spanId)
+          wordSpan.setAttribute(DATA_ATTR.WORD, part)
+          wordSpan.setAttribute(DATA_ATTR.SPAN_ID, spanId)
           if ((parent as HTMLElement).tagName === 'P') {
             wordSpan.className = 'vocab-word user-clickable'
           }
@@ -515,28 +545,30 @@ export default function MarkdownViewer({
     }
 
     processNode(containerRef.current)
-    containerRef.current.setAttribute('data-processed', 'true')
+    containerRef.current.setAttribute(DATA_ATTR.PROCESSED, 'true')
   }, [content, clickable, articleId, onAddVocabulary])
 
   // Event delegation for word clicks (avoids stale closure issues)
   useEffect(() => {
-    if (!containerRef.current || !clickable) return
+    const container = containerRef.current
+    if (!container || !clickable) return
 
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (target.classList.contains('vocab-word') && target.classList.contains('user-clickable')) {
+        e.preventDefault()  // Prevent any default browser behavior
         e.stopPropagation()
-        const spanId = target.getAttribute('data-span-id')
-        const word = target.getAttribute('data-word')
+        const spanId = target.getAttribute(DATA_ATTR.SPAN_ID)
+        const word = target.getAttribute(DATA_ATTR.WORD)
         if (spanId && word) {
           handleWordClickRef.current(spanId, word)
         }
       }
     }
 
-    containerRef.current.addEventListener('click', handleClick)
+    container.addEventListener('click', handleClick)
     return () => {
-      containerRef.current?.removeEventListener('click', handleClick)
+      container.removeEventListener('click', handleClick)
     }
   }, [clickable])
 
@@ -546,7 +578,7 @@ export default function MarkdownViewer({
     
     // Remove all vocab-saved classes first
     containerRef.current.querySelectorAll('.vocab-saved').forEach(el => {
-      el.classList.remove('vocab-saved')
+      el.classList.remove(CSS_CLASS.VOCAB_SAVED)
     })
     
     // Process each vocabulary
@@ -563,18 +595,18 @@ export default function MarkdownViewer({
       const allSpans = Array.from(containerRef.current!.querySelectorAll('.vocab-word')) as HTMLElement[]
       
       // Find clicked span index
-      const clickedIndex = allSpans.findIndex(span => span.getAttribute('data-span-id') === spanId)
+      const clickedIndex = allSpans.findIndex(span => span.getAttribute(DATA_ATTR.SPAN_ID) === spanId)
       if (clickedIndex === -1) return
       
       // Find clicked word's index in related_words array
-      const clickedWord = clickedSpan.getAttribute('data-word')
+      const clickedWord = clickedSpan.getAttribute(DATA_ATTR.WORD)
       if (!clickedWord) return
       
       const clickedWordIndex = v.related_words.findIndex(w => w.toLowerCase() === clickedWord.toLowerCase())
       if (clickedWordIndex === -1) return
       
       // Color clicked word first
-      clickedSpan.classList.add('vocab-saved')
+      clickedSpan.classList.add(CSS_CLASS.VOCAB_SAVED)
       
       // Find words to the left (before clicked word in related_words)
       // Search backwards from clickedIndex
@@ -585,10 +617,10 @@ export default function MarkdownViewer({
         // Search backwards from clickedIndex
         for (let j = clickedIndex - 1; j >= 0; j--) {
           const span = allSpans[j]
-          const word = span.getAttribute('data-word')
+          const word = span.getAttribute(DATA_ATTR.WORD)
           
           if (word && word.toLowerCase() === targetWord.toLowerCase()) {
-            span.classList.add('vocab-saved')
+            span.classList.add(CSS_CLASS.VOCAB_SAVED)
             found = true
             break
           }
@@ -606,10 +638,10 @@ export default function MarkdownViewer({
         // Search forwards from clickedIndex
         for (let j = clickedIndex + 1; j < allSpans.length; j++) {
           const span = allSpans[j]
-          const word = span.getAttribute('data-word')
+          const word = span.getAttribute(DATA_ATTR.WORD)
           
           if (word && word.toLowerCase() === targetWord.toLowerCase()) {
-            span.classList.add('vocab-saved')
+            span.classList.add(CSS_CLASS.VOCAB_SAVED)
             found = true
             break
           }
@@ -628,7 +660,7 @@ export default function MarkdownViewer({
     containerRef.current.querySelectorAll('.word-definition').forEach(defSpan => {
       const prevSpan = defSpan.previousElementSibling as HTMLElement
       if (prevSpan && prevSpan.classList.contains('vocab-word')) {
-        const spanId = prevSpan.getAttribute('data-span-id')
+        const spanId = prevSpan.getAttribute(DATA_ATTR.SPAN_ID)
         if (spanId && !openSpanIds.has(spanId)) {
           const afterDef = defSpan.nextSibling
           defSpan.remove()
@@ -644,7 +676,7 @@ export default function MarkdownViewer({
       const span = containerRef.current!.querySelector(`[data-span-id="${spanId}"]`) as HTMLElement
       if (!span) return
       
-      const word = span.getAttribute('data-word')
+      const word = span.getAttribute(DATA_ATTR.WORD)
       if (!word) return
       
       const { meaning, displayLemma } = getWordMeaning(word)
@@ -696,7 +728,7 @@ export default function MarkdownViewer({
                 gender = parsedCache.gender
                 conjugations = parsedCache.conjugations
                 level = parsedCache.level
-              } catch (e) {
+              } catch {
                 // Ignore parse error
               }
             }

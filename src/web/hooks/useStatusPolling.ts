@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, MutableRefObject } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { fetchWithAuth } from '@/lib/api'
 
 /**

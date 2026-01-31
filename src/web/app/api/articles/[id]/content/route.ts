@@ -62,28 +62,22 @@ export async function GET(
     }
 
     const content = await response.text()
-    
-    console.log(JSON.stringify({
-      source: 'web',
-      level: 'info',
-      endpoint: `/api/articles/${articleId}/content`,
-      message: `Successfully loaded article content from MongoDB (${content.length} bytes)`
-    }))
 
     return new NextResponse(content, {
       headers: {
         'Content-Type': 'text/markdown',
       },
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     console.error(JSON.stringify({
       source: 'web',
       level: 'error',
       endpoint: `/api/articles/${params.id}/content`,
-      message: `Fatal error: ${error.message}`
+      message: `Fatal error: ${errorMessage}`
     }))
     return new NextResponse(
-      `# Error\n\nFailed to load article: ${error.message}`,
+      `# Error\n\nFailed to load article: ${errorMessage}`,
       {
         status: 500,
         headers: {

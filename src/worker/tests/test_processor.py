@@ -15,7 +15,7 @@ from worker.processor import process_job
 
 class TestWorkerErrorHandling(unittest.TestCase):
     """Test error handling in worker processor."""
-    
+
     def setUp(self):
         """Set up test fixtures."""
         self.job_data = {
@@ -28,8 +28,25 @@ class TestWorkerErrorHandling(unittest.TestCase):
                 'topic': 'AI'
             }
         }
-    
-    @patch('worker.processor.update_job_status')
+
+    def _get_status_call_args(self, mock_update_status):
+        """Extract status call arguments.
+
+        update_job_status is called with positional args:
+        update_job_status(job_id, status, progress, message, error, article_id)
+                          args[0] args[1] args[2]  args[3]  args[4] args[5]
+        """
+        args, kwargs = mock_update_status.call_args
+        return {
+            'job_id': args[0],
+            'status': args[1],
+            'progress': args[2],
+            'message': args[3],
+            'error': args[4] if len(args) > 4 else None,
+            'article_id': args[5] if len(args) > 5 else None,
+        }
+
+    @patch('worker.context.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('crew.progress_listener.JobProgressListener')
     def test_json_parsing_error(self, mock_listener, mock_run_crew, mock_update_status):
@@ -39,65 +56,65 @@ class TestWorkerErrorHandling(unittest.TestCase):
             "1 validation error for NewsArticleList\n"
             "  Invalid JSON: expected `,` or `}` at line 26 column 3"
         )
-        
+
         result = process_job(self.job_data)
-        
+
         # Should return False
         self.assertFalse(result)
-        
+
         # Should call update_job_status with user-friendly message
         mock_update_status.assert_called()
-        call_args = mock_update_status.call_args
-        self.assertEqual(call_args[1]['status'], 'failed')
-        self.assertIn('AI model returned invalid response', call_args[1]['message'])
-        self.assertIn('Invalid JSON', call_args[1]['error'])
-    
-    @patch('worker.processor.update_job_status')
+        call = self._get_status_call_args(mock_update_status)
+        self.assertEqual(call['status'], 'failed')
+        self.assertIn('AI model returned invalid response', call['message'])
+        self.assertIn('Invalid JSON', call['error'])
+
+    @patch('worker.context.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('crew.progress_listener.JobProgressListener')
     def test_timeout_error(self, mock_listener, mock_run_crew, mock_update_status):
         """Test timeout error handling."""
         mock_run_crew.side_effect = Exception("Request timeout after 30 seconds")
-        
+
         result = process_job(self.job_data)
-        
+
         self.assertFalse(result)
-        call_args = mock_update_status.call_args
-        self.assertEqual(call_args[1]['status'], 'failed')
-        self.assertIn('timed out', call_args[1]['message'].lower())
-        self.assertIn('timeout', call_args[1]['error'].lower())
-    
-    @patch('worker.processor.update_job_status')
+        call = self._get_status_call_args(mock_update_status)
+        self.assertEqual(call['status'], 'failed')
+        self.assertIn('timed out', call['message'].lower())
+        self.assertIn('timeout', call['error'].lower())
+
+    @patch('worker.context.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('crew.progress_listener.JobProgressListener')
     def test_rate_limit_error(self, mock_listener, mock_run_crew, mock_update_status):
         """Test rate limit error handling."""
         mock_run_crew.side_effect = Exception("Rate limit exceeded. Status code: 429")
-        
+
         result = process_job(self.job_data)
-        
+
         self.assertFalse(result)
-        call_args = mock_update_status.call_args
-        self.assertEqual(call_args[1]['status'], 'failed')
-        self.assertIn('rate limit', call_args[1]['message'].lower())
-        self.assertIn('429', call_args[1]['error'])
-    
-    @patch('worker.processor.update_job_status')
+        call = self._get_status_call_args(mock_update_status)
+        self.assertEqual(call['status'], 'failed')
+        self.assertIn('rate limit', call['message'].lower())
+        self.assertIn('429', call['error'])
+
+    @patch('worker.context.update_job_status')
     @patch('worker.processor.run_crew')
     @patch('crew.progress_listener.JobProgressListener')
     def test_generic_error(self, mock_listener, mock_run_crew, mock_update_status):
         """Test generic error handling."""
         mock_run_crew.side_effect = ValueError("Some unexpected error")
-        
+
         result = process_job(self.job_data)
-        
+
         self.assertFalse(result)
-        call_args = mock_update_status.call_args
-        self.assertEqual(call_args[1]['status'], 'failed')
-        self.assertIn('Job failed', call_args[1]['message'])
-        self.assertIn('ValueError', call_args[1]['error'])
-    
-    @patch('worker.processor.update_job_status')
+        call = self._get_status_call_args(mock_update_status)
+        self.assertEqual(call['status'], 'failed')
+        self.assertIn('Job failed', call['message'])
+        self.assertIn('ValueError', call['error'])
+
+    @patch('worker.context.update_job_status')
     @patch('worker.processor.save_article')
     @patch('worker.processor.run_crew')
     @patch('crew.progress_listener.JobProgressListener')
@@ -108,29 +125,29 @@ class TestWorkerErrorHandling(unittest.TestCase):
         mock_result.raw = "# Test Article\n\nContent here"
         mock_run_crew.return_value = mock_result
         mock_save_article.return_value = True
-        
+
         # Mock listener instance with task_failed attribute
         mock_listener_instance = MagicMock()
         mock_listener_instance.task_failed = False  # No tasks failed
         mock_listener.return_value = mock_listener_instance
-        
+
         result = process_job(self.job_data)
-        
+
         self.assertTrue(result)
         # Should update status to completed
         mock_update_status.assert_called()
-        args, kwargs = mock_update_status.call_args
-        self.assertEqual(args[1], 'completed')
-        self.assertEqual(args[2], 100)
-        self.assertEqual(kwargs.get('article_id'), 'test-article')
-    
-    @patch('worker.processor.update_job_status')
+        call = self._get_status_call_args(mock_update_status)
+        self.assertEqual(call['status'], 'completed')
+        self.assertEqual(call['progress'], 100)
+        self.assertEqual(call['article_id'], 'test-article')
+
+    @patch('worker.context.update_job_status')
     @patch('worker.processor.save_article')
     @patch('worker.processor.run_crew')
     @patch('crew.progress_listener.JobProgressListener')
     def test_upload_failure_fails_job(self, mock_listener, mock_run_crew, mock_save_article, mock_update_status):
         """Test that MongoDB save failure fails the job.
-        
+
         Rationale: Without successful save, the generated article content is lost
         (only exists in memory). Users cannot access the content, so marking the job
         as 'completed' would be misleading. Save failure = job failure.
@@ -140,45 +157,44 @@ class TestWorkerErrorHandling(unittest.TestCase):
         mock_run_crew.return_value = mock_result
         # Mock MongoDB save to return False (failure)
         mock_save_article.return_value = False
-        
+
         # Mock listener instance with task_failed attribute
         mock_listener_instance = MagicMock()
         mock_listener_instance.task_failed = False  # No tasks failed
         mock_listener.return_value = mock_listener_instance
-        
+
         result = process_job(self.job_data)
-        
+
         # Job should fail due to save failure
         self.assertFalse(result)
-        
+
         # Final status should be 'failed' with error message
-        call_args = mock_update_status.call_args
-        self.assertEqual(call_args[1]['status'], 'failed')
-        self.assertEqual(call_args[1]['progress'], 0)
-        self.assertIn('Failed to save article to database', call_args[1]['message'])
-        self.assertIn('MongoDB save error', call_args[1]['error'])
-        
-        # Save should have been attempted
-        mock_save_article.assert_called_once_with(
-            article_id='test-article',
-            content="# Test Article",
-            started_at=unittest.mock.ANY
-        )
+        call = self._get_status_call_args(mock_update_status)
+        self.assertEqual(call['status'], 'failed')
+        self.assertEqual(call['progress'], 0)
+        self.assertIn('Failed to save article to database', call['message'])
+        self.assertIn('MongoDB save error', call['error'])
+
+        # Save should have been attempted (positional args)
+        mock_save_article.assert_called_once()
+        args, kwargs = mock_save_article.call_args
+        self.assertEqual(args[0], 'test-article')  # article_id
+        self.assertEqual(args[1], '# Test Article')  # content
 
 
 class TestTaskProgressMapping(unittest.TestCase):
     """Test task progress mapping constants."""
-    
+
     def test_task_progress_constants(self):
         """Test that TASK_PROGRESS constants are correct."""
         from utils.progress import TASK_PROGRESS
-        
+
         # Verify all tasks are defined
         self.assertIn('find_news_articles', TASK_PROGRESS)
         self.assertIn('pick_best_article', TASK_PROGRESS)
         self.assertIn('adapt_news_article', TASK_PROGRESS)
         self.assertIn('add_vocabulary', TASK_PROGRESS)
-        
+
         # Verify progress ranges
         self.assertEqual(TASK_PROGRESS['find_news_articles']['start'], 0)
         self.assertEqual(TASK_PROGRESS['find_news_articles']['end'], 25)

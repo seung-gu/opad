@@ -10,7 +10,7 @@ const TOKEN_KEY = 'opad_auth_token'
  * Save JWT token to localStorage
  */
 export function saveToken(token: string): void {
-  if (typeof window === 'undefined') return
+  if (typeof globalThis.window === 'undefined') return
   localStorage.setItem(TOKEN_KEY, token)
 }
 
@@ -18,7 +18,7 @@ export function saveToken(token: string): void {
  * Get JWT token from localStorage
  */
 export function getToken(): string | null {
-  if (typeof window === 'undefined') return null
+  if (typeof globalThis.window === 'undefined') return null
   return localStorage.getItem(TOKEN_KEY)
 }
 
@@ -26,6 +26,6 @@ export function getToken(): string | null {
  * Remove JWT token from localStorage (logout)
  */
 export function removeToken(): void {
-  if (typeof window === 'undefined') return
+  if (typeof globalThis.window === 'undefined') return
   localStorage.removeItem(TOKEN_KEY)
 }

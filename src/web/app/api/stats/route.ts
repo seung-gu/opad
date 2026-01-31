@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
  * 1. Call FastAPI GET /articles/stats
  * 2. Return formatted statistics
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     // FastAPI base URL
     const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
@@ -28,10 +28,10 @@ export async function GET(request: NextRequest) {
     const stats = await response.json()
     
     return NextResponse.json(stats)
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching stats:', error)
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch database statistics' },
+      { error: error instanceof Error ? error.message : 'Failed to fetch database statistics' },
       { status: 500 }
     )
   }

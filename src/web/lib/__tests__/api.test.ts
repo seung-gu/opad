@@ -1,5 +1,7 @@
+/* eslint-disable unicorn/prefer-global-this, @typescript-eslint/no-explicit-any, sonarjs/no-duplicate-string */
 /**
  * Tests for API client utilities.
+ * Note: Using `global.fetch` for mocking is standard practice in tests
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'

@@ -38,8 +38,9 @@ export default function StatsPage() {
         
         const data = await response.json()
         setStats(data)
-      } catch (err: any) {
-        setError(err.message || 'Failed to load statistics')
+      } catch (error_: unknown) {
+        const message = error_ instanceof Error ? error_.message : 'Failed to load statistics'
+        setError(message)
       } finally {
         setLoading(false)
       }
@@ -82,7 +83,7 @@ export default function StatsPage() {
               <div className="text-red-600 text-xl mb-4">⚠️ Error</div>
               <p className="text-gray-700">{error}</p>
               <button
-                onClick={() => window.location.reload()}
+                onClick={() => globalThis.location.reload()}
                 className="mt-6 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
               >
                 Retry
@@ -188,8 +189,8 @@ export default function StatsPage() {
             <div>
               <h3 className="text-xl font-semibold text-gray-900 mb-4">Indexes ({stats.indexes})</h3>
               <div className="space-y-3">
-                {stats.index_details.map((index, idx) => (
-                  <div key={idx} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                {stats.index_details.map((index) => (
+                  <div key={index.name} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="text-sm font-medium text-gray-900">{index.name}</div>
@@ -210,7 +211,7 @@ export default function StatsPage() {
         {/* Refresh Button */}
         <div className="mt-6 text-center">
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => globalThis.location.reload()}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             Refresh Statistics
