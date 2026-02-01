@@ -63,11 +63,11 @@ def process_job(job_data: dict) -> bool:
                 article_id=ctx.article_id or ""
             )
 
-            # Fetch vocabulary for personalized generation
+            # Fetch vocabulary for personalized generation (always set default to avoid template error)
+            vocab = None
             if ctx.user_id and ctx.inputs.get('language'):
                 vocab = get_user_vocabulary_for_generation(ctx.user_id, ctx.inputs['language'], 50)
-                if vocab:
-                    ctx.inputs['vocabulary_list'] = vocab
+            ctx.inputs['vocabulary_list'] = vocab if vocab else ""
 
             # Execute CrewAI
             logger.info("Executing CrewAI", extra=ctx.log_extra)
