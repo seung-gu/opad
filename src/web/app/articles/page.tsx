@@ -94,21 +94,21 @@ export default function ArticlesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-background py-8">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
-            <h1 className="text-3xl font-bold text-gray-900">Articles</h1>
+            <h1 className="text-3xl font-bold font-mono text-accent">Articles</h1>
             <Link
               href="/"
-              className="text-xl font-medium text-gray-700 hover:text-gray-900 transition-colors"
+              className="text-xl font-medium text-foreground hover:text-foreground/80 transition-colors"
               title="Go to Home"
             >
               ◀ Home
             </Link>
           </div>
-          <p className="text-gray-600">
+          <p className="text-text-dim">
             {loading ? 'Loading...' : formatArticleCount(total)}
           </p>
         </div>
@@ -120,16 +120,10 @@ export default function ArticlesPage() {
             onStatusChange={handleStatusChange}
           />
           <div className="flex items-center gap-2">
-            <Link
-              href="/usage"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition-colors font-medium text-sm"
-            >
+            <Link href="/usage" className="btn-outline">
               Usage
             </Link>
-            <Link
-              href="/vocabulary"
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 transition-colors font-medium text-sm"
-            >
+            <Link href="/vocabulary" className="btn-outline btn-vocab">
               Vocabulary
             </Link>
           </div>
@@ -151,8 +145,8 @@ export default function ArticlesPage() {
 
         {/* Pagination */}
         {total > 0 && (
-          <div className="mt-6 flex items-center justify-between border-t border-gray-200 pt-6">
-            <div className="text-sm text-gray-700">
+          <div className="mt-6 flex items-center justify-between border-t border-border-card pt-6">
+            <div className="text-sm text-foreground">
               Showing {skip + 1} to {skip + articles.length} of {total} articles
             </div>
             <div className="flex gap-2">
@@ -161,13 +155,13 @@ export default function ArticlesPage() {
                 disabled={!hasPrevPage || loading}
                 className={`px-4 py-2 rounded-md text-sm font-medium ${
                   hasPrevPage && !loading
-                    ? 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    ? 'bg-card text-foreground border border-border-card hover:bg-card-hover'
+                    : 'bg-card-hover text-text-dim cursor-not-allowed'
                 }`}
               >
                 Previous
               </button>
-              <div className="px-4 py-2 text-sm text-gray-700">
+              <div className="px-4 py-2 text-sm text-foreground">
                 Page {currentPage} of {totalPages}
               </div>
               <button
@@ -175,8 +169,8 @@ export default function ArticlesPage() {
                 disabled={!hasNextPage || loading}
                 className={`px-4 py-2 rounded-md text-sm font-medium ${
                   hasNextPage && !loading
-                    ? 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    ? 'bg-card text-foreground border border-border-card hover:bg-card-hover'
+                    : 'bg-card-hover text-text-dim cursor-not-allowed'
                 }`}
               >
                 Next

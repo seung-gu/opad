@@ -360,8 +360,8 @@ Choose a topic you're interested in and start learning with content that matches
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <div className="text-xl text-slate-900">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-xl text-foreground">Loading...</div>
       </div>
     )
   }
@@ -379,17 +379,17 @@ Choose a topic you're interested in and start learning with content that matches
   }
 
   return (
-    <main className="min-h-screen p-8 max-w-4xl mx-auto bg-white rounded-lg shadow-2xl my-8">
+    <main className="min-h-screen p-8 max-w-4xl mx-auto bg-card rounded-lg border border-border-card my-8">
       <div className="flex justify-between items-center mb-8">
         <div className="flex items-center gap-3">
           {isAuthenticated ? (
             <>
-              <span className="text-gray-700 font-medium">
+              <span className="text-text-dim font-medium">
                 {user?.name || user?.email}
               </span>
               <button
                 onClick={logout}
-                className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors font-medium text-sm"
+                className="btn-outline btn-delete"
               >
                 Logout
               </button>
@@ -397,7 +397,7 @@ Choose a topic you're interested in and start learning with content that matches
           ) : (
             <button
               onClick={() => router.push('/login')}
-              className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              className="btn-outline"
             >
               Login
             </button>
@@ -406,13 +406,13 @@ Choose a topic you're interested in and start learning with content that matches
         <div className="flex items-center gap-3">
           <button
             onClick={handleArticlesClick}
-            className="bg-gray-700 text-white px-6 py-2.5 rounded-lg hover:bg-gray-600 transition-colors font-medium"
+            className="btn-outline"
           >
             Articles
           </button>
           <button
             onClick={handleGenerateClick}
-            className="bg-emerald-600 text-white px-6 py-2.5 rounded-lg hover:bg-emerald-500 transition-colors font-medium"
+            className="btn-outline btn-generate"
           >
             {showForm ? 'Hide Form' : 'Generate New Article'}
           </button>
@@ -426,29 +426,29 @@ Choose a topic you're interested in and start learning with content that matches
       )}
 
       {generating && (
-        <div className="mb-4 p-4 bg-slate-800 border border-slate-700 rounded-lg shadow-lg">
+        <div className="mb-4 p-4 bg-card-hover border border-border-card rounded-lg">
           <div className="mb-2">
-            <p className="text-white font-medium mb-2">
+            <p className="text-foreground font-medium mb-2">
               ⏳ {progress.message || 'Generating article...'}
             </p>
             {progress.error && (
-              <div className="mb-2 p-3 bg-red-900/50 border border-red-700 rounded-md">
-                <p className="text-red-300 text-sm font-medium">Error:</p>
-                <p className="text-red-200 text-sm">{progress.error}</p>
+              <div className="mb-2 p-3 bg-accent-danger/20 border border-accent-danger/50 rounded-md">
+                <p className="text-accent-danger text-sm font-medium">Error:</p>
+                <p className="text-accent-danger/80 text-sm">{progress.error}</p>
               </div>
             )}
-            <div className="w-full bg-slate-700 rounded-full h-3">
+            <div className="w-full bg-border-card rounded-full h-3">
               <div
-                className="bg-emerald-500 h-3 rounded-full transition-all duration-300"
+                className="bg-system h-3 rounded-full transition-all duration-300"
                 style={{ width: `${progress.progress}%` }}
               ></div>
             </div>
-            <p className="text-sm text-emerald-400 mt-2">{progress.progress}%</p>
+            <p className="text-sm text-system mt-2">{progress.progress}%</p>
           </div>
         </div>
       )}
 
-      <MarkdownViewer content={content} dark={false} clickable={false} />
+      <MarkdownViewer content={content} dark={true} clickable={false} />
     </main>
   )
 }

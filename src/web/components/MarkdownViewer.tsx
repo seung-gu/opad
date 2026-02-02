@@ -144,13 +144,13 @@ export default function MarkdownViewer({
     const conjugationsStr = conjugations ? JSON.stringify(conjugations).replace(/"/g, '&quot;') : ''
     const levelStr = level ? escapeHtml(level) : ''
     const spanIdEscaped = escapeHtml(spanId)
-    const baseStyle = 'margin-left: 6px; padding: 1px 4px; font-size: 0.7rem; color: white; border: none; border-radius: 3px; cursor: pointer; min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;'
+    const baseStyle = 'margin-left: 6px; padding: 1px 4px; font-size: 0.7rem; color: var(--bg); border: none; border-radius: 3px; cursor: pointer; min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;'
 
     if (isInVocabulary) {
-      const style = `${baseStyle} background: #ef4444;`
+      const style = `${baseStyle} background: var(--danger);`
       return ` <button class="vocab-btn vocab-remove" data-word="${wordEscaped}" data-lemma="${lemmaEscaped}" data-definition="${definitionEscaped}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanIdEscaped}" data-pos="${posStr}" data-gender="${genderStr}" data-conjugations="${conjugationsStr}" data-level="${levelStr}" style="${style}" title="Remove from vocabulary">−</button>`
     } else {
-      const style = `${baseStyle} background: #10b981;`
+      const style = `${baseStyle} background: var(--vocab);`
       return ` <button class="vocab-btn vocab-add" data-word="${wordEscaped}" data-lemma="${lemmaEscaped}" data-definition="${definitionEscaped}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanIdEscaped}" data-pos="${posStr}" data-gender="${genderStr}" data-conjugations="${conjugationsStr}" data-level="${levelStr}" style="${style}" title="Add to vocabulary">+</button>`
     }
   }, [])
@@ -779,11 +779,11 @@ export default function MarkdownViewer({
   }, [openSpanIds, wordDefinitions, loadingWords, vocabularies, articleId, onAddVocabulary, language, getWordMeaning, getRelatedWords, createVocabularyButtonHTML, handleAddVocabularyClick, handleRemoveVocabularyClick])
 
   const className = dark
-    ? "prose prose-invert max-w-none text-white prose-headings:text-white prose-p:text-white prose-strong:text-white prose-li:text-white prose-ul:text-white prose-ol:text-white prose-a:text-emerald-400 prose-a:no-underline hover:prose-a:text-emerald-300 prose-code:text-emerald-300 prose-pre:bg-slate-800 prose-blockquote:text-white prose-blockquote:border-slate-600"
-    : "prose max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900 prose-li:text-gray-700 prose-ul:text-gray-700 prose-ol:text-gray-700 prose-a:text-blue-600 prose-a:no-underline hover:prose-a:text-blue-800 prose-code:text-emerald-700 prose-pre:bg-gray-100 prose-blockquote:text-gray-600 prose-blockquote:border-gray-300"
+    ? "prose prose-invert max-w-none text-foreground prose-headings:text-accent prose-headings:font-mono prose-p:text-foreground prose-strong:text-text-strong prose-li:text-foreground prose-ul:text-foreground prose-ol:text-foreground prose-a:text-vocab prose-a:no-underline hover:prose-a:text-vocab/80 prose-code:text-vocab prose-code:font-mono prose-pre:bg-card-hover prose-blockquote:text-text-dim prose-blockquote:border-border-card"
+    : "prose max-w-none prose-headings:text-foreground prose-p:text-foreground prose-strong:text-text-strong prose-li:text-foreground prose-ul:text-foreground prose-ol:text-foreground prose-a:text-accent prose-a:no-underline hover:prose-a:text-accent/80 prose-code:text-vocab prose-pre:bg-card-hover prose-blockquote:text-text-dim prose-blockquote:border-border-card"
 
   return (
-    <div className={className} style={dark ? { color: '#ffffff' } : undefined} ref={containerRef}>
+    <div className={className} ref={containerRef}>
       <ReactMarkdown remarkPlugins={[remarkGfm]}>
         {content}
       </ReactMarkdown>

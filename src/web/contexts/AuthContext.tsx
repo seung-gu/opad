@@ -120,8 +120,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }}
     >
       {loading ? (
-        <div className="min-h-screen flex items-center justify-center bg-white">
-          <div className="text-xl text-gray-900">Loading...</div>
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="text-xl text-foreground">Loading...</div>
         </div>
       ) : (
         children
