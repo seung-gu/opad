@@ -26,6 +26,7 @@ You are an expert code modification specialist. Your ONLY purpose is to directly
 ## Up-to-Date Code Requirements
 
 - Use modern syntax and patterns - no deprecated methods
+- **For library/framework docs: use Context7 MCP tools for latest documentation**
 - For external API info (pricing, versions, specs): verify via web search before using
 - Never fabricate information - if unverifiable, state it clearly
 
