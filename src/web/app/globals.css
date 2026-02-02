@@ -2,11 +2,184 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  body {
-    @apply bg-white;
-  }
+/* ========================================
+   Theme Variables
+   ======================================== */
+
+:root {
+  /* Background */
+  --bg: #0a0e17;
+  --card: #111827;
+  --card-hover: #1a2332;
+  --card-border: #1e293b;
+
+  /* Main Colors */
+  --accent: #34aee2;
+  --vocab: #34d399;
+  --system: #a78bfa;
+  --warn: #fbbf24;
+  --danger: #f87171;
+
+  /* Text */
+  --text: #94a3b8;
+  --text-dim: #5f6875;
+  --strong: #35d3ec;
+  --btn-text: #0a0e17;
+
+  /* Status */
+  --good: #4ade80;
+  --weak: #fb923c;
+
+  /* Hover */
+  --word-hover: #1b7252;
+  --accent-hover: rgba(52, 174, 226, 0.1);
+  --vocab-hover: rgba(52, 211, 153, 0.1);
+  --system-hover: rgba(167, 139, 250, 0.1);
+  --danger-hover: rgba(248, 113, 113, 0.1);
 }
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg) !important;
+  color: var(--text) !important;
+  font-family: 'Noto Sans KR', var(--font-sans), sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* Headings - JetBrains Mono + accent */
+h1 {
+  font-family: var(--font-mono), 'JetBrains Mono', monospace;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: -0.5px;
+}
+
+h2 {
+  font-family: var(--font-mono), 'JetBrains Mono', monospace;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+h3, h4, h5, h6 {
+  font-family: var(--font-mono), 'JetBrains Mono', monospace;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Body text */
+p {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* Strong text */
+strong, b {
+  color: var(--strong);
+  font-weight: 600;
+}
+
+/* Links */
+a {
+  color: var(--vocab);
+  text-decoration: none;
+  transition: opacity 0.2s;
+}
+
+a:hover {
+  opacity: 0.8;
+}
+
+/* Dim text */
+.text-dim, .text-muted {
+  color: var(--text-dim) !important;
+}
+
+/* Code / Monospace */
+code, pre, .mono, .font-mono {
+  font-family: var(--font-mono), 'JetBrains Mono', monospace;
+}
+
+code {
+  color: var(--vocab);
+  font-size: 13px;
+}
+
+/* Label / Category */
+.label, .category {
+  font-weight: 700;
+  color: var(--system);
+  font-size: 13px;
+}
+
+/* Highlight text */
+.highlight, .project {
+  color: var(--vocab);
+  font-weight: 600;
+}
+
+/* Small text */
+small, .text-sm {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+/* ========================================
+   Prose (Markdown content)
+   ======================================== */
+
+.prose-invert,
+.prose-invert p,
+.prose-invert li,
+.prose-invert ul,
+.prose-invert ol,
+.prose-invert span,
+.prose-invert td,
+.prose-invert th {
+  color: var(--text) !important;
+}
+
+.prose-invert strong {
+  color: var(--strong) !important;
+}
+
+.prose-invert a {
+  color: var(--vocab) !important;
+}
+
+.prose-invert h1,
+.prose-invert h2,
+.prose-invert h3,
+.prose-invert h4,
+.prose-invert h5,
+.prose-invert h6 {
+  font-family: var(--font-mono), 'JetBrains Mono', monospace !important;
+  color: var(--accent) !important;
+}
+
+.prose-invert code {
+  color: var(--vocab) !important;
+}
+
+.prose-invert pre {
+  background: var(--card-hover) !important;
+}
+
+.prose-invert blockquote {
+  color: var(--text-dim) !important;
+  border-color: var(--card-border) !important;
+}
+
+/* ========================================
+   Vocabulary
+   ======================================== */
 
 .vocab-word {
   cursor: pointer;
@@ -16,7 +189,6 @@
   text-underline-offset: 2px;
 }
 
-/* User-clickable words: no color change, subtle dotted underline */
 .vocab-word.user-clickable {
   color: inherit !important;
   text-decoration-style: dotted;
@@ -25,57 +197,220 @@
 }
 
 .vocab-word.user-clickable:hover {
-  text-decoration-color: rgba(107, 114, 128, 0.5);
+  color: var(--word-hover) !important;
+  text-decoration-color: rgba(125, 211, 252, 0.5);
 }
 
-/* Vocabulary saved words: emerald color with solid underline (same as agent-provided) */
 .vocab-word.vocab-saved {
-  color: rgb(5, 150, 105) !important; /* emerald-600 */
+  color: var(--vocab) !important;
   text-decoration-style: solid;
-  text-decoration-color: rgba(5, 150, 105, 0.4);
+  text-decoration-color: rgba(52, 211, 153, 0.4);
   font-weight: 500;
 }
 
 .vocab-word.vocab-saved:hover {
-  color: rgb(16, 185, 129) !important; /* emerald-500 */
-  text-decoration-color: rgba(5, 150, 105, 0.6);
+  opacity: 0.8;
+  text-decoration-color: rgba(52, 211, 153, 0.6);
 }
 
 .word-definition {
-  @apply p-3 bg-slate-800 border-l-4 border-emerald-500 rounded text-white;
   display: block;
   margin-top: 6px;
   margin-bottom: 6px;
+  padding: 12px;
+  background: var(--card);
+  border-left: 4px solid var(--vocab);
+  border-radius: 4px;
+  color: var(--text);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .word-definition strong {
-  @apply text-emerald-400;
+  color: var(--vocab);
 }
 
-/* Force text colors in markdown content */
-.prose-invert {
-  color: #f1f5f9 !important;
+/* ========================================
+   Components
+   ======================================== */
+
+@layer components {
+  /* Section title */
+  .section-title {
+    font-family: var(--font-mono), 'JetBrains Mono', monospace;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  /* Tech tag */
+  .tech-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: var(--font-mono), 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(56, 189, 248, 0.12);
+    color: var(--accent);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    transition: all 0.2s ease;
+  }
+
+  .tech-tag:hover {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: rgba(56, 189, 248, 0.4);
+  }
+
+  /* Card hover effect */
+  .card-hover {
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .card-hover:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.1);
+  }
+
+  /* Styled table */
+  .styled-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card);
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--card-border);
+  }
+
+  .styled-table thead th {
+    background: var(--card-hover);
+    font-family: var(--font-mono), 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 2px solid var(--accent);
+  }
+
+  .styled-table tbody td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--card-border);
+    color: var(--text);
+  }
+
+  .styled-table tbody tr {
+    transition: background-color 0.2s ease;
+  }
+
+  .styled-table tbody tr:hover {
+    background: rgba(56, 189, 248, 0.04);
+  }
+
+  .styled-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  /* ========================================
+     Buttons
+     ======================================== */
+
+  /* Primary button - solid bg for main actions */
+  .btn-primary {
+    display: inline-block;
+    padding: 10px 20px;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    font-family: var(--font-mono), 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--btn-text);
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+
+  .btn-primary:hover {
+    opacity: 0.85;
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-primary.btn-generate {
+    background: var(--system);
+  }
+
+  .btn-primary.btn-delete {
+    background: var(--danger);
+  }
+
+  /* Outline button - transparent bg with border for secondary actions */
+  .btn-outline {
+    display: inline-block;
+    padding: 8px 16px;
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    font-family: var(--font-mono), 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--accent);
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+
+  .btn-outline:hover {
+    background: var(--accent-hover);
+  }
+
+  .btn-outline:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-outline.btn-generate {
+    border-color: var(--system);
+    color: var(--system);
+  }
+
+  .btn-outline.btn-generate:hover {
+    background: var(--system-hover);
+  }
+
+  .btn-outline.btn-vocab {
+    border-color: var(--vocab);
+    color: var(--vocab);
+  }
+
+  .btn-outline.btn-vocab:hover {
+    background: var(--vocab-hover);
+  }
+
+  .btn-outline.btn-delete {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+
+  .btn-outline.btn-delete:hover {
+    background: var(--danger-hover);
+  }
+
 }
 
-.prose-invert p {
-  color: #f1f5f9 !important;
+/* Remove button - for vocab delete etc */
+.btn-remove {
+  color: var(--danger) !important;
+  padding: 0 8px;
+  transition: opacity 0.2s ease;
 }
 
-.prose-invert h1,
-.prose-invert h2,
-.prose-invert h3,
-.prose-invert h4,
-.prose-invert h5,
-.prose-invert h6 {
-  color: #ffffff !important;
+.btn-remove:hover {
+  opacity: 0.7;
 }
-
-.prose-invert li {
-  color: #f1f5f9 !important;
-}
-
-.prose-invert strong {
-  color: #ffffff !important;
-}
-

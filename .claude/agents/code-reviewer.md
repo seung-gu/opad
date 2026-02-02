@@ -125,6 +125,11 @@ If warnings appear, include them in the review report under "Important Issues".
 - If critical issues found, suggest code-modifier for fixes
 ```
 
+## Up-to-Date Requirements
+
+- **For library/framework best practices: use Context7 MCP tools for latest documentation**
+- Verify code follows current library conventions, not deprecated patterns
+
 ## Key Principles
 
 - Be thorough but fair

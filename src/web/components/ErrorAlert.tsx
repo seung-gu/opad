@@ -17,12 +17,12 @@ export default function ErrorAlert({ error, onRetry, className = '' }: ErrorAler
   if (!error) return null
 
   return (
-    <div className={`mb-6 p-4 bg-red-50 border border-red-200 rounded-lg ${className}`}>
-      <p className="text-red-800">{error}</p>
+    <div className={`mb-6 p-4 bg-accent-danger/20 border border-accent-danger/50 rounded-lg ${className}`}>
+      <p className="text-accent-danger">{error}</p>
       {onRetry && (
         <button
           onClick={onRetry}
-          className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
+          className="mt-2 text-sm text-accent-danger hover:text-accent-danger/80 underline"
         >
           Try again
         </button>

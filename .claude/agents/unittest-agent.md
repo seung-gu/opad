@@ -28,6 +28,7 @@ You are a unit test specialist. Your role is to create comprehensive test files 
 
 ## Up-to-Date Requirements
 
+- **For testing library docs: use Context7 MCP tools for latest pytest/unittest patterns**
 - Use latest library/SDK patterns when mocking
 - Verify external API mock structures match current SDK versions
 

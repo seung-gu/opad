@@ -24,13 +24,13 @@ export default function InputForm({ onSubmit, loading = false }: InputFormProps)
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 p-6 border border-slate-700 rounded-lg bg-slate-800 shadow-lg">
+    <form onSubmit={handleSubmit} className="space-y-4 p-6 border border-border-card rounded-lg bg-card shadow-lg">
       <div>
-        <label className="block text-sm font-medium mb-2 text-white">Language</label>
+        <label className="block text-sm font-medium mb-2 text-foreground">Language</label>
         <select
           value={language}
           onChange={(e) => setLanguage(e.target.value)}
-          className="w-full px-3 py-2 border border-slate-600 rounded-md bg-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+          className="w-full px-3 py-2 border border-border-card rounded-md bg-card-hover text-foreground focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
           required
           disabled={loading}
         >
@@ -43,11 +43,11 @@ export default function InputForm({ onSubmit, loading = false }: InputFormProps)
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-2 text-white">Level</label>
+        <label className="block text-sm font-medium mb-2 text-foreground">Level</label>
         <select
           value={level}
           onChange={(e) => setLevel(e.target.value)}
-          className="w-full px-3 py-2 border border-slate-600 rounded-md bg-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+          className="w-full px-3 py-2 border border-border-card rounded-md bg-card-hover text-foreground focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
           required
           disabled={loading}
         >
@@ -61,12 +61,12 @@ export default function InputForm({ onSubmit, loading = false }: InputFormProps)
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-2 text-white">Length (words)</label>
+        <label className="block text-sm font-medium mb-2 text-foreground">Length (words)</label>
         <input
           type="number"
           value={length}
           onChange={(e) => setLength(e.target.value)}
-          className="w-full px-3 py-2 border border-slate-600 rounded-md bg-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+          className="w-full px-3 py-2 border border-border-card rounded-md bg-card-hover text-foreground focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
           min="100"
           max="2000"
           required
@@ -75,12 +75,12 @@ export default function InputForm({ onSubmit, loading = false }: InputFormProps)
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-2 text-white">Topic</label>
+        <label className="block text-sm font-medium mb-2 text-foreground">Topic</label>
         <input
           type="text"
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
-          className="w-full px-3 py-2 border border-slate-600 rounded-md bg-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 placeholder:text-slate-400"
+          className="w-full px-3 py-2 border border-border-card rounded-md bg-card-hover text-foreground focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent placeholder:text-text-dim"
           placeholder="Enter your topic"
           required
           disabled={loading}
@@ -90,11 +90,10 @@ export default function InputForm({ onSubmit, loading = false }: InputFormProps)
       <button
         type="submit"
         disabled={loading}
-        className="w-full bg-emerald-600 text-white py-2 px-4 rounded-md hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="btn-outline btn-generate w-full"
       >
         {loading ? 'Generating...' : 'Generate Reading Material'}
       </button>
     </form>
   )
 }
-

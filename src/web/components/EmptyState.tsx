@@ -26,14 +26,14 @@ export default function EmptyState({
   className = ''
 }: EmptyStateProps) {
   return (
-    <div className={`bg-white rounded-lg shadow-lg p-8 text-center ${className}`}>
+    <div className={`bg-card rounded-lg border border-border-card p-8 text-center ${className}`}>
       {icon && <div className="text-4xl mb-4">{icon}</div>}
-      <p className="text-gray-500 text-lg mb-4">{title}</p>
-      <p className="text-gray-400">{description}</p>
+      <p className="text-text-dim text-lg mb-4">{title}</p>
+      <p className="text-text-dim">{description}</p>
       {action && (
         <button
           onClick={action.onClick}
-          className="inline-block mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="btn-primary mt-4"
         >
           {action.label}
         </button>

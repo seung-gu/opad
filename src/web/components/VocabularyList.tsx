@@ -14,30 +14,30 @@ export default function VocabularyList({ vocabularies, onDelete }: VocabularyLis
   }
 
   return (
-    <div className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-      <h2 className="text-2xl font-bold text-gray-900 mb-4">Vocabulary</h2>
+    <div className="mt-8 bg-card rounded-lg border border-border-card p-6">
+      <h2 className="text-2xl font-bold text-foreground mb-4">Vocabulary</h2>
       <div className="space-y-3">
         {vocabularies.map((vocab) => (
           <div
             key={vocab.id}
-            className="flex items-start justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+            className="flex items-start justify-between p-3 bg-background rounded-lg hover:bg-card-hover transition-colors"
           >
             <div className="flex-1">
               {/* Lemma with gender */}
               <div className="flex items-baseline gap-2 mb-1 flex-wrap">
                 {vocab.gender && (
-                  <span className="text-sm font-medium text-gray-500">{vocab.gender}</span>
+                  <span className="text-sm font-medium text-text-dim">{vocab.gender}</span>
                 )}
-                <span className="font-semibold text-gray-900 text-lg">{vocab.lemma}</span>
+                <span className="font-semibold text-foreground text-lg">{vocab.lemma}</span>
                 {vocab.word.toLowerCase() !== vocab.lemma.toLowerCase() && (
-                  <span className="text-sm text-gray-500">({vocab.word})</span>
+                  <span className="text-sm text-text-dim">({vocab.word})</span>
                 )}
               </div>
 
               {/* Metadata badges: POS + Level */}
               <div className="flex items-center gap-2 mb-1 flex-wrap">
                 {vocab.pos && (
-                  <span className="text-xs font-medium bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                  <span className="text-xs font-medium bg-accent/20 text-accent px-2 py-0.5 rounded">
                     {vocab.pos}
                   </span>
                 )}
@@ -49,11 +49,11 @@ export default function VocabularyList({ vocabularies, onDelete }: VocabularyLis
               </div>
 
               {/* Definition */}
-              <p className="text-gray-700 text-sm mb-1">{vocab.definition}</p>
+              <p className="text-foreground text-sm mb-1">{vocab.definition}</p>
 
               {/* Conjugations (if verb) */}
               {vocab.conjugations && (vocab.conjugations.present || vocab.conjugations.past || vocab.conjugations.perfect) && (
-                <div className="text-xs text-gray-600 mb-1 bg-gray-100 rounded p-2">
+                <div className="text-xs text-text-dim mb-1 bg-card-hover rounded p-2">
                   {[vocab.conjugations.present, vocab.conjugations.past, vocab.conjugations.perfect]
                     .filter(Boolean)
                     .join(' - ')}
@@ -61,11 +61,11 @@ export default function VocabularyList({ vocabularies, onDelete }: VocabularyLis
               )}
 
               {/* Example sentence */}
-              <p className="text-xs text-gray-500 italic">"{vocab.sentence}"</p>
+              <p className="text-xs text-text-dim italic">"{vocab.sentence}"</p>
             </div>
             <button
               onClick={() => onDelete(vocab.id)}
-              className="ml-4 px-2 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors flex-shrink-0"
+              className="btn-remove ml-4 flex-shrink-0"
               title="Remove from vocabulary"
             >
               −

@@ -65,14 +65,14 @@ function TokenUsageSection({ loading, records }: Readonly<{
 
   if (loading) {
     return (
-      <div className="mt-6 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+      <div className="mt-6 bg-card rounded-lg shadow-sm border border-border-card p-6 hover:border-accent/50 transition-colors">
+        <h2 className="text-sm font-semibold mb-4 flex items-center gap-2 font-mono text-accent tracking-wide uppercase">
           <span aria-hidden="true">📊</span>
           <span>Token Usage</span>
         </h2>
         <div className="animate-pulse space-y-2">
-          <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-          <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+          <div className="h-4 bg-card-hover rounded w-1/2"></div>
+          <div className="h-4 bg-card-hover rounded w-2/3"></div>
         </div>
       </div>
     )
@@ -80,12 +80,12 @@ function TokenUsageSection({ loading, records }: Readonly<{
 
   if (records.length === 0) {
     return (
-      <div className="mt-6 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+      <div className="mt-6 bg-card rounded-lg shadow-sm border border-border-card p-6 hover:border-accent/50 transition-colors">
+        <h2 className="text-sm font-semibold mb-4 flex items-center gap-2 font-mono text-accent tracking-wide uppercase">
           <span aria-hidden="true">📊</span>
           <span>Token Usage</span>
         </h2>
-        <p className="text-gray-500 text-sm">No token usage data available.</p>
+        <p className="text-text-dim text-sm">No token usage data available.</p>
       </div>
     )
   }
@@ -126,61 +126,58 @@ function TokenUsageSection({ loading, records }: Readonly<{
   const aggregatedRecords = Array.from(aggregatedMap.values())
 
   return (
-    <div className="mt-6 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-        <span aria-hidden="true">📊</span>
-        <span>Token Usage</span>
-      </h2>
+    <div className="mt-6 bg-card rounded-lg shadow-sm border border-border-card p-6 hover:border-accent/50 transition-colors">
+      <h2 className="text-2xl font-bold text-foreground mb-4">Token Usage</h2>
       <div className="space-y-4">
         {/* Summary */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-background rounded-lg">
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Total Tokens</p>
-            <p className="text-lg font-semibold text-gray-900">{totalTokens.toLocaleString()}</p>
+            <p className="text-xs text-text-dim uppercase tracking-wide">Total Tokens</p>
+            <p className="text-lg font-semibold text-foreground">{totalTokens.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Prompt</p>
-            <p className="text-lg font-semibold text-gray-900">{promptTokens.toLocaleString()}</p>
+            <p className="text-xs text-text-dim uppercase tracking-wide">Prompt</p>
+            <p className="text-lg font-semibold text-foreground">{promptTokens.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Completion</p>
-            <p className="text-lg font-semibold text-gray-900">{completionTokens.toLocaleString()}</p>
+            <p className="text-xs text-text-dim uppercase tracking-wide">Completion</p>
+            <p className="text-lg font-semibold text-foreground">{completionTokens.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Est. Cost</p>
-            <p className="text-lg font-semibold text-green-600">${totalCost.toFixed(4)}</p>
+            <p className="text-xs text-text-dim uppercase tracking-wide">Est. Cost</p>
+            <p className="text-lg font-semibold text-system">${totalCost.toFixed(4)}</p>
           </div>
         </div>
 
         {/* Detailed Records - uncontrolled to avoid scroll on re-render */}
         <details className="group">
-          <summary className="cursor-pointer text-sm text-blue-600 hover:text-blue-800 font-medium">
+          <summary className="cursor-pointer text-sm text-accent hover:text-accent/80 font-medium">
             View detailed breakdown ({aggregatedRecords.length} {aggregatedRecords.length === 1 ? 'operation' : 'operations'})
           </summary>
           <div className="mt-3 overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-gray-500 uppercase tracking-wide border-b">
+                <tr className="text-left text-xs text-text-dim uppercase tracking-wide border-b border-border-card">
                   <th className="pb-2 pr-4">Operation</th>
                   <th className="pb-2 pr-4">Model</th>
                   <th className="pb-2 pr-4 text-right">Tokens</th>
                   <th className="pb-2 text-right">Cost</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border-card">
                 {aggregatedRecords.map((record, idx) => (
-                  <tr key={`${record.operation}-${record.model}-${record.agent_name || 'default'}-${idx}`} className="text-gray-700">
+                  <tr key={`${record.operation}-${record.model}-${record.agent_name || 'default'}-${idx}`} className="text-foreground">
                     <td className="py-2 pr-4">
                       {formatOperationName(record.operation, record.agent_name)}
                     </td>
-                    <td className="py-2 pr-4 font-mono text-xs text-gray-500">{record.model}</td>
+                    <td className="py-2 pr-4 font-mono text-xs text-text-dim">{record.model}</td>
                     <td className="py-2 pr-4 text-right tabular-nums">
                       {record.total_tokens.toLocaleString()}
-                      <span className="text-gray-400 text-xs ml-1">
+                      <span className="text-text-dim text-xs ml-1">
                         ({record.prompt_tokens.toLocaleString()} + {record.completion_tokens.toLocaleString()})
                       </span>
                     </td>
-                    <td className="py-2 text-right tabular-nums text-green-600">
+                    <td className="py-2 text-right tabular-nums text-system">
                       ${record.estimated_cost.toFixed(4)}
                     </td>
                   </tr>
@@ -383,15 +380,15 @@ export default function ArticleDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 py-8">
+      <div className="min-h-screen bg-background py-8">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="animate-pulse">
-            <div className="h-8 bg-gray-200 rounded w-3/4 mb-4"></div>
-            <div className="h-4 bg-gray-200 rounded w-1/2 mb-8"></div>
+            <div className="h-8 bg-card-hover rounded w-3/4 mb-4"></div>
+            <div className="h-4 bg-card-hover rounded w-1/2 mb-8"></div>
             <div className="space-y-4">
-              <div className="h-4 bg-gray-200 rounded"></div>
-              <div className="h-4 bg-gray-200 rounded w-5/6"></div>
-              <div className="h-4 bg-gray-200 rounded w-4/6"></div>
+              <div className="h-4 bg-card-hover rounded"></div>
+              <div className="h-4 bg-card-hover rounded w-5/6"></div>
+              <div className="h-4 bg-card-hover rounded w-4/6"></div>
             </div>
           </div>
         </div>
@@ -401,14 +398,14 @@ export default function ArticleDetailPage() {
 
   if (error || !article) {
     return (
-      <div className="min-h-screen bg-gray-50 py-8">
+      <div className="min-h-screen bg-background py-8">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-            <h2 className="text-xl font-semibold text-red-900 mb-2">Error</h2>
-            <p className="text-red-800 mb-4">{error || 'Article not found'}</p>
+          <div className="bg-accent-danger/10 border border-accent-danger/30 rounded-lg p-6">
+            <h2 className="text-xl font-semibold text-accent-danger mb-2">Error</h2>
+            <p className="text-accent-danger/80 mb-4">{error || 'Article not found'}</p>
             <Link
               href="/articles"
-              className="text-blue-600 hover:text-blue-800 underline"
+              className="text-accent hover:text-accent/80 underline"
             >
               ← Back to Articles
             </Link>
@@ -419,30 +416,30 @@ export default function ArticleDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-background py-8">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-6">
           <Link
             href="/articles"
-            className="text-blue-600 hover:text-blue-800 text-sm mb-4 inline-block"
+            className="text-accent hover:text-accent/80 text-sm mb-4 inline-block"
           >
             ← Back to Articles
           </Link>
-          
+
           <div className="flex items-start justify-between gap-4 mb-4">
             <div className="flex-1">
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              <h1 className="text-3xl font-bold font-mono text-accent mb-2">
                 {article.topic || 'Untitled Article'}
               </h1>
-              <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600 mb-2">
+              <div className="flex flex-wrap items-center gap-3 text-sm text-text-dim mb-2">
                 <span className="font-medium">{article.language}</span>
                 <span>•</span>
                 <span>Level {article.level}</span>
                 <span>•</span>
                 <span>{article.length} words</span>
               </div>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-text-dim">
                 Created: {formatDate(article.created_at)}
               </div>
             </div>
@@ -452,30 +449,30 @@ export default function ArticleDetailPage() {
 
         {/* Progress Bar (only when running) */}
         {article.status === 'running' && currentJobId && (
-          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
+          <div className="mb-4 p-4 bg-accent/10 border border-accent/30 rounded-lg shadow-sm">
             <div className="mb-2">
-              <p className="text-gray-800 font-medium mb-2">
+              <p className="text-foreground font-medium mb-2">
                 ⏳ {progress.message || 'Generating article...'}
               </p>
               {progress.error && (
-                <div className="mb-2 p-3 bg-red-50 border border-red-200 rounded-md">
-                  <p className="text-red-800 text-sm font-medium">Error:</p>
-                  <p className="text-red-700 text-sm">{progress.error}</p>
+                <div className="mb-2 p-3 bg-accent-danger/10 border border-accent-danger/30 rounded-md">
+                  <p className="text-accent-danger text-sm font-medium">Error:</p>
+                  <p className="text-accent-danger/80 text-sm">{progress.error}</p>
                 </div>
               )}
-              <div className="w-full bg-gray-200 rounded-full h-3">
+              <div className="w-full bg-card-hover rounded-full h-3">
                 <div
-                  className="bg-blue-600 h-3 rounded-full transition-all duration-300"
+                  className="bg-accent h-3 rounded-full transition-all duration-300"
                   style={{ width: `${progress.progress}%` }}
                 ></div>
               </div>
-              <p className="text-sm text-blue-700 mt-2">{progress.progress}%</p>
+              <p className="text-sm text-accent mt-2">{progress.progress}%</p>
             </div>
           </div>
         )}
 
         {/* Content */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-card rounded-lg shadow-sm border border-border-card p-6">
           {content ? (
             /*
              * Key prop pattern forces component remount on content change.
@@ -496,7 +493,7 @@ export default function ArticleDetailPage() {
             />
           ) : (
             <div className="text-center py-12">
-              <p className="text-gray-500">
+              <p className="text-text-dim">
                 {article.status === 'running'
                   ? 'Article is being generated. Please check back later.'
                   : 'Article content is not available.'}
