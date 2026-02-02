@@ -27,14 +27,14 @@ export default function ArticleFilter({ selectedStatus, onStatusChange }: Articl
 
   return (
     <div className="flex items-center gap-2">
-      <label htmlFor="status-filter" className="text-sm font-medium text-gray-700">
+      <label htmlFor="status-filter" className="text-sm font-medium text-foreground">
         Filter by status:
       </label>
       <select
         id="status-filter"
         value={selectedStatus || ''}
         onChange={handleChange}
-        className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        className="px-3 py-2 bg-card border border-border-card rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
       >
         {STATUS_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>

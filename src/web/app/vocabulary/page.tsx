@@ -93,21 +93,21 @@ export default function VocabularyPage() {
   const uniqueCount = vocabularies.length
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-background py-8">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
-            <h1 className="text-3xl font-bold text-gray-900">My Vocabulary</h1>
+            <h1 className="text-3xl font-bold font-mono text-vocab">My Vocabulary</h1>
             <Link
               href="/articles"
-              className="text-xl font-medium text-gray-700 hover:text-gray-900 transition-colors"
+              className="text-xl font-medium text-foreground hover:text-foreground/80 transition-colors"
               title="Go to Articles"
             >
               ◀ Articles
             </Link>
           </div>
-          <p className="text-gray-600">
+          <p className="text-text-dim">
             {loading ? 'Loading...' : `${totalCount} saved (${uniqueCount} unique)`}
           </p>
         </div>
@@ -118,7 +118,7 @@ export default function VocabularyPage() {
         {/* Loading State */}
         {loading && (
           <div className="flex items-center justify-center py-12">
-            <div className="text-lg text-gray-500">Loading vocabularies...</div>
+            <div className="text-lg text-text-dim">Loading vocabularies...</div>
           </div>
         )}
 
@@ -140,11 +140,11 @@ export default function VocabularyPage() {
             {Object.entries(groupsByLanguage)
               .sort(([a], [b]) => a.localeCompare(b))
               .map(([language, groups]) => (
-                <div key={language} className="bg-white rounded-lg shadow-lg overflow-hidden">
+                <div key={language} className="bg-card rounded-lg shadow-lg overflow-hidden hover:border-accent/50 transition-colors border border-transparent">
                   {/* Language Header */}
-                  <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white p-4">
-                    <h2 className="text-2xl font-semibold">{language}</h2>
-                    <p className="text-emerald-100">
+                  <div className="bg-gradient-to-r from-vocab to-vocab/80 p-4">
+                    <h2 className="text-sm font-semibold font-mono text-white tracking-wide uppercase">📚 {language}</h2>
+                    <p className="text-white/80">
                       {groups.reduce((sum, g) => sum + g.count, 0)} saved ({groups.length} unique)
                     </p>
                   </div>
@@ -156,29 +156,29 @@ export default function VocabularyPage() {
                         return (
                           <div
                             key={`${group.language}-${group.lemma}`}
-                            className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:border-emerald-300 transition-colors flex flex-col"
+                            className="bg-background rounded-lg p-4 border border-border-card hover:border-vocab/50 transition-colors flex flex-col"
                           >
                             {/* Header: Lemma with gender + badges */}
                             <div className="flex items-start justify-between mb-2">
                               <div className="flex items-baseline gap-1 flex-wrap">
                                 {/* Gender prefix (if available) */}
                                 {group.gender && (
-                                  <span className="text-sm font-medium text-gray-500">{group.gender}</span>
+                                  <span className="text-sm font-medium text-text-dim">{group.gender}</span>
                                 )}
                                 {/* Lemma */}
-                                <span className="text-lg font-semibold text-gray-900">{group.lemma}</span>
+                                <span className="text-lg font-semibold text-foreground">{group.lemma}</span>
                               </div>
                               <div className="flex items-center gap-2 flex-shrink-0">
                                 {/* Count badge */}
                                 {group.count > 1 && (
-                                  <span className="text-sm font-medium text-emerald-600 bg-emerald-100 px-2 py-1 rounded">
-                                    {group.count}×
+                                  <span className="text-sm font-medium text-vocab bg-vocab/20 px-2 py-1 rounded">
+                                    x{group.count}
                                   </span>
                                 )}
                                 {/* Delete button */}
                                 <button
                                   onClick={() => handleDeleteVocabulary(group.id)}
-                                  className="px-2 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                                  className="btn-remove"
                                   title="Remove from vocabulary"
                                 >
                                   −
@@ -189,7 +189,7 @@ export default function VocabularyPage() {
                             {/* Metadata badges: POS + Level */}
                             <div className="flex items-center gap-2 mb-2 flex-wrap">
                               {group.pos && (
-                                <span className="text-xs font-medium bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                                <span className="text-xs font-medium bg-accent/20 text-accent px-2 py-0.5 rounded">
                                   {group.pos}
                                 </span>
                               )}
@@ -202,15 +202,15 @@ export default function VocabularyPage() {
 
                             {/* Original word form (if different from lemma) */}
                             {group.word !== group.lemma && (
-                              <p className="text-xs text-gray-500 italic mb-1">({group.word})</p>
+                              <p className="text-xs text-text-dim italic mb-1">({group.word})</p>
                             )}
 
                             {/* Definition */}
-                            <p className="text-sm text-gray-700 mb-2">{group.definition}</p>
+                            <p className="text-sm text-foreground mb-2">{group.definition}</p>
 
                             {/* Conjugations (if verb) */}
                             {group.conjugations && (group.conjugations.present || group.conjugations.past || group.conjugations.perfect) && (
-                              <div className="text-xs text-gray-600 mb-2 bg-gray-100 rounded p-2">
+                              <div className="text-xs text-text-dim mb-2 bg-card-hover rounded p-2">
                                 {[group.conjugations.present, group.conjugations.past, group.conjugations.perfect]
                                   .filter(Boolean)
                                   .join(' - ')}
@@ -218,12 +218,12 @@ export default function VocabularyPage() {
                             )}
 
                             {/* Example sentence */}
-                            <p className="text-xs text-gray-500 italic mb-2 line-clamp-2">
+                            <p className="text-xs text-text-dim italic mb-2 line-clamp-2">
                               &ldquo;{group.sentence}&rdquo;
                             </p>
 
                             {/* Footer: Date + Article count */}
-                            <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+                            <div className="flex items-center justify-between text-xs text-text-dim mb-2">
                               <span>
                                 {new Date(group.created_at).toLocaleDateString()}
                               </span>
@@ -236,7 +236,7 @@ export default function VocabularyPage() {
                             <div className="mt-auto">
                               <Link
                                 href={`/articles/${group.article_id}`}
-                                className="text-xs text-blue-600 hover:text-blue-800 underline"
+                                className="text-xs text-accent hover:text-accent/80 underline"
                               >
                                 View in Article
                               </Link>
@@ -256,7 +256,7 @@ export default function VocabularyPage() {
           <div className="mt-6 text-center">
             <button
               onClick={fetchVocabularies}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="btn-outline"
             >
               Refresh List
             </button>

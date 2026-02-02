@@ -8,104 +8,104 @@ import { getLevelColor, getLevelLabel } from '../styleHelpers'
 
 describe('styleHelpers', () => {
   describe('getLevelColor', () => {
-    describe('A-level colors (beginner)', () => {
-      it('should return green colors for A1', () => {
+    describe('A-level colors (beginner - green)', () => {
+      it('should return good/green colors for A1', () => {
         const result = getLevelColor('A1')
 
-        expect(result).toBe('bg-green-100 text-green-700')
+        expect(result).toBe('bg-good/20 text-good')
       })
 
-      it('should return green colors for A2', () => {
+      it('should return good/green colors for A2', () => {
         const result = getLevelColor('A2')
 
-        expect(result).toBe('bg-green-100 text-green-700')
+        expect(result).toBe('bg-good/20 text-good')
       })
 
-      it('should return green colors for A3', () => {
+      it('should return good/green colors for A3', () => {
         const result = getLevelColor('A3')
 
-        expect(result).toBe('bg-green-100 text-green-700')
+        expect(result).toBe('bg-good/20 text-good')
       })
 
       it('should handle lowercase a1', () => {
         const result = getLevelColor('a1')
 
         // Current implementation uses startsWith which is case-sensitive
-        expect(result).not.toBe('bg-green-100 text-green-700')
+        expect(result).not.toBe('bg-good/20 text-good')
       })
     })
 
-    describe('B-level colors (intermediate)', () => {
-      it('should return yellow colors for B1', () => {
+    describe('B-level colors (intermediate - warn)', () => {
+      it('should return accent-warn/yellow colors for B1', () => {
         const result = getLevelColor('B1')
 
-        expect(result).toBe('bg-yellow-100 text-yellow-700')
+        expect(result).toBe('bg-accent-warn/20 text-accent-warn')
       })
 
-      it('should return yellow colors for B2', () => {
+      it('should return accent-warn/yellow colors for B2', () => {
         const result = getLevelColor('B2')
 
-        expect(result).toBe('bg-yellow-100 text-yellow-700')
+        expect(result).toBe('bg-accent-warn/20 text-accent-warn')
       })
 
-      it('should return yellow colors for B3', () => {
+      it('should return accent-warn/yellow colors for B3', () => {
         const result = getLevelColor('B3')
 
-        expect(result).toBe('bg-yellow-100 text-yellow-700')
+        expect(result).toBe('bg-accent-warn/20 text-accent-warn')
       })
     })
 
-    describe('C-level colors (advanced)', () => {
-      it('should return red colors for C1', () => {
+    describe('C-level colors (advanced - danger)', () => {
+      it('should return accent-danger/red colors for C1', () => {
         const result = getLevelColor('C1')
 
-        expect(result).toBe('bg-red-100 text-red-700')
+        expect(result).toBe('bg-accent-danger/20 text-accent-danger')
       })
 
-      it('should return red colors for C2', () => {
+      it('should return accent-danger/red colors for C2', () => {
         const result = getLevelColor('C2')
 
-        expect(result).toBe('bg-red-100 text-red-700')
+        expect(result).toBe('bg-accent-danger/20 text-accent-danger')
       })
 
-      it('should return red colors for C3', () => {
+      it('should return accent-danger/red colors for C3', () => {
         const result = getLevelColor('C3')
 
-        expect(result).toBe('bg-red-100 text-red-700')
+        expect(result).toBe('bg-accent-danger/20 text-accent-danger')
       })
     })
 
     describe('edge cases', () => {
-      it('should return gray for undefined', () => {
+      it('should return gray/dim for undefined', () => {
         const result = getLevelColor(undefined)
 
-        expect(result).toBe('bg-gray-100 text-gray-600')
+        expect(result).toBe('bg-card text-text-dim')
       })
 
-      it('should return gray for empty string', () => {
+      it('should return gray/dim for empty string', () => {
         const result = getLevelColor('')
 
-        expect(result).toBe('bg-gray-100 text-gray-600')
+        expect(result).toBe('bg-card text-text-dim')
       })
 
-      it('should return gray for null', () => {
+      it('should return gray/dim for null', () => {
         const result = getLevelColor(null as any)
 
-        expect(result).toBe('bg-gray-100 text-gray-600')
+        expect(result).toBe('bg-card text-text-dim')
       })
 
-      it('should return gray for unrecognized level starting with other letters', () => {
+      it('should return accent-danger for unrecognized level starting with other letters', () => {
         const result = getLevelColor('X1')
 
         // Falls through to default (red)
-        expect(result).toBe('bg-red-100 text-red-700')
+        expect(result).toBe('bg-accent-danger/20 text-accent-danger')
       })
 
-      it('should return gray for numbers only', () => {
+      it('should return accent-danger for numbers only', () => {
         const result = getLevelColor('123')
 
         // Falls through to default (red)
-        expect(result).toBe('bg-red-100 text-red-700')
+        expect(result).toBe('bg-accent-danger/20 text-accent-danger')
       })
 
       it('should handle lowercase levels', () => {
@@ -114,29 +114,29 @@ describe('styleHelpers', () => {
         const resultC = getLevelColor('c1')
 
         // Case-sensitive check with startsWith - lowercase falls through to default (red)
-        expect(resultA).toBe('bg-red-100 text-red-700') // doesn't start with 'A'
-        expect(resultB).toBe('bg-red-100 text-red-700') // doesn't start with 'B'
-        expect(resultC).toBe('bg-red-100 text-red-700') // default case
+        expect(resultA).toBe('bg-accent-danger/20 text-accent-danger') // doesn't start with 'A'
+        expect(resultB).toBe('bg-accent-danger/20 text-accent-danger') // doesn't start with 'B'
+        expect(resultC).toBe('bg-accent-danger/20 text-accent-danger') // default case
       })
 
       it('should handle whitespace', () => {
         const result = getLevelColor(' A1 ')
 
         // Doesn't start with A due to leading space
-        expect(result).not.toBe('bg-green-100 text-green-700')
+        expect(result).not.toBe('bg-good/20 text-good')
       })
 
       it('should handle mixed case', () => {
         const result = getLevelColor('A1')
 
-        expect(result).toBe('bg-green-100 text-green-700')
+        expect(result).toBe('bg-good/20 text-good')
       })
 
-      it('should return gray for special characters', () => {
+      it('should return accent-danger for special characters', () => {
         const result = getLevelColor('@A1')
 
         // Doesn't start with A, B, or C
-        expect(result).toBe('bg-red-100 text-red-700')
+        expect(result).toBe('bg-accent-danger/20 text-accent-danger')
       })
 
       it('should return appropriate color for level with suffix', () => {
@@ -144,9 +144,9 @@ describe('styleHelpers', () => {
         const resultB = getLevelColor('B2-plus')
         const resultC = getLevelColor('C1-expert')
 
-        expect(resultA).toBe('bg-green-100 text-green-700')
-        expect(resultB).toBe('bg-yellow-100 text-yellow-700')
-        expect(resultC).toBe('bg-red-100 text-red-700')
+        expect(resultA).toBe('bg-good/20 text-good')
+        expect(resultB).toBe('bg-accent-warn/20 text-accent-warn')
+        expect(resultC).toBe('bg-accent-danger/20 text-accent-danger')
       })
     })
 
@@ -364,15 +364,15 @@ describe('styleHelpers', () => {
       const color = getLevelColor(level)
       const label = getLevelLabel(level)
 
-      expect(color).toBe('bg-yellow-100 text-yellow-700')
+      expect(color).toBe('bg-accent-warn/20 text-accent-warn')
       expect(label).toBe('Intermediate')
     })
 
     it('should handle multiple levels correctly', () => {
       const levelTests = [
-        { level: 'A1', expectedColor: 'bg-green-100 text-green-700', expectedLabel: 'Beginner' },
-        { level: 'B2', expectedColor: 'bg-yellow-100 text-yellow-700', expectedLabel: 'Intermediate' },
-        { level: 'C1', expectedColor: 'bg-red-100 text-red-700', expectedLabel: 'Advanced' }
+        { level: 'A1', expectedColor: 'bg-good/20 text-good', expectedLabel: 'Beginner' },
+        { level: 'B2', expectedColor: 'bg-accent-warn/20 text-accent-warn', expectedLabel: 'Intermediate' },
+        { level: 'C1', expectedColor: 'bg-accent-danger/20 text-accent-danger', expectedLabel: 'Advanced' }
       ]
 
       levelTests.forEach(({ level, expectedColor, expectedLabel }) => {
@@ -385,7 +385,7 @@ describe('styleHelpers', () => {
       const color = getLevelColor(undefined)
       const label = getLevelLabel(undefined)
 
-      expect(color).toBe('bg-gray-100 text-gray-600')
+      expect(color).toBe('bg-card text-text-dim')
       expect(label).toBe('Unknown')
     })
   })

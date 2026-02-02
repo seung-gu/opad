@@ -9,30 +9,30 @@ interface ArticleStatusBadgeProps {
 
 /**
  * Reusable badge component for displaying article status.
- * 
+ *
  * Provides consistent styling and color coding for different statuses:
- * - running: blue
- * - completed: green
- * - failed: red
- * - deleted: gray
+ * - running: blue (accent)
+ * - completed: purple (system)
+ * - failed: red (danger)
+ * - deleted: gray (text-dim)
  */
 export default function ArticleStatusBadge({ status, className = '' }: ArticleStatusBadgeProps) {
   const statusConfig = {
     running: {
       label: 'Running',
-      colorClass: 'bg-blue-100 text-blue-800 border-blue-200'
+      colorClass: 'bg-accent/20 text-accent border-accent/30'
     },
     completed: {
       label: 'Completed',
-      colorClass: 'bg-green-100 text-green-800 border-green-200'
+      colorClass: 'bg-system/20 text-system border-system/30'
     },
     failed: {
       label: 'Failed',
-      colorClass: 'bg-red-100 text-red-800 border-red-200'
+      colorClass: 'bg-accent-danger/20 text-accent-danger border-accent-danger/30'
     },
     deleted: {
       label: 'Deleted',
-      colorClass: 'bg-gray-100 text-gray-800 border-gray-200'
+      colorClass: 'bg-text-dim/20 text-text-dim border-text-dim/30'
     }
   }
 

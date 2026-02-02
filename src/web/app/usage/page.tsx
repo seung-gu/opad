@@ -97,35 +97,35 @@ export default function UsagePage() {
   const hasData = summary && (summary.total_tokens > 0 || summary.daily_usage.length > 0)
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-background py-8">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
-            <h1 className="text-3xl font-bold text-gray-900">Token Usage</h1>
+            <h1 className="text-3xl font-bold font-mono text-accent">Token Usage</h1>
             <Link
               href="/articles"
-              className="text-xl font-medium text-gray-700 hover:text-gray-900 transition-colors"
+              className="text-xl font-medium text-foreground hover:text-foreground transition-colors"
               title="Go to Articles"
             >
               ◀ Articles
             </Link>
           </div>
-          <p className="text-gray-600">
+          <p className="text-text-dim">
             Track your API token consumption and costs
           </p>
         </div>
 
         {/* Days Selector */}
         <div className="mb-6 flex items-center gap-4">
-          <label htmlFor="days-select" className="text-sm font-medium text-gray-700">
+          <label htmlFor="days-select" className="text-sm font-medium text-foreground">
             Time Period:
           </label>
           <select
             id="days-select"
             value={days}
             onChange={(e) => handleDaysChange(Number(e.target.value))}
-            className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="px-4 py-2 border border-border-card rounded-lg bg-card text-foreground focus:ring-2 focus:ring-accent focus:border-accent"
             disabled={loading}
           >
             <option value={7}>Last 7 days</option>
@@ -140,10 +140,10 @@ export default function UsagePage() {
 
         {/* Loading State - only show full loader when no data exists */}
         {loading && !hasData && (
-          <div className="bg-white rounded-lg shadow-lg p-8">
+          <div className="bg-card rounded-lg shadow-lg p-8">
             <div className="flex items-center justify-center">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <p className="ml-4 text-lg text-gray-500">Loading usage data...</p>
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-accent"></div>
+              <p className="ml-4 text-lg text-text-dim">Loading usage data...</p>
             </div>
           </div>
         )}
@@ -162,11 +162,11 @@ export default function UsagePage() {
 
         {/* Usage Summary */}
         {!error && hasData && summary && (
-          <div className={`bg-white rounded-lg shadow-lg overflow-hidden transition-opacity ${loading ? 'opacity-50' : ''}`}>
+          <div className={`bg-card rounded-lg shadow-lg overflow-hidden transition-opacity hover:border-accent/50 transition-colors ${loading ? 'opacity-50' : ''}`}>
             {/* Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6">
-              <h2 className="text-2xl font-semibold">Token Usage Summary</h2>
-              <p className="text-blue-100">Last {days} days</p>
+            <div className="bg-gradient-to-r from-accent to-accent/80 p-6">
+              <h2 className="text-sm font-semibold font-mono text-white tracking-wide uppercase">Token Usage Summary</h2>
+              <p className="text-white/80">Last {days} days</p>
             </div>
 
             {/* Content */}
@@ -182,7 +182,7 @@ export default function UsagePage() {
             <button
               onClick={createFetchWithAbort}
               disabled={loading}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-outline"
             >
               {loading ? 'Refreshing...' : 'Refresh Data'}
             </button>

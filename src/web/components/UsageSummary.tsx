@@ -67,22 +67,22 @@ export default function UsageSummary({ summary, days }: Readonly<UsageSummaryPro
     <div className="space-y-6">
       {/* Totals Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
-          <div className="text-sm text-blue-600 font-medium mb-1">Total Tokens</div>
-          <div className="text-4xl font-bold text-blue-900">{formatTokens(total_tokens)}</div>
-          <div className="text-sm text-blue-600 mt-1">Last {days} days</div>
+        <div className="bg-accent/20 rounded-lg p-6 border border-accent/50">
+          <div className="text-sm text-accent font-medium mb-1">Total Tokens</div>
+          <div className="text-4xl font-bold text-foreground">{formatTokens(total_tokens)}</div>
+          <div className="text-sm text-accent mt-1">Last {days} days</div>
         </div>
-        <div className="bg-green-50 rounded-lg p-6 border border-green-200">
-          <div className="text-sm text-green-600 font-medium mb-1">Estimated Cost</div>
-          <div className="text-4xl font-bold text-green-900">{formatCost(total_cost)}</div>
-          <div className="text-sm text-green-600 mt-1">Last {days} days</div>
+        <div className="bg-system/20 rounded-lg p-6 border border-system/50">
+          <div className="text-sm text-system font-medium mb-1">Estimated Cost</div>
+          <div className="text-4xl font-bold text-foreground">{formatCost(total_cost)}</div>
+          <div className="text-sm text-system mt-1">Last {days} days</div>
         </div>
       </div>
 
       {/* Operations Breakdown */}
       {sortedOperations.length > 0 && (
         <div>
-          <h3 className="text-xl font-semibold text-gray-900 mb-4">Usage by Operation</h3>
+          <h3 className="text-xl font-semibold text-foreground mb-4">Usage by Operation</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {sortedOperations.map(([operation, usage]) => (
               <OperationCard
@@ -98,8 +98,8 @@ export default function UsageSummary({ summary, days }: Readonly<UsageSummaryPro
       {/* Daily Usage Chart */}
       {daily_usage.length > 0 && (
         <div>
-          <h3 className="text-xl font-semibold text-gray-900 mb-4">Daily Usage</h3>
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+          <h3 className="text-xl font-semibold text-foreground mb-4">Daily Usage</h3>
+          <div className="bg-background rounded-lg p-4 border border-border-card">
             <DailyUsageChart
               dailyUsage={daily_usage}
               maxTokens={maxDailyTokens}
@@ -110,8 +110,8 @@ export default function UsageSummary({ summary, days }: Readonly<UsageSummaryPro
 
       {/* Empty state for daily usage */}
       {daily_usage.length === 0 && (
-        <div className="bg-gray-50 rounded-lg p-8 border border-gray-200 text-center">
-          <p className="text-gray-500">No daily usage data available for this period.</p>
+        <div className="bg-background rounded-lg p-8 border border-border-card text-center">
+          <p className="text-text-dim">No daily usage data available for this period.</p>
         </div>
       )}
     </div>
@@ -130,16 +130,16 @@ function OperationCard({ operation, usage }: Readonly<OperationCardProps>) {
   const label = getOperationLabel(operation)
 
   return (
-    <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+    <div className="bg-card rounded-lg p-4 border border-border-card">
       <div className="flex items-start justify-between">
         <div>
-          <div className="text-sm font-medium text-gray-600 mb-1">{label}</div>
-          <div className="text-2xl font-bold text-gray-900">{formatTokens(usage.tokens)}</div>
-          <div className="text-sm text-gray-500 mt-1">tokens</div>
+          <div className="text-sm font-medium text-text-dim mb-1">{label}</div>
+          <div className="text-2xl font-bold text-foreground">{formatTokens(usage.tokens)}</div>
+          <div className="text-sm text-text-dim mt-1">tokens</div>
         </div>
         <div className="text-right">
-          <div className="text-lg font-semibold text-green-700">{formatCost(usage.cost)}</div>
-          <div className="text-xs text-gray-500 mt-1">{usage.count} request{usage.count === 1 ? '' : 's'}</div>
+          <div className="text-lg font-semibold text-system">{formatCost(usage.cost)}</div>
+          <div className="text-xs text-text-dim mt-1">{usage.count} request{usage.count === 1 ? '' : 's'}</div>
         </div>
       </div>
     </div>
@@ -169,10 +169,10 @@ function DailyUsageChart({ dailyUsage, maxTokens }: Readonly<DailyUsageChartProp
 
         return (
           <div key={date} className="flex items-center gap-3">
-            <div className="w-20 text-xs text-gray-600 flex-shrink-0">
+            <div className="w-20 text-xs text-text-dim flex-shrink-0">
               {formattedDate}
             </div>
-            <div className="flex-1 h-6 bg-gray-200 rounded-full overflow-hidden relative">
+            <div className="flex-1 h-6 bg-card-hover rounded-full overflow-hidden relative">
               {/* Semantic progress element for accessibility (visually hidden) */}
               <progress
                 value={tokens}
@@ -182,15 +182,15 @@ function DailyUsageChart({ dailyUsage, maxTokens }: Readonly<DailyUsageChartProp
               />
               {/* Visual bar (decorative, hidden from screen readers) */}
               <div
-                className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-300"
+                className="h-full bg-gradient-to-r from-accent to-accent/80 rounded-full transition-all duration-300"
                 style={{ width: `${barWidth}%` }}
                 aria-hidden="true"
               />
             </div>
-            <div className="w-24 text-xs text-gray-700 text-right flex-shrink-0">
+            <div className="w-24 text-xs text-foreground text-right flex-shrink-0">
               {formatTokens(tokens)}
             </div>
-            <div className="w-16 text-xs text-green-600 text-right flex-shrink-0">
+            <div className="w-16 text-xs text-system text-right flex-shrink-0">
               {formatCost(cost)}
             </div>
           </div>
@@ -198,14 +198,14 @@ function DailyUsageChart({ dailyUsage, maxTokens }: Readonly<DailyUsageChartProp
       })}
 
       {/* Legend */}
-      <div className="flex justify-end gap-4 mt-4 pt-4 border-t border-gray-200">
+      <div className="flex justify-end gap-4 mt-4 pt-4 border-t border-border-card">
         <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-blue-600 rounded" />
-          <span className="text-xs text-gray-600">Tokens</span>
+          <div className="w-3 h-3 bg-gradient-to-r from-accent to-accent/80 rounded" />
+          <span className="text-xs text-text-dim">Tokens</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-green-600 font-medium">$</span>
-          <span className="text-xs text-gray-600">Cost</span>
+          <span className="text-xs text-system font-medium">$</span>
+          <span className="text-xs text-text-dim">Cost</span>
         </div>
       </div>
     </div>

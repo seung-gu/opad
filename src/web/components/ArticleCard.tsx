@@ -23,15 +23,15 @@ export default function ArticleCard({ article }: ArticleCardProps) {
   return (
     <Link
       href={`/articles/${article.id}`}
-      className="block p-4 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:shadow-md transition-all duration-200"
+      className="block p-4 bg-card border border-border-card rounded-lg hover:border-accent/50 hover:bg-card-hover transition-all duration-200"
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2 truncate">
+          <h3 className="text-lg font-semibold text-foreground mb-2 truncate">
             {article.topic || 'Untitled Article'}
           </h3>
-          
-          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600 mb-3">
+
+          <div className="flex flex-wrap items-center gap-3 text-sm text-text-dim mb-3">
             <span className="font-medium">{article.language}</span>
             <span>•</span>
             <span>Level {article.level}</span>
@@ -39,7 +39,7 @@ export default function ArticleCard({ article }: ArticleCardProps) {
             <span>{article.length} words</span>
           </div>
 
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-text-dim">
             Created: {formatDateTime(article.created_at)}
           </div>
         </div>
