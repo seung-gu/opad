@@ -53,8 +53,8 @@ async def search_word(
     try:
         content, stats = await call_llm_with_tracking(
             messages=[{"role": "user", "content": prompt}],
-            model="gpt-4.1-mini",
-            max_tokens=200,
+            model="openai/gpt-4.1-mini",
+            max_tokens=2000,
             temperature=0
         )
 

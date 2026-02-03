@@ -79,6 +79,8 @@ adapt_news_article:
     - Author name (only if it was verified in the previous step)
 
     Structure the output with clear markdown sections and headings for better readability.
+
+    IMPORTANT: Do NOT highlight or mark vocabulary words with bold (**), italic (*), backticks (`), or any other formatting. Output plain text only in the article body.
   expected_output: >
     A rewritten version of the selected news article adapted for {level} level learners in {language}.
     The text should be approximately {length} words, use appropriate vocabulary for the level, and maintain all key information from the original article.
@@ -90,5 +92,42 @@ adapt_news_article:
     - pick_best_article
   output_file: output/adapted_reading_material.md
 
+review_article_quality:
+  description: >
+    Review the adapted article and fix any issues to produce the final polished version.
 
+    Target language: {language}
+    Target level: {level}
+
+    Check and fix:
+    1. Unnatural or awkward expressions → rewrite naturally
+    2. Sentences that don't flow well → improve flow
+    3. Word choices that don't fit the context → replace with appropriate words
+    4. Grammar errors → correct them
+    5. Vocabulary too difficult for {level} → simplify to match level
+
+    Preserve all source information (source name, URL, date, author) at the beginning.
+    Preserve the original markdown structure and formatting.
+
+    IMPORTANT: Do NOT highlight or mark any words with bold (**), italic (*), backticks (`), or any other formatting. Output plain text only in the article body.
+
+    Return the result as valid JSON format with proper string quotes for all keys and values.
+  expected_output: >
+    Return a valid JSON object with this exact structure:
+    {
+      "article_content": "The final polished article in markdown format with source section at the top",
+      "replaced_sentences": [
+        {
+          "original": "Original sentence before change",
+          "replaced": "Sentence after the change",
+          "rationale": "Reason for the change"
+        }
+      ]
+    }
+    All keys must be in double quotes. All string values must be in double quotes.
+    If no changes were needed, replaced_sentences should be an empty array [].
+  agent: article_reviewer
+  context:
+    - adapt_news_article
+  output_file: output/final_article.json
 

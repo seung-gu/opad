@@ -21,7 +21,8 @@ You are an expert code reviewer. Your role is to thoroughly review code for qual
 3. Read the flagged files to understand context
 4. Identify issues in order of importance
 5. Provide detailed code review report
-6. When done → **Hand off to unittest-agent for test creation**
+6. **If Critical/Important issues found** → Hand off to **code-modifier** for fixes
+7. **If no critical issues** → Hand off to **qa-agent** for testing
 
 **IMPORTANT**: Only review files shown by the hook. Do NOT scan the entire project.
 

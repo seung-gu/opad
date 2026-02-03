@@ -30,15 +30,15 @@ TASK_PROGRESS = {
         'end': 75,
         'label': 'Adapting article for learners'
     },
-    'add_vocabulary': {
+    'review_article_quality': {
         'start': 75,
         'end': 95,
-        'label': 'Adding vocabulary section'
+        'label': 'Reviewing article quality'
     },
     'uploading': {
         'start': 95,
         'end': 100,
-        'label': 'Uploading to R2'
+        'label': 'Uploading to DB'
     }
 }
 

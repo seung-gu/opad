@@ -38,6 +38,11 @@ class CrewResult:
         self.result = result
         self.crew_instance = crew_instance
 
+    @property
+    def pydantic(self):
+        """Delegate to underlying CrewAI result's pydantic attribute."""
+        return self.result.pydantic
+
     def get_agent_usage(self) -> list[dict]:
         """Get token usage per agent with model info.
 

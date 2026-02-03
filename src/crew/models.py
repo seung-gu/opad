@@ -23,3 +23,16 @@ class SelectedArticle(BaseModel):
     """A selected news article with selection rationale"""
     article: NewsArticle = Field(description="The selected news article")
     selection_rationale: str = Field(description="Explanation of why this article was selected over the alternatives")
+
+
+class ReplacedSentence(BaseModel):
+    """ Replaced sentence information """
+    original: str = Field(description="The original sentence before replacement")
+    replaced: str = Field(description="The sentence after replacement")
+    rationale: str = Field(description="Reason for the replacement")
+
+
+class ReviewedArticle(BaseModel):
+    """A reviewed news article with review rationale"""
+    article_content: str = Field(description="The final polished article in markdown format")
+    replaced_sentences: list[ReplacedSentence] = Field(description="List of sentences that were replaced during review", default=[])

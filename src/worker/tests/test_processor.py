@@ -123,6 +123,8 @@ class TestWorkerErrorHandling(unittest.TestCase):
         # Mock successful execution
         mock_result = MagicMock()
         mock_result.raw = "# Test Article\n\nContent here"
+        mock_result.pydantic.article_content = "# Test Article\n\nContent here"
+        mock_result.pydantic.replaced_sentences = []
         mock_run_crew.return_value = mock_result
         mock_save_article.return_value = True
 
@@ -154,6 +156,8 @@ class TestWorkerErrorHandling(unittest.TestCase):
         """
         mock_result = MagicMock()
         mock_result.raw = "# Test Article"
+        mock_result.pydantic.article_content = "# Test Article"
+        mock_result.pydantic.replaced_sentences = []
         mock_run_crew.return_value = mock_result
         # Mock MongoDB save to return False (failure)
         mock_save_article.return_value = False
@@ -193,12 +197,12 @@ class TestTaskProgressMapping(unittest.TestCase):
         self.assertIn('find_news_articles', TASK_PROGRESS)
         self.assertIn('pick_best_article', TASK_PROGRESS)
         self.assertIn('adapt_news_article', TASK_PROGRESS)
-        self.assertIn('add_vocabulary', TASK_PROGRESS)
+        self.assertIn('review_article_quality', TASK_PROGRESS)
 
         # Verify progress ranges
         self.assertEqual(TASK_PROGRESS['find_news_articles']['start'], 0)
         self.assertEqual(TASK_PROGRESS['find_news_articles']['end'], 25)
-        self.assertEqual(TASK_PROGRESS['add_vocabulary']['end'], 95)
+        self.assertEqual(TASK_PROGRESS['review_article_quality']['end'], 95)
 
 
 if __name__ == '__main__':

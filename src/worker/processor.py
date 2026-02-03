@@ -32,6 +32,8 @@ from utils.mongodb import save_article, update_article_status, get_user_vocabula
 from utils.token_usage import save_crew_token_usage
 from worker.context import JobContext, translate_error
 from crew.progress_listener import JobProgressListener
+from crew.models import ReviewedArticle
+
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +66,15 @@ def process_job(job_data: dict) -> bool:
             )
 
             # Fetch vocabulary for personalized generation (always set default to avoid template error)
+            # Filter by target level to avoid vocab too difficult for the article
             vocab = None
             if ctx.user_id and ctx.inputs.get('language'):
-                vocab = get_user_vocabulary_for_generation(ctx.user_id, ctx.inputs['language'], 50)
+                vocab = get_user_vocabulary_for_generation(
+                    user_id=ctx.user_id,
+                    language=ctx.inputs['language'],
+                    target_level=ctx.inputs.get('level'),
+                    limit=50
+                )
             ctx.inputs['vocabulary_list'] = vocab if vocab else ""
 
             # Execute CrewAI
@@ -85,9 +93,19 @@ def process_job(job_data: dict) -> bool:
                     update_article_status(ctx.article_id, 'failed')
                 return False
 
+        # Log replaced sentences from review
+        reviewed = result.pydantic
+        if isinstance(reviewed, ReviewedArticle) and reviewed.replaced_sentences:
+            for change in reviewed.replaced_sentences:
+                logger.info(
+                    f"Sentence replaced: '{change.original}' → '{change.replaced}' ({change.rationale})",
+                    extra=ctx.log_extra
+                )
+
         # Save to MongoDB
         logger.info("Saving article", extra=ctx.log_extra)
-        if not save_article(ctx.article_id, result.raw, ctx.started_at):
+        content = reviewed.article_content
+        if not save_article(ctx.article_id, content, ctx.started_at):
             ctx.mark_failed('Failed to save article to database', 'MongoDB save error')
             return False
 
