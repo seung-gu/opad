@@ -5,7 +5,7 @@ from crewai.memory import ShortTermMemory, LongTermMemory, EntityMemory
 from crewai.memory.storage.rag_storage import RAGStorage
 from crewai.memory.storage.ltm_sqlite_storage import LTMSQLiteStorage
 
-from crew.models import NewsArticleList, SelectedArticle
+from crew.models import NewsArticleList, SelectedArticle, ReviewedArticle
 from crew.guardrails import repair_json_output
 
 
@@ -44,6 +44,10 @@ class ReadingMaterialCreator():
     def article_rewriter(self) -> Agent:
         return Agent(config=self.agents_config['article_rewriter'])
 
+    @agent
+    def article_reviewer(self) -> Agent:
+        return Agent(config=self.agents_config['article_reviewer'])
+
     @task
     def find_news_articles(self) -> Task:
         return Task(
@@ -64,6 +68,14 @@ class ReadingMaterialCreator():
     def adapt_news_article(self) -> Task:
         return Task(
             config=self.tasks_config['adapt_news_article']
+        )
+
+    @task
+    def review_article_quality(self) -> Task:
+        return Task(
+            config=self.tasks_config['review_article_quality'],
+            output_pydantic=ReviewedArticle,
+            guardrail=repair_json_output
         )
 
     @crew

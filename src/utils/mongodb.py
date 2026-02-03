@@ -29,6 +29,34 @@ _client_cache = None
 _connection_attempted = False
 _connection_failed = False
 
+# CEFR levels in order
+CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+
+
+def get_allowed_vocab_levels(target_level: str, max_above: int = 1) -> list[str]:
+    """Get allowed vocabulary levels for a target article level.
+
+    Args:
+        target_level: Target CEFR level (A1-C2)
+        max_above: Maximum levels above target to allow (default: 1)
+
+    Returns:
+        List of allowed CEFR levels. Words at these levels can be used.
+        Returns all levels if target_level is invalid.
+
+    Example:
+        get_allowed_vocab_levels('A2', max_above=1) → ['A1', 'A2', 'B1']
+        get_allowed_vocab_levels('B1', max_above=1) → ['A1', 'A2', 'B1', 'B2']
+    """
+    target_upper = target_level.upper()
+    if target_upper not in CEFR_LEVELS:
+        return CEFR_LEVELS  # Allow all if invalid
+
+    target_index = CEFR_LEVELS.index(target_upper)
+    # Ensure we always include at least up to target level (handle negative max_above safely)
+    max_index = max(target_index, min(target_index + max_above, len(CEFR_LEVELS) - 1))
+    return CEFR_LEVELS[:max_index + 1]
+
 
 def get_mongodb_client() -> Optional[MongoClient]:
     """Get MongoDB client with connection caching and reconnection logic.
@@ -1435,6 +1463,7 @@ def get_vocabulary_counts(
 def get_user_vocabulary_for_generation(
     user_id: str,
     language: str,
+    target_level: str | None = None,
     limit: int = 50
 ) -> list[str]:
     """Get user's vocabulary for article generation, sorted by frequency then recency.
@@ -1447,6 +1476,8 @@ def get_user_vocabulary_for_generation(
     Args:
         user_id: User ID to filter vocabularies
         language: Language to filter (must match exactly)
+        target_level: Target CEFR level (A1-C2). If provided, filters out vocab
+                     more than 1 level above target to avoid too difficult words.
         limit: Maximum number of lemmas to return (default: 50, max: 1000)
 
     Returns:
@@ -1469,18 +1500,30 @@ def get_user_vocabulary_for_generation(
         db = client[DATABASE_NAME]
         collection = db[VOCABULARY_COLLECTION_NAME]
 
+        # Build match filter
+        match_filter = {
+            'user_id': user_id,
+            'language': language
+        }
+
+        # Add level filter if target_level is provided
+        if target_level:
+            allowed_levels = get_allowed_vocab_levels(target_level, max_above=1)
+            match_filter['level'] = {'$in': allowed_levels}
+            logger.debug(
+                "Filtering vocabulary by level",
+                extra={"targetLevel": target_level, "allowedLevels": allowed_levels}
+            )
+
         # Aggregation pipeline:
-        # 1. Match user_id and language
+        # 1. Match user_id, language, and optionally level
         # 2. Group by lemma, count occurrences, get max created_at
         # 3. Sort by count desc, then max_created_at desc
         # 4. Limit results
         # 5. Project only lemma
         pipeline = [
             {
-                '$match': {
-                    'user_id': user_id,
-                    'language': language
-                }
+                '$match': match_filter
             },
             {
                 '$group': {

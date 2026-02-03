@@ -1,47 +1,8 @@
 # 아키텍처 문서: 3-Service 분리
 
-## 📊 현재 구조 (Before)
+## 🎯 시스템 아키텍처
 
-```
-┌─────────────────────────────────────────┐
-│         Railway Container (단일)         │
-│                                         │
-│  ┌──────────────┐                       │
-│  │  Next.js     │                       │
-│  │  (Port 3000) │                       │
-│  └──────┬───────┘                       │
-│         │                               │
-│         │ spawn('python3', main.py)     │
-│         ▼                               │
-│  ┌──────────────┐                       │
-│  │ Python       │                       │
-│  │ CrewAI 실행   │                       │
-│  │              │                       │
-│  │ - status.json 파일 쓰기                │
-│  │ - MongoDB에 업로드                     │
-│  └──────────────┘                       │
-│                                         │
-│  문제점:                                  │
-│  - Next.js와 Python이 같은 컨테이너          │
-│  - 리소스 경쟁 (CPU/메모리)                  │
-│  - 확장 불가능 (둘 다 함께 스케일)             │
-│  - 장애 격리 불가 (하나 죽으면 전체)           │
-└─────────────────────────────────────────┘
-```
-
-### 현재 흐름:
-1. 사용자가 "Generate" 클릭
-2. Next.js `/api/generate` → `spawn('python3', main.py)` 실행
-3. Python이 백그라운드에서 CrewAI 실행
-4. Python이 `status.json` 파일에 진행상황 기록
-5. Next.js가 `/api/status`로 폴링 (2초마다)
-6. 완료되면 `/api/article`로 MongoDB에서 파일 가져옴
-
----
-
-## 🎯 목표 구조 (After)
-
-### 시스템 아키텍처
+### System Overview
 
 ```mermaid
 graph TB
@@ -487,7 +448,7 @@ sequenceDiagram
     API->>MongoDB: save_token_usage()
     API-->>WebUI: Definition response
 
-    Note over User,MongoDB: Article Generation with Token Tracking (Phase 6)
+    Note over User,MongoDB: Article Generation with Token Tracking
     User->>WebUI: Generate article
     WebUI->>API: POST /articles/generate
     API->>Redis: Enqueue job
@@ -518,212 +479,17 @@ sequenceDiagram
     WebUI-->>User: Display usage details
 ```
 
-### Future Enhancements
-
-**Phase 1** (Completed):
-- ✅ LiteLLM integration with token tracking
-- ✅ TokenUsageStats dataclass
-- ✅ MongoDB storage functions
-- ✅ Dictionary API integration with logging
-
-**Phase 2** (Completed):
-- ✅ Database storage of token usage records
-- ✅ User token summary endpoint
-- ✅ Article token usage tracking
-
-**Phase 3** (Completed):
-- ✅ API endpoints for token usage (`/usage/me`, `/usage/articles/{id}`)
-- ✅ Authentication and authorization for usage endpoints
-- ✅ Usage summary with daily breakdown and operation filtering
-
-**Phase 4** (Completed):
-- ✅ CrewAI article generation token tracking via LiteLLM callbacks
-- ✅ ArticleGenerationTokenTracker class for worker integration
-- ✅ Automatic token tracking for authenticated users during article generation
-
-**Phase 5** (Completed):
-- ✅ JobTracker coordinator pattern for unified tracking
-- ✅ Context manager protocol for automatic setup/cleanup
-- ✅ Proper LiteLLM callback lifecycle management
-- ✅ Nested context support with callback state preservation
-
-**Phase 6** (Completed):
-- ✅ Token usage module (`src/utils/token_usage.py`)
-- ✅ CrewAI built-in token tracking (via `agent.llm.get_token_usage_summary()`)
-- ✅ `CrewResult` class with `get_agent_usage()` method
-- ✅ `calculate_cost()` function using LiteLLM pricing database
-- ✅ `save_crew_token_usage()` for per-agent MongoDB storage
-
-**Phase 7** (Planned):
-- Usage analytics dashboard (Frontend)
-- Cost alerts and limits
-- Per-user billing reports
-
 ---
 
-## 🎯 JobTracker Architecture (Phase 5)
+## 🔧 Worker Token Tracking
 
 ### Overview
 
-JobTracker is a coordinator pattern that unifies two parallel tracking systems during article generation:
-1. **JobProgressListener** - Tracks CrewAI task progress (task-level events)
-2. **ArticleGenerationTokenTracker** - Tracks LLM token usage (API-level callbacks)
-
-### Architecture Diagram
-
-```mermaid
-graph TB
-    subgraph Worker["Worker Process"]
-        ProcessJob[process_job]
-        JobTracker[JobTracker Context Manager]
-
-        subgraph Trackers["Tracking Components"]
-            ProgressListener[JobProgressListener<br/>CrewAI Events]
-            TokenTracker[ArticleGenerationTokenTracker<br/>LiteLLM Callbacks]
-        end
-
-        CrewAI[run_crew<br/>Article Generation]
-    end
-
-    subgraph Storage["Data Storage"]
-        Redis[(Redis<br/>Job Status)]
-        MongoDB[(MongoDB<br/>Token Usage)]
-    end
-
-    subgraph Events["Event Sources"]
-        CrewAIEvents[CrewAI Event Bus<br/>Task Start/Complete]
-        LiteLLMCallbacks[LiteLLM Callbacks<br/>API Success/Failure]
-    end
-
-    ProcessJob -->|with JobTracker| JobTracker
-    JobTracker -->|__enter__<br/>creates| ProgressListener
-    JobTracker -->|__enter__<br/>creates| TokenTracker
-    JobTracker -->|runs| CrewAI
-
-    CrewAI -->|emits events| CrewAIEvents
-    CrewAI -->|makes LLM calls| LiteLLMCallbacks
-
-    CrewAIEvents -->|triggers| ProgressListener
-    LiteLLMCallbacks -->|triggers| TokenTracker
-
-    ProgressListener -->|update_job_status| Redis
-    TokenTracker -->|save_token_usage| MongoDB
-
-    JobTracker -->|__exit__<br/>cleanup| ProgressListener
-    JobTracker -->|__exit__<br/>restore callbacks| TokenTracker
-
-    style JobTracker fill:#4a90e2,stroke:#2563eb,color:#fff
-    style ProgressListener fill:#10a37f,stroke:#0d8a6a,color:#fff
-    style TokenTracker fill:#10a37f,stroke:#0d8a6a,color:#fff
-    style Redis fill:#dc382d,stroke:#a12822,color:#fff
-    style MongoDB fill:#13aa52,stroke:#0f8a43,color:#fff
-```
-
-### Context Manager Lifecycle
-
-```python
-# Worker code
-with crewai_event_bus.scoped_handlers():
-    with JobTracker(job_id, user_id, article_id) as tracker:
-        # 1. __enter__() runs automatically
-        #    - Creates JobProgressListener
-        #    - Creates ArticleGenerationTokenTracker (if user_id)
-        #    - Saves litellm.callbacks to _original_callbacks
-        #    - Sets litellm.callbacks = [token_tracker]
-
-        result = run_crew(inputs)
-
-        # 2. During execution
-        #    - CrewAI emits task events → JobProgressListener → Redis
-        #    - CrewAI makes LLM calls → LiteLLM → TokenTracker → MongoDB
-
-        # 3. Check for failures
-        if tracker.listener.task_failed:
-            return False
-
-    # 4. __exit__() runs automatically (even on exception)
-    #    - Restores litellm.callbacks = _original_callbacks
-    #    - Prevents callback leakage between jobs
-```
-
-### Key Design Decisions
-
-**Why Context Manager?**
-- Automatic setup and cleanup (no manual litellm.callbacks management)
-- Exception-safe (cleanup always runs via `__exit__`)
-- Pythonic and readable (`with` statement)
-
-**Why Save/Restore Callbacks Instead of Clearing?**
-- Supports nested JobTracker contexts (future-proof)
-- Prevents accidentally clearing callbacks from outer scope
-- More defensive for long-running worker processes
-
-**Why Two Separate Trackers?**
-- Different abstraction levels (task-level vs API-level)
-- Different storage backends (Redis vs MongoDB)
-- Different lifetimes (ephemeral vs permanent)
-- Independent failure modes (one can fail without affecting other)
-
-**Why Coordinate Them?**
-- Shared lifecycle (both track same job)
-- Shared context (job_id, user_id, article_id)
-- Single entry point for worker code
-- Consistent error handling
-
-### Data Flow Comparison
-
-| Aspect | JobProgressListener | ArticleGenerationTokenTracker |
-|--------|---------------------|-------------------------------|
-| **Trigger** | CrewAI task events | LLM API calls |
-| **Frequency** | ~4-5 times per job | ~5-10 times per job |
-| **Granularity** | Coarse (task start/end) | Fine (per API call) |
-| **Data** | Task name, progress % | Model, tokens, cost |
-| **Storage** | Redis (job status) | MongoDB (usage records) |
-| **TTL** | 24 hours (auto-expire) | Permanent |
-| **Consumer** | Frontend polling | Analytics/billing |
-
-### Error Handling
-
-**Non-Fatal Tracking**:
-- Both trackers catch all exceptions internally
-- Failures logged as warnings but never crash worker
-- Article generation continues even if tracking fails
-- Rationale: Tracking is observability, not critical path
-
-**Cleanup Guarantees**:
-```python
-def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-    """Always runs, even on exception."""
-    if self.token_tracker is not None:
-        litellm.callbacks = self._original_callbacks  # Always restore
-```
-
-### Testing Considerations
-
-**Unit Tests Should Cover**:
-- `JobTracker.__enter__()` creates both trackers
-- `JobTracker.__exit__()` restores callbacks
-- Anonymous users skip token tracking
-- Callback state preserved across nested contexts
-- Cleanup runs even on exceptions
-
-**Integration Tests Should Cover**:
-- Full article generation with both trackers active
-- Progress updates appear in Redis
-- Token usage records appear in MongoDB
-- Multiple jobs don't interfere with each other
-
----
-
-## 🔧 Worker Token Tracking (Phase 4-6)
-
-### Overview
-
-The Worker service tracks token usage during CrewAI article generation. **Phase 6** introduced a new approach using **CrewAI's built-in token tracking** instead of LiteLLM callbacks, which provides more reliable per-agent usage metrics.
+The Worker service tracks token usage during CrewAI article generation using **CrewAI's built-in token tracking**, which provides reliable per-agent usage metrics.
 
 ### Architecture
 
-**Phase 6 Data Flow (Current):**
+**Data Flow:**
 ```
 Worker → process_job() → run_crew() → CrewAI agents execute
                                             ↓
@@ -736,13 +502,13 @@ Worker → process_job() → run_crew() → CrewAI agents execute
                                      save_crew_token_usage() → MongoDB
 ```
 
-**Key Design Decision (Phase 6):**
+**Key Design Decision:**
 CrewAI manages LLM calls internally through its agent.llm instances. Each agent has a separate LLM instance with independent usage tracking via `agent.llm.get_token_usage_summary()`. This approach is preferred over LiteLLM callbacks because:
 - CrewAI's internal tracking is more reliable for per-agent metrics
 - No need to intercept LLM calls at the LiteLLM layer
 - Simpler implementation without callback lifecycle management
 
-### Token Usage Module (Phase 6)
+### Token Usage Module
 
 **File**: `src/utils/token_usage.py`
 
@@ -812,7 +578,7 @@ def save_crew_token_usage(
 
 ---
 
-### CrewResult Class (Phase 6)
+### CrewResult Class
 
 **File**: `src/crew/main.py`
 
@@ -852,238 +618,6 @@ agent_usage = result.get_agent_usage()
 - `agent.llm.get_token_usage_summary()` provides accurate per-agent metrics
 - More reliable than intercepting LLM calls at LiteLLM callback layer
 - Simpler implementation without callback lifecycle management
-
----
-
-### JobTracker Coordinator (Phase 5)
-
-**File**: `src/worker/job_tracker.py`
-
-**Purpose**: Unified coordinator that manages job progress tracking via CrewAI events. (Note: Token tracking moved to `save_crew_token_usage()` in Phase 6.)
-
-**Architecture**:
-```python
-class JobTracker:
-    """Coordinator for job progress and token tracking during article generation.
-
-    Unifies:
-    1. JobProgressListener - Real-time task progress updates via CrewAI events
-    2. ArticleGenerationTokenTracker - LLM token usage tracking via LiteLLM callbacks
-    """
-```
-
-**Key Features**:
-- **Context Manager Protocol**: Automatic setup (`__enter__`) and cleanup (`__exit__`)
-- **Callback Lifecycle Management**: Saves and restores LiteLLM callbacks for nested contexts
-- **Conditional Tracking**: Only tracks tokens for authenticated users (user_id exists)
-- **Memory Leak Prevention**: Always clears callbacks in `__exit__`, even on exceptions
-
-**Usage Pattern** (`src/worker/processor.py`):
-
-```python
-def process_job(job_data: dict) -> bool:
-    ctx = JobContext.from_dict(job_data)
-
-    try:
-        from crewai.events.event_bus import crewai_event_bus
-
-        with crewai_event_bus.scoped_handlers():
-            with JobTracker(ctx.job_id, ctx.user_id, ctx.article_id) as tracker:
-                # Fetch vocabulary for personalized generation
-                if ctx.user_id and ctx.inputs.get('language'):
-                    vocab = get_user_vocabulary_for_generation(ctx.user_id, ctx.inputs['language'], 50)
-                    if vocab:
-                        ctx.inputs['vocabulary_list'] = vocab
-
-                # Execute CrewAI (all LLM calls automatically tracked)
-                result = run_crew(inputs=ctx.inputs)
-
-                # Check for task failures
-                if tracker.listener.task_failed:
-                    logger.warning("Task failed during execution")
-                    if ctx.article_id:
-                        update_article_status(ctx.article_id, 'failed')
-                    return False
-
-        # Save to MongoDB
-        save_article(ctx.article_id, result.raw, ctx.started_at)
-        ctx.update_status('completed', 100, 'Article generated successfully!')
-        return True
-
-    except Exception as e:
-        logger.error(f"Job failed: {e}")
-        ctx.mark_failed(translate_error(e), f"{type(e).__name__}: {str(e)[:200]}")
-        return False
-```
-
-**Lifecycle**:
-
-1. **`__enter__()`** (lines 80-121):
-   - Creates `JobProgressListener` for CrewAI task progress events
-   - Creates `ArticleGenerationTokenTracker` for token tracking (if user_id exists)
-   - Saves original `litellm.callbacks` to `_original_callbacks`
-   - Sets `litellm.callbacks = [tracker]` to enable token tracking
-   - Returns self for use in context manager
-
-2. **`__exit__()`** (lines 123-150):
-   - Restores original `litellm.callbacks` from `_original_callbacks`
-   - Prevents callback interference between jobs
-   - Always executes, even on exceptions (cleanup guaranteed)
-
-**Benefits**:
-- **Single Responsibility**: Each tracker handles one concern (progress vs tokens)
-- **Proper Cleanup**: Context manager ensures callbacks never leak between jobs
-- **Nested Context Support**: Saves/restores callbacks for nested JobTracker usage
-- **Fail-Safe**: Cleanup happens even on exceptions
-
-### ArticleGenerationTokenTracker Class
-
-**File**: `src/worker/token_tracker.py`
-
-**Purpose**: LiteLLM callback handler that intercepts all LLM API calls during article generation and records token usage to MongoDB.
-
-**Key Methods**:
-
-1. `log_success_event(kwargs, response_obj, start_time, end_time)` (lines 67-157)
-   - Called by LiteLLM after each successful LLM API call
-   - Extracts model name, prompt_tokens, completion_tokens from response
-   - Calculates estimated cost using `litellm.completion_cost()`
-   - Saves token usage to MongoDB via `save_token_usage()`
-   - Never crashes worker on tracking failures (catch-all exception handler)
-
-2. `log_failure_event(kwargs, response_obj, start_time, end_time)` (lines 179-216)
-   - Called when LLM API call fails
-   - Logs failure for observability (does not save to MongoDB)
-   - Truncates error messages to 200 chars to prevent log bloat
-
-**Integration**: Now managed by `JobTracker` coordinator (see above)
-
-### How LiteLLM Callbacks Work
-
-**LiteLLM Integration**:
-- LiteLLM provides a `CustomLogger` base class for callback handlers
-- When `litellm.callbacks = [tracker]` is set, all LLM API calls are intercepted
-- CrewAI agents use LiteLLM internally, so all agent LLM calls are tracked
-- Callbacks are invoked automatically:
-  - `log_success_event()` on successful API call
-  - `log_failure_event()` on failed API call
-
-**Per-Call Tracking**:
-- Each LLM API call during article generation generates a separate token usage record
-- An article generation may involve 5-10 LLM calls (research, writing, editing, etc.)
-- Total article cost = sum of all individual call costs
-- All records share the same `article_id` for aggregation
-
-**Callback Lifecycle with JobTracker**:
-```
-1. Worker starts job
-2. JobTracker.__enter__():
-   - Save original callbacks: _original_callbacks = litellm.callbacks.copy()
-   - Register new callback: litellm.callbacks = [tracker]
-3. CrewAI agent 1 makes LLM call → tracker.log_success_event() → save to MongoDB
-4. CrewAI agent 2 makes LLM call → tracker.log_success_event() → save to MongoDB
-5. ... (multiple calls)
-6. CrewAI completes
-7. JobTracker.__exit__():
-   - Restore callbacks: litellm.callbacks = _original_callbacks
-   - Prevents interference with next job or nested JobTracker
-```
-
-**Why Save/Restore Callbacks?**
-- Supports nested JobTracker contexts (if needed in future)
-- Prevents accidentally clearing callbacks set by outer scope
-- More robust than simply setting to empty list
-- Defensive programming for long-running worker processes
-
-### Token Usage Record Structure
-
-**Saved to MongoDB** (via `save_token_usage()`):
-```json
-{
-  "_id": "usage-uuid",
-  "user_id": "user-uuid",
-  "operation": "article_generation",
-  "model": "gpt-4.1-mini",
-  "prompt_tokens": 2000,
-  "completion_tokens": 1500,
-  "total_tokens": 3500,
-  "estimated_cost": 0.0525,
-  "article_id": "article-uuid",
-  "metadata": {
-    "job_id": "job-uuid"
-  },
-  "created_at": "2026-01-30T10:00:00Z"
-}
-```
-
-**Multiple Records Per Article**:
-- Each LLM call during generation creates a separate record
-- Aggregation query sums all records with same `article_id`
-- Example: Research agent (500 tokens) + Writing agent (3000 tokens) + Editing agent (800 tokens) = 4300 total tokens
-
-### Error Handling
-
-**Non-Fatal Failures**:
-- Token tracking failures never crash the worker
-- All exceptions caught and logged as warnings
-- Article generation continues even if tracking fails
-- Rationale: Tracking is observability, not critical functionality
-
-**Cost Calculation Fallback**:
-- If `litellm.completion_cost()` fails, cost is set to 0.0
-- Tokens are still tracked (tokens always available in response)
-- Allows cost calculation to be updated retroactively from token counts
-
-### Anonymous User Handling
-
-**Conditional Tracking** (`src/worker/processor.py:54-63`):
-```python
-if ctx.user_id:
-    token_tracker = ArticleGenerationTokenTracker(...)
-    litellm.callbacks = [token_tracker]
-```
-
-- Only tracks for authenticated users (user_id exists)
-- Anonymous users (no user_id) skip token tracking entirely
-- Prevents null user_id records in MongoDB
-- Aligns with dictionary API behavior (requires authentication)
-
-### Security Considerations
-
-**User ID Validation**:
-- `user_id` passed from job queue (validated during job creation in API)
-- Worker trusts job queue data (internal system boundary)
-- No additional validation needed in worker
-
-**Memory Leaks Prevention**:
-- `finally` block always clears `litellm.callbacks = []`
-- Prevents callbacks from affecting subsequent jobs
-- Critical in long-running worker processes
-
-### Testing
-
-**Test File**: `src/worker/tests/test_token_tracker.py`
-
-**Coverage**:
-- Callback registration and cleanup
-- Successful LLM call tracking
-- Failed LLM call handling
-- Cost calculation fallback
-- MongoDB save failures (non-fatal)
-
-### Retrieval API
-
-**Get Article Usage**:
-```python
-# API endpoint: GET /usage/articles/{article_id}
-records = get_article_token_usage(article_id)
-total_cost = sum(r['estimated_cost'] for r in records)
-```
-
-**Returns**:
-- All token usage records for article (multiple LLM calls)
-- Sorted by `created_at` ascending (chronological order)
-- Includes metadata with `job_id` for traceability
 
 ---
 
@@ -1177,6 +711,161 @@ All vocabulary endpoints require JWT authentication. Users can only:
 - View their own vocabulary lists
 - Access vocabularies from their own articles
 
+### CEFR Vocabulary Level Filtering
+
+**Function**: `get_allowed_vocab_levels(target_level, max_above=1)`
+
+**File**: `src/utils/mongodb.py`
+
+**Purpose**: Filters vocabulary words to only include those appropriate for the target CEFR level when generating articles.
+
+**Parameters**:
+- `target_level`: Target CEFR level (A1, A2, B1, B2, C1, C2)
+- `max_above`: Maximum levels above target to allow (default: 1)
+
+**Returns**: List of allowed CEFR levels
+
+**Examples**:
+```python
+get_allowed_vocab_levels('A2', max_above=1)  # Returns: ['A1', 'A2', 'B1']
+get_allowed_vocab_levels('B1', max_above=1)  # Returns: ['A1', 'A2', 'B1', 'B2']
+get_allowed_vocab_levels('C2', max_above=1)  # Returns: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+```
+
+**Usage in Worker**:
+When generating articles, the worker fetches user vocabulary filtered by target level:
+```python
+vocab = get_user_vocabulary_for_generation(
+    user_id=ctx.user_id,
+    language=ctx.inputs['language'],
+    target_level=ctx.inputs.get('level'),  # Filters vocab by CEFR level
+    limit=50
+)
+```
+
+**Benefits**:
+- Prevents too-difficult vocabulary from appearing in beginner articles
+- Ensures vocabulary reinforcement matches the target difficulty
+- Allows slight challenge with `max_above=1` parameter
+
+---
+
+## 🤖 CrewAI Pipeline
+
+### Agent Configuration
+
+The CrewAI pipeline uses four specialized agents for article generation. Each agent is configured with a specific role, goal, and LLM model.
+
+**Agents** (`src/crew/config/agents.yaml`):
+
+| Agent | Role | LLM Model |
+|-------|------|-----------|
+| `article_finder` | Searches for recent news articles matching topic, language, and difficulty | `openai/gpt-4.1-mini` |
+| `article_picker` | Evaluates and selects the best article from candidates | `openai/gpt-4.1` |
+| `article_rewriter` | Adapts the article to target CEFR level with vocabulary reinforcement | `anthropic/claude-sonnet-4-20250514` |
+| `article_reviewer` | Reviews for natural language quality and level appropriateness | `anthropic/claude-sonnet-4-20250514` |
+
+### Task Pipeline
+
+Tasks execute sequentially, with each task building on the previous output:
+
+```mermaid
+graph LR
+    A[find_news_articles] --> B[pick_best_article]
+    B --> C[adapt_news_article]
+    C --> D[review_article_quality]
+
+    style A fill:#e3f2fd
+    style B fill:#e3f2fd
+    style C fill:#e8f5e9
+    style D fill:#e8f5e9
+```
+
+**Tasks** (`src/crew/config/tasks.yaml`):
+
+#### 1. find_news_articles
+- **Agent**: `article_finder`
+- **Description**: Searches for 2-3 recent news articles matching the topic in the target language
+- **Output**: `NewsArticleList` (JSON with articles array)
+- **Guardrail**: `repair_json_output` for JSON validation
+
+#### 2. pick_best_article
+- **Agent**: `article_picker`
+- **Description**: Evaluates candidates and selects the best article based on topic relevance, difficulty level, length, and educational value
+- **Context**: `find_news_articles`
+- **Output**: `SelectedArticle` (JSON with article and selection_rationale)
+- **Guardrail**: `repair_json_output` for JSON validation
+
+#### 3. adapt_news_article
+- **Agent**: `article_rewriter`
+- **Description**: Rewrites the selected article to match the target CEFR level
+- **Context**: `pick_best_article`
+- **Features**:
+  - Vocabulary reinforcement using user's learned words
+  - Source attribution (name, URL, date, author)
+  - Markdown formatting without word highlighting
+- **Output**: Markdown text
+
+#### 4. review_article_quality
+- **Agent**: `article_reviewer`
+- **Description**: Reviews the adapted article for natural language quality and level appropriateness
+- **Context**: `adapt_news_article`
+- **Output**: `ReviewedArticle` (JSON with article_content and replaced_sentences)
+- **Guardrail**: `repair_json_output` for JSON validation
+
+### Pydantic Output Models
+
+**File**: `src/crew/models.py`
+
+#### ReviewedArticle
+Final output from the review task:
+```python
+class ReviewedArticle(BaseModel):
+    """A reviewed news article with review rationale"""
+    article_content: str = Field(description="The final polished article in markdown format")
+    replaced_sentences: list[ReplacedSentence] = Field(
+        description="List of sentences that were replaced during review",
+        default=[]
+    )
+```
+
+#### ReplacedSentence
+Tracks modifications made during review:
+```python
+class ReplacedSentence(BaseModel):
+    """Replaced sentence information"""
+    original: str = Field(description="The original sentence before replacement")
+    replaced: str = Field(description="The sentence after replacement")
+    rationale: str = Field(description="Reason for the replacement")
+```
+
+### Worker Integration
+
+**File**: `src/worker/processor.py`
+
+The worker processes the CrewAI result and extracts the reviewed article:
+
+```python
+# Log replaced sentences from review
+reviewed = result.pydantic
+if isinstance(reviewed, ReviewedArticle) and reviewed.replaced_sentences:
+    for change in reviewed.replaced_sentences:
+        logger.info(
+            f"Sentence replaced: '{change.original}' → '{change.replaced}' ({change.rationale})",
+            extra=ctx.log_extra
+        )
+
+# Save to MongoDB
+content = reviewed.article_content if isinstance(reviewed, ReviewedArticle) else result.raw
+save_article(ctx.article_id, content, ctx.started_at)
+```
+
+**Benefits of the Review Step**:
+- Catches unnatural expressions that slip through the rewriting phase
+- Ensures vocabulary matches the target CEFR level
+- Improves sentence flow and readability
+- Logs all changes for quality tracking and debugging
+
 ---
 
 ## 📁 디렉토리 구조
@@ -1201,9 +890,8 @@ opad/
 │   │   ├── __init__.py
 │   │   ├── main.py       # Worker 진입점
 │   │   ├── processor.py  # Job 처리 로직
-│   │   ├── job_tracker.py      # JobTracker coordinator (Phase 5)
-│   │   ├── token_tracker.py    # ArticleGenerationTokenTracker
-│   │   └── context.py    # JobContext helper
+│   │   ├── context.py    # JobContext helper
+│   │   └── tests/        # Worker tests
 │   │
 │   ├── web/              # Web 서비스 (Next.js)
 │   │   ├── app/          # Next.js App Router
@@ -1231,16 +919,22 @@ opad/
 │   │   ├── tailwind.config.ts # Tailwind config with safelist
 │   │   └── package.json
 │   │
-│   ├── opad/             # CrewAI 로직 (공유)
-│   │   ├── crew.py
-│   │   └── main.py
+│   ├── crew/             # CrewAI 로직 (공유)
+│   │   ├── crew.py       # ReadingMaterialCreator 클래스 (agents + tasks)
+│   │   ├── main.py       # run() 함수 (CrewAI 실행 엔트리포인트)
+│   │   ├── models.py     # Pydantic 모델 (NewsArticle, ReviewedArticle 등)
+│   │   ├── guardrails.py # JSON 출력 복구 guardrail
+│   │   ├── progress_listener.py  # JobProgressListener (이벤트 리스너)
+│   │   └── config/       # YAML 설정
+│   │       ├── agents.yaml  # 에이전트 정의 (article_finder, article_picker, article_rewriter, article_reviewer)
+│   │       └── tasks.yaml   # 태스크 정의 (find_news_articles, pick_best_article, adapt_news_article, review_article_quality)
 │   │
 │   └── utils/            # 공통 유틸리티 (공유)
 │       ├── mongodb.py    # MongoDB 연결 및 작업
 │       ├── logging.py    # Structured logging 설정
 │       ├── llm.py        # OpenAI API 공통 함수
 │       ├── prompts.py    # LLM 프롬프트 템플릿
-│       └── token_usage.py # Token usage calculation and tracking (Phase 6)
+│       └── token_usage.py # Token usage calculation and tracking
 │
 └── Dockerfile.*          # 서비스별 Dockerfile (이슈 #9)
 ```
@@ -1254,15 +948,23 @@ opad/
 | `src/crew/` | CrewAI 로직 (공유) | - | - |
 | `src/utils/` | 공통 유틸 (공유) | - | - |
 
-### Worker 모듈 구성 (Phase 5)
+### Worker 모듈 구성
 | 파일 | 역할 | 의존성 |
 |------|------|--------|
 | `worker/main.py` | Worker 진입점 (infinite loop) | `processor.py` |
-| `worker/processor.py` | Job 처리 로직 (process_job) | `job_tracker.py`, `crew/main.py` |
-| `worker/job_tracker.py` | JobTracker coordinator (context manager) | `token_tracker.py`, `crew/progress_listener.py` |
-| `worker/token_tracker.py` | ArticleGenerationTokenTracker (LiteLLM callback) | `utils/mongodb.py` |
+| `worker/processor.py` | Job 처리 로직 (process_job) | `crew/main.py`, `utils/token_usage.py` |
 | `worker/context.py` | JobContext helper (job data validation) | `api/job_queue.py` |
 | `crew/progress_listener.py` | JobProgressListener (CrewAI event listener) | `api/job_queue.py` |
+
+### CrewAI 모듈 구성
+| 파일 | 역할 | 출력 모델 |
+|------|------|----------|
+| `crew/crew.py` | ReadingMaterialCreator 클래스 (agents + tasks 정의) | - |
+| `crew/main.py` | `run()` 함수 - CrewAI 실행 엔트리포인트 | `CrewResult` |
+| `crew/models.py` | Pydantic 출력 모델 정의 | `NewsArticleList`, `SelectedArticle`, `ReviewedArticle` |
+| `crew/guardrails.py` | JSON 출력 복구 guardrail | - |
+| `crew/config/agents.yaml` | 에이전트 설정 (role, goal, backstory, llm) | - |
+| `crew/config/tasks.yaml` | 태스크 설정 (description, expected_output, context) | - |
 
 ---
 
