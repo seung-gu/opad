@@ -167,10 +167,20 @@ class TestExtractGenderFromPos(unittest.TestCase):
             "die"
         )
 
-    def test_non_german_language_returns_none(self):
-        """Test non-German languages return None."""
+    def test_non_gendered_language_returns_none(self):
+        """Test languages without gender support return None."""
         self.assertIsNone(_extract_gender_from_pos("masculine noun", "en"))
-        self.assertIsNone(_extract_gender_from_pos("masculine noun", "fr"))
+        self.assertIsNone(_extract_gender_from_pos("masculine noun", "ja"))
+
+    def test_french_gender_extraction(self):
+        """Test French gender extraction from POS."""
+        self.assertEqual(_extract_gender_from_pos("masculine noun", "fr"), "le")
+        self.assertEqual(_extract_gender_from_pos("feminine noun", "fr"), "la")
+
+    def test_spanish_gender_extraction(self):
+        """Test Spanish gender extraction from POS."""
+        self.assertEqual(_extract_gender_from_pos("masculine noun", "es"), "el")
+        self.assertEqual(_extract_gender_from_pos("feminine noun", "es"), "la")
 
     def test_non_noun_german_returns_none(self):
         """Test non-noun parts of speech return None."""
@@ -231,15 +241,37 @@ class TestExtractGenderFromSenses(unittest.TestCase):
         }
         self.assertEqual(_extract_gender_from_senses(entry, "de"), "der")
 
-    def test_non_german_returns_none(self):
-        """Test non-German languages return None."""
+    def test_non_gendered_language_returns_none(self):
+        """Test languages without gender support return None."""
         entry = {
             "senses": [
                 {"definition": "test", "tags": ["masculine"]}
             ]
         }
         self.assertIsNone(_extract_gender_from_senses(entry, "en"))
-        self.assertIsNone(_extract_gender_from_senses(entry, "fr"))
+        self.assertIsNone(_extract_gender_from_senses(entry, "ja"))
+
+    def test_french_gender_from_senses(self):
+        """Test French gender extraction from senses tags."""
+        entry = {
+            "senses": [
+                {"definition": "test", "tags": ["masculine"]}
+            ]
+        }
+        self.assertEqual(_extract_gender_from_senses(entry, "fr"), "le")
+        entry["senses"][0]["tags"] = ["feminine"]
+        self.assertEqual(_extract_gender_from_senses(entry, "fr"), "la")
+
+    def test_spanish_gender_from_senses(self):
+        """Test Spanish gender extraction from senses tags."""
+        entry = {
+            "senses": [
+                {"definition": "test", "tags": ["masculine"]}
+            ]
+        }
+        self.assertEqual(_extract_gender_from_senses(entry, "es"), "el")
+        entry["senses"][0]["tags"] = ["feminine"]
+        self.assertEqual(_extract_gender_from_senses(entry, "es"), "la")
 
     def test_no_senses_returns_none(self):
         """Test entry with no senses returns None."""

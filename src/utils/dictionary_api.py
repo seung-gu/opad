@@ -14,6 +14,14 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
+
+from utils.language_handlers import get_language_handler
 
 logger = logging.getLogger(__name__)
 
@@ -87,20 +95,10 @@ def _extract_gender_from_pos(pos: str, language_code: str) -> str | None:
     Returns:
         Gender article (e.g., "der", "die", "das") or None.
     """
-    if not pos or language_code != "de":
+    if not pos:
         return None
-
-    pos_lower = pos.lower()
-
-    # German gender mapping
-    if "masculine" in pos_lower or "männlich" in pos_lower:
-        return "der"
-    elif "feminine" in pos_lower or "weiblich" in pos_lower:
-        return "die"
-    elif "neuter" in pos_lower or "sächlich" in pos_lower:
-        return "das"
-
-    return None
+    handler = get_language_handler(language_code)
+    return handler.extract_gender_from_pos(pos)
 
 
 def _extract_gender_from_senses(entry: dict[str, Any], language_code: str) -> str | None:
@@ -113,24 +111,16 @@ def _extract_gender_from_senses(entry: dict[str, Any], language_code: str) -> st
     Returns:
         Gender article (e.g., "der", "die", "das") or None.
     """
-    if language_code != "de":
-        return None
-
     senses = entry.get("senses", [])
     if not senses:
         return None
 
     tags = senses[0].get("tags", [])
-    for tag in tags:
-        tag_lower = tag.lower()
-        if tag_lower == "masculine":
-            return "der"
-        elif tag_lower == "feminine":
-            return "die"
-        elif tag_lower == "neuter":
-            return "das"
+    if not tags:
+        return None
 
-    return None
+    handler = get_language_handler(language_code)
+    return handler.extract_gender_from_tags(tags)
 
 
 def _extract_phonetics(entry: dict[str, Any]) -> str | None:
@@ -198,6 +188,89 @@ def _extract_examples(entry: dict[str, Any], max_examples: int = 3) -> list[str]
     return examples if examples else None
 
 
+# Tags to skip during form extraction
+_SKIP_TAGS = {"table-tags", "inflection-template", "class", "multiword-construction"}
+
+# Required tags for verb form extraction
+_PRESENT_TAGS = {"present", "singular", "third-person"}
+_PRETERITE_TAGS = {"preterite", "singular", "third-person"}
+_PARTICIPLE_TAGS = {"participle", "past"}
+
+
+def _is_valid_form(form: dict[str, Any]) -> tuple[str | None, set[str]]:
+    """Check if form is valid and return word and tags.
+
+    Args:
+        form: Form dict from API response.
+
+    Returns:
+        Tuple of (word, tags) if valid, (None, empty set) if invalid.
+    """
+    word = form.get("word")
+    tags = set(form.get("tags", []))
+
+    if not word or not tags:
+        return None, set()
+
+    if tags & _SKIP_TAGS:
+        return None, set()
+
+    return word, tags
+
+
+def _extract_verb_form(
+    word: str,
+    tags: set[str],
+    result: dict[str, str],
+    auxiliaries: list[str]
+) -> None:
+    """Extract verb conjugation form and update result in place.
+
+    Args:
+        word: The word form.
+        tags: Set of grammatical tags.
+        result: Result dict to update.
+        auxiliaries: List of auxiliary verbs to update.
+    """
+    # Auxiliary verbs (haben/sein)
+    if "auxiliary" in tags and word in ("haben", "sein"):
+        if word not in auxiliaries:
+            auxiliaries.append(word)
+        return
+
+    # Present 3rd person singular
+    if _PRESENT_TAGS <= tags and "present" not in result:
+        result["present"] = word
+        return
+
+    # Past/preterite 3rd person singular
+    if "past" not in result:
+        is_simple_past = tags == {"past"}
+        is_preterite = _PRETERITE_TAGS <= tags and "subjunctive" not in tags
+        if is_simple_past or is_preterite:
+            result["past"] = word
+            return
+
+    # Past participle
+    if _PARTICIPLE_TAGS <= tags and "participle" not in result:
+        result["participle"] = word
+
+
+def _extract_noun_form(word: str, tags: set[str], result: dict[str, str]) -> None:
+    """Extract noun declension form and update result in place.
+
+    Args:
+        word: The word form.
+        tags: Set of grammatical tags.
+        result: Result dict to update.
+    """
+    # Check each noun form type
+    for form_name in ("genitive", "plural", "feminine"):
+        if form_name in tags and form_name not in result:
+            result[form_name] = word
+            return
+
+
 def _extract_forms(entry: dict[str, Any]) -> dict[str, str] | None:
     """Extract grammatical forms from entry.
 
@@ -220,7 +293,6 @@ def _extract_forms(entry: dict[str, Any]) -> dict[str, str] | None:
     if not forms:
         return None
 
-    # Determine if this is a verb based on partOfSpeech
     pos = entry.get("partOfSpeech", "").lower()
     is_verb = "verb" in pos
 
@@ -228,72 +300,26 @@ def _extract_forms(entry: dict[str, Any]) -> dict[str, str] | None:
     auxiliaries: list[str] = []
 
     for form in forms:
-        word = form.get("word")
-        tags = set(form.get("tags", []))
-
-        if not word or not tags:
+        word, tags = _is_valid_form(form)
+        if not word:
             continue
 
-        # Skip metadata tags
-        if tags & {"table-tags", "inflection-template", "class"}:
-            continue
-
-        # Skip multiword constructions (compound tenses like "habe gefahren")
-        if "multiword-construction" in tags:
-            continue
-
-        # === Verb-specific extractions ===
         if is_verb:
-            # Extract auxiliary verbs (haben/sein)
-            if "auxiliary" in tags and word in ("haben", "sein"):
-                if word not in auxiliaries:
-                    auxiliaries.append(word)
-                continue
-
-            # Extract present 3rd person singular
-            if ({"present", "singular", "third-person"} <= tags
-                    and "present" not in result):
-                result["present"] = word
-                continue
-
-            # Extract past/preterite 3rd person singular
-            if "past" not in result:
-                # Simple past tag
-                if tags == {"past"}:
-                    result["past"] = word
-                    continue
-                # Or preterite with 3rd person singular
-                if ({"preterite", "singular", "third-person"} <= tags
-                        and "subjunctive" not in tags):
-                    result["past"] = word
-                    continue
-
-            # Extract past participle
-            if ({"participle", "past"} <= tags
-                    and "participle" not in result):
-                result["participle"] = word
-
-        # === Noun-specific extractions ===
+            _extract_verb_form(word, tags, result, auxiliaries)
         else:
-            if "genitive" in tags and "genitive" not in result:
-                result["genitive"] = word
-            elif "plural" in tags and "plural" not in result:
-                result["plural"] = word
-            elif "feminine" in tags and "feminine" not in result:
-                result["feminine"] = word
+            _extract_noun_form(word, tags, result)
 
-    # Add auxiliary if found (for verbs)
     if auxiliaries:
         result["auxiliary"] = " / ".join(auxiliaries)
 
     return result if result else None
 
 
-def _parse_api_response(data: list[dict[str, Any]], language_code: str) -> DictionaryAPIResult:
+def _parse_api_response(data: dict[str, Any], language_code: str) -> DictionaryAPIResult:
     """Parse Free Dictionary API response into structured result.
 
     Args:
-        data: Raw API response data.
+        data: Raw API response dict containing 'word' and 'entries' keys.
         language_code: ISO 639-1 language code.
 
     Returns:
@@ -334,9 +360,6 @@ def _parse_api_response(data: list[dict[str, Any]], language_code: str) -> Dicti
 def _strip_reflexive_pronoun(word: str, language_code: str) -> str:
     """Strip reflexive pronouns from verb lemmas for API lookup.
 
-    German reflexive verbs (e.g., "sich gewöhnen") need the pronoun removed
-    for dictionary API lookup. The API returns reflexive info in the response.
-
     Args:
         word: The word/lemma to process.
         language_code: ISO 639-1 language code.
@@ -344,14 +367,35 @@ def _strip_reflexive_pronoun(word: str, language_code: str) -> str:
     Returns:
         Word without reflexive pronoun prefix.
     """
-    if language_code == "de":
-        # German reflexive pronouns that might prefix lemmas
-        reflexive_pronouns = ["sich ", "mich ", "dich ", "uns ", "euch "]
-        word_lower = word.lower()
-        for pronoun in reflexive_pronouns:
-            if word_lower.startswith(pronoun):
-                return word[len(pronoun):]
-    return word
+    handler = get_language_handler(language_code)
+    return handler.strip_reflexive_pronoun(word)
+
+
+@retry(
+    retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError)),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=4),
+    reraise=True
+)
+async def _fetch_with_retry(client: httpx.AsyncClient, url: str) -> httpx.Response:
+    """Fetch URL with automatic retry on transient failures.
+
+    Retries up to 3 times with exponential backoff (1s, 2s, 4s) on:
+    - Timeout exceptions
+    - Connection errors
+
+    Args:
+        client: HTTP client instance.
+        url: URL to fetch.
+
+    Returns:
+        HTTP response.
+
+    Raises:
+        httpx.TimeoutException: After 3 timeout attempts.
+        httpx.ConnectError: After 3 connection error attempts.
+    """
+    return await client.get(url)
 
 
 async def fetch_from_free_dictionary_api(
@@ -389,7 +433,7 @@ async def fetch_from_free_dictionary_api(
 
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT_SECONDS) as client:
-            response = await client.get(url)
+            response = await _fetch_with_retry(client, url)
 
             if response.status_code == 404:
                 logger.debug(
@@ -400,6 +444,14 @@ async def fetch_from_free_dictionary_api(
 
             response.raise_for_status()
             data = response.json()
+
+            # Validate response structure
+            if not isinstance(data, dict):
+                logger.warning(
+                    "Unexpected response type from Free Dictionary API",
+                    extra={"word": word, "language": language, "type": type(data).__name__}
+                )
+                return None
 
             result = _parse_api_response(data, language_code)
 
@@ -418,7 +470,13 @@ async def fetch_from_free_dictionary_api(
 
     except httpx.TimeoutException:
         logger.warning(
-            "Free Dictionary API timeout",
+            "Free Dictionary API timeout after retries",
+            extra={"word": word, "language": language}
+        )
+        return None
+    except httpx.ConnectError:
+        logger.warning(
+            "Free Dictionary API connection error after retries",
             extra={"word": word, "language": language}
         )
         return None
