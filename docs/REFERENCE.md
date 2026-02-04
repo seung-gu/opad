@@ -450,12 +450,17 @@ generateResponse.status === 409  ← Response handling!
     "user_id": "uuid",
     "pos": "noun|verb|adjective|etc",
     "gender": "der|die|das|le|la|el|la",
+    "phonetics": "/IPA/",
     "conjugations": {
       "present": "string",
       "past": "string",
-      "perfect": "string"
+      "participle": "string",
+      "auxiliary": "string",
+      "genitive": "string",
+      "plural": "string"
     },
-    "level": "A1|A2|B1|B2|C1|C2"
+    "level": "A1|A2|B1|B2|C1|C2",
+    "examples": ["string"]
   }
 ]
 ```
@@ -589,7 +594,7 @@ generateResponse.status === 409  ← Response handling!
 
 #### POST /dictionary/search
 
-**Description**: Search for word definition, lemma, and grammatical metadata using OpenAI API.
+**Description**: Search for word definition, lemma, and grammatical metadata using hybrid LLM + Free Dictionary API lookup.
 
 **Auth**: Required (JWT) - Prevents API abuse
 
@@ -610,12 +615,17 @@ generateResponse.status === 409  ← Response handling!
   "related_words": ["string"],
   "pos": "noun|verb|adjective|adverb|etc",
   "gender": "der|die|das|le|la|el|la (null if not applicable)",
+  "phonetics": "/IPA/ (null if not English)",
   "conjugations": {
     "present": "string",
     "past": "string",
-    "perfect": "string"
+    "participle": "string",
+    "auxiliary": "string",
+    "genitive": "string",
+    "plural": "string"
   },
-  "level": "A1|A2|B1|B2|C1|C2"
+  "level": "A1|A2|B1|B2|C1|C2",
+  "examples": ["string"]
 }
 ```
 
@@ -625,8 +635,10 @@ generateResponse.status === 409  ← Response handling!
 - `related_words`: All words in sentence belonging to this lemma (e.g., for separable verbs)
 - `pos`: Part of speech (noun, verb, adjective, adverb, preposition, etc.)
 - `gender`: Grammatical gender for nouns in gendered languages (German: der/die/das, French: le/la, Spanish: el/la)
-- `conjugations`: Verb conjugations (present, past, perfect forms). Null for non-verbs.
+- `phonetics`: IPA pronunciation (e.g., `/hʊnt/`). **Only returned for English language lookups** due to Free Dictionary API accuracy. Null for other languages.
+- `conjugations`: Verb conjugations (present, past, participle, auxiliary) or noun declensions (genitive, plural). Null for other parts of speech.
 - `level`: CEFR difficulty level (A1-C2)
+- `examples`: Example sentences from Free Dictionary API showing word usage. May be empty if no examples available.
 
 ---
 
@@ -649,12 +661,17 @@ generateResponse.status === 409  ← Response handling!
   "span_id": "string",
   "pos": "noun|verb|adjective|etc",
   "gender": "der|die|das|le|la|el|la",
+  "phonetics": "/IPA/",
   "conjugations": {
     "present": "string",
     "past": "string",
-    "perfect": "string"
+    "participle": "string",
+    "auxiliary": "string",
+    "genitive": "string",
+    "plural": "string"
   },
-  "level": "A1|A2|B1|B2|C1|C2"
+  "level": "A1|A2|B1|B2|C1|C2",
+  "examples": ["string"]
 }
 ```
 
@@ -674,12 +691,17 @@ generateResponse.status === 409  ← Response handling!
   "user_id": "uuid",
   "pos": "noun|verb|adjective|etc",
   "gender": "der|die|das|le|la|el|la",
+  "phonetics": "/IPA/",
   "conjugations": {
     "present": "string",
     "past": "string",
-    "perfect": "string"
+    "participle": "string",
+    "auxiliary": "string",
+    "genitive": "string",
+    "plural": "string"
   },
-  "level": "A1|A2|B1|B2|C1|C2"
+  "level": "A1|A2|B1|B2|C1|C2",
+  "examples": ["string"]
 }
 ```
 
@@ -715,17 +737,22 @@ generateResponse.status === 409  ← Response handling!
     "article_ids": ["uuid1", "uuid2", "uuid3"],
     "pos": "noun|verb|adjective|etc",
     "gender": "der|die|das|le|la|el|la",
+    "phonetics": "/IPA/",
     "conjugations": {
       "present": "string",
       "past": "string",
-      "perfect": "string"
+      "participle": "string",
+      "auxiliary": "string",
+      "genitive": "string",
+      "plural": "string"
     },
-    "level": "A1|A2|B1|B2|C1|C2"
+    "level": "A1|A2|B1|B2|C1|C2",
+    "examples": ["string"]
   }
 ]
 ```
 
-**Note**: All grammatical metadata fields (`pos`, `gender`, `conjugations`, `level`) are from the most recent vocabulary entry for each lemma.
+**Note**: All grammatical metadata fields (`pos`, `gender`, `phonetics`, `conjugations`, `level`, `examples`) are from the most recent vocabulary entry for each lemma.
 
 ---
 

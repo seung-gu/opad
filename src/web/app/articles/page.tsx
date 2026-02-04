@@ -105,7 +105,7 @@ export default function ArticlesPage() {
               className="text-xl font-medium text-foreground hover:text-foreground/80 transition-colors"
               title="Go to Home"
             >
-              ◀ Home
+              <span className="text-[0.9rem]">◀</span> Home
             </Link>
           </div>
           <p className="text-text-dim">

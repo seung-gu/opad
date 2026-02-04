@@ -10,14 +10,22 @@ CEFRLevel = Literal["A1", "A2", "B1", "B2", "C1", "C2"]
 
 
 class Conjugations(BaseModel):
-    """Verb conjugation forms."""
+    """Verb conjugation forms and noun declension forms."""
+    # Verb forms
     present: Optional[str] = None
     past: Optional[str] = None
-    perfect: Optional[str] = None
+    participle: Optional[str] = None
+    auxiliary: Optional[str] = None
+    # Noun forms
+    genitive: Optional[str] = None
+    plural: Optional[str] = None
 
     def __bool__(self) -> bool:
         """Return False if all fields are None."""
-        return any(v is not None for v in (self.present, self.past, self.perfect))
+        return any(v is not None for v in (
+            self.present, self.past, self.participle, self.auxiliary,
+            self.genitive, self.plural
+        ))
 
 
 class ArticleResponse(BaseModel):
@@ -89,8 +97,10 @@ class SearchResponse(BaseModel):
     related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma (e.g., for separable verbs)")
     pos: Optional[str] = Field(None, description="Part of speech: noun, verb, adjective, etc.")
     gender: Optional[str] = Field(None, description="Grammatical gender: der/die/das, le/la, el/la")
+    phonetics: Optional[str] = Field(None, description="IPA pronunciation (e.g., /hʊnt/)")
     conjugations: Optional[Conjugations] = Field(None, description="Verb conjugations by tense")
     level: Optional[CEFRLevel] = Field(None, description="CEFR level (A1-C2)")
+    examples: Optional[list[str]] = Field(None, description="Example sentences from dictionary")
 
 
 class VocabularyRequest(BaseModel):
@@ -105,8 +115,10 @@ class VocabularyRequest(BaseModel):
     span_id: Optional[str] = Field(None, description="Span ID of the clicked word")
     pos: Optional[str] = Field(None, description="Part of speech: noun, verb, adjective, etc.")
     gender: Optional[str] = Field(None, description="Grammatical gender: der/die/das, le/la, el/la")
+    phonetics: Optional[str] = Field(None, description="IPA pronunciation (e.g., /hʊnt/)")
     conjugations: Optional[dict] = Field(None, description="Verb conjugations by tense")
     level: Optional[CEFRLevel] = Field(None, description="CEFR level (A1-C2)")
+    examples: Optional[list[str]] = Field(None, description="Example sentences from dictionary")
 
     @field_validator('conjugations', mode='before')
     @classmethod
@@ -136,8 +148,10 @@ class VocabularyResponse(BaseModel):
     user_id: Optional[str] = Field(None, description="User ID for multi-user support")
     pos: Optional[str] = Field(None, description="Part of speech: noun, verb, adjective, etc.")
     gender: Optional[str] = Field(None, description="Grammatical gender: der/die/das, le/la, el/la")
+    phonetics: Optional[str] = Field(None, description="IPA pronunciation (e.g., /hʊnt/)")
     conjugations: Optional[Conjugations] = Field(None, description="Verb conjugations by tense")
     level: Optional[CEFRLevel] = Field(None, description="CEFR level (A1-C2)")
+    examples: Optional[list[str]] = Field(None, description="Example sentences from dictionary")
 
 
 class VocabularyCount(BaseModel):
@@ -157,8 +171,10 @@ class VocabularyCount(BaseModel):
     article_ids: list[str] = Field(..., description="Article IDs where this lemma appears")
     pos: Optional[str] = Field(None, description="Part of speech from most recent entry")
     gender: Optional[str] = Field(None, description="Grammatical gender from most recent entry")
+    phonetics: Optional[str] = Field(None, description="IPA pronunciation from most recent entry")
     conjugations: Optional[Conjugations] = Field(None, description="Verb conjugations from most recent entry")
     level: Optional[CEFRLevel] = Field(None, description="CEFR level from most recent entry")
+    examples: Optional[list[str]] = Field(None, description="Example sentences from most recent entry")
 
 
 class User(BaseModel):

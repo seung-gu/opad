@@ -130,8 +130,10 @@ export default function MarkdownViewer({
     isInVocabulary: boolean,
     pos?: string,
     gender?: string,
-    conjugations?: { present?: string, past?: string, perfect?: string },
-    level?: string
+    phonetics?: string,
+    conjugations?: { present?: string, past?: string, participle?: string, auxiliary?: string, genitive?: string, plural?: string },
+    level?: string,
+    examples?: string[]
   ): string => {
     // Escape all user-provided content to prevent XSS
     const wordEscaped = escapeHtml(word)
@@ -141,17 +143,19 @@ export default function MarkdownViewer({
     const sentenceEscaped = escapeHtml(sentence).replace(/"/g, '&quot;')
     const posStr = pos ? escapeHtml(pos) : ''
     const genderStr = gender ? escapeHtml(gender) : ''
+    const phoneticsStr = phonetics ? escapeHtml(phonetics) : ''
     const conjugationsStr = conjugations ? JSON.stringify(conjugations).replace(/"/g, '&quot;') : ''
     const levelStr = level ? escapeHtml(level) : ''
+    const examplesStr = examples ? JSON.stringify(examples).replace(/"/g, '&quot;') : ''
     const spanIdEscaped = escapeHtml(spanId)
     const baseStyle = 'margin-left: 6px; padding: 1px 4px; font-size: 0.7rem; color: var(--bg); border: none; border-radius: 3px; cursor: pointer; min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;'
 
     if (isInVocabulary) {
       const style = `${baseStyle} background: var(--danger);`
-      return ` <button class="vocab-btn vocab-remove" data-word="${wordEscaped}" data-lemma="${lemmaEscaped}" data-definition="${definitionEscaped}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanIdEscaped}" data-pos="${posStr}" data-gender="${genderStr}" data-conjugations="${conjugationsStr}" data-level="${levelStr}" style="${style}" title="Remove from vocabulary">−</button>`
+      return ` <button class="vocab-btn vocab-remove" data-word="${wordEscaped}" data-lemma="${lemmaEscaped}" data-definition="${definitionEscaped}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanIdEscaped}" data-pos="${posStr}" data-gender="${genderStr}" data-phonetics="${phoneticsStr}" data-conjugations="${conjugationsStr}" data-level="${levelStr}" data-examples="${examplesStr}" style="${style}" title="Remove from vocabulary">−</button>`
     } else {
       const style = `${baseStyle} background: var(--vocab);`
-      return ` <button class="vocab-btn vocab-add" data-word="${wordEscaped}" data-lemma="${lemmaEscaped}" data-definition="${definitionEscaped}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanIdEscaped}" data-pos="${posStr}" data-gender="${genderStr}" data-conjugations="${conjugationsStr}" data-level="${levelStr}" style="${style}" title="Add to vocabulary">+</button>`
+      return ` <button class="vocab-btn vocab-add" data-word="${wordEscaped}" data-lemma="${lemmaEscaped}" data-definition="${definitionEscaped}" data-sentence="${sentenceEscaped}" data-related-words="${relatedWordsStr}" data-span-id="${spanIdEscaped}" data-pos="${posStr}" data-gender="${genderStr}" data-phonetics="${phoneticsStr}" data-conjugations="${conjugationsStr}" data-level="${levelStr}" data-examples="${examplesStr}" style="${style}" title="Add to vocabulary">+</button>`
     }
   }, [])
 
@@ -165,8 +169,10 @@ export default function MarkdownViewer({
     const spanId = btn.getAttribute(DATA_ATTR.SPAN_ID) || ''
     const pos = btn.getAttribute('data-pos') || undefined
     const gender = btn.getAttribute('data-gender') || undefined
+    const phonetics = btn.getAttribute('data-phonetics') || undefined
     const conjugationsStr = btn.getAttribute('data-conjugations') || ''
     const level = btn.getAttribute('data-level') || undefined
+    const examplesStr = btn.getAttribute('data-examples') || ''
 
     let relatedWords: string[] | undefined = undefined
     if (relatedWordsStr) {
@@ -177,10 +183,19 @@ export default function MarkdownViewer({
       }
     }
 
-    let conjugations: { present?: string, past?: string, perfect?: string } | undefined = undefined
+    let conjugations: { present?: string, past?: string, participle?: string, auxiliary?: string, genitive?: string, plural?: string } | undefined = undefined
     if (conjugationsStr) {
       try {
         conjugations = JSON.parse(conjugationsStr.replace(/&quot;/g, '"'))
+      } catch {
+        // Ignore parse error
+      }
+    }
+
+    let examples: string[] | undefined = undefined
+    if (examplesStr) {
+      try {
+        examples = JSON.parse(examplesStr.replace(/&quot;/g, '"'))
       } catch {
         // Ignore parse error
       }
@@ -201,8 +216,10 @@ export default function MarkdownViewer({
           span_id: spanId || undefined,
           pos: pos || undefined,
           gender: gender || undefined,
+          phonetics: phonetics || undefined,
           conjugations: conjugations || undefined,
-          level: level || undefined
+          level: level || undefined,
+          examples: examples || undefined
         })
       })
 
@@ -282,8 +299,10 @@ export default function MarkdownViewer({
     related_words?: string[],
     pos?: string,
     gender?: string,
-    conjugations?: { present?: string, past?: string, perfect?: string },
-    level?: string
+    phonetics?: string,
+    conjugations?: { present?: string, past?: string, participle?: string, auxiliary?: string, genitive?: string, plural?: string },
+    level?: string,
+    examples?: string[]
   } | null> => {
     if (!language) {
       return null
@@ -295,9 +314,9 @@ export default function MarkdownViewer({
       const cached = lemmaCacheRef.current.get(wordCacheKey)
       if (cached) {
         try {
-          const { lemma, definition, related_words, pos, gender, conjugations, level } = JSON.parse(cached)
+          const { lemma, definition, related_words, pos, gender, phonetics, conjugations, level, examples } = JSON.parse(cached)
           // Debug: console.log('[Dictionary] Using word-only cache for:', word)
-          return { lemma, definition, related_words, pos, gender, conjugations, level }
+          return { lemma, definition, related_words, pos, gender, phonetics, conjugations, level, examples }
         } catch {
           console.warn('[Dictionary] Failed to parse cached value, clearing cache')
           lemmaCacheRef.current.delete(wordCacheKey)
@@ -337,13 +356,15 @@ export default function MarkdownViewer({
       const related_words = data.related_words || undefined
       const pos = data.pos || undefined
       const gender = data.gender || undefined
+      const phonetics = data.phonetics || undefined
       const conjugations = data.conjugations || undefined
       const level = data.level || undefined
+      const examples = data.examples || undefined
 
       if (definition) {
         // Cache: store word-only cache (same word = same definition, regardless of sentence)
         const wordCacheKey = `${language}:${word.toLowerCase()}`
-        const cacheValue = JSON.stringify({ lemma, definition, related_words, pos, gender, conjugations, level })
+        const cacheValue = JSON.stringify({ lemma, definition, related_words, pos, gender, phonetics, conjugations, level, examples })
 
         lemmaCacheRef.current.set(wordCacheKey, cacheValue)
 
@@ -351,7 +372,7 @@ export default function MarkdownViewer({
         onTokenUsageUpdate?.()
 
         // Debug: console.log('[Dictionary] Cached definition for:', word, 'lemma:', lemma, 'pos:', pos, 'gender:', gender, 'level:', level)
-        return { lemma, definition, related_words, pos, gender, conjugations, level }
+        return { lemma, definition, related_words, pos, gender, phonetics, conjugations, level, examples }
       }
 
       return null
@@ -716,8 +737,10 @@ export default function MarkdownViewer({
           const wordCacheKey = language ? `${language}:${word.toLowerCase()}` : null
           let pos: string | undefined
           let gender: string | undefined
-          let conjugations: { present?: string, past?: string, perfect?: string } | undefined
+          let phonetics: string | undefined
+          let conjugations: { present?: string, past?: string, participle?: string, auxiliary?: string, genitive?: string, plural?: string } | undefined
           let level: string | undefined
+          let examples: string[] | undefined
 
           if (wordCacheKey && lemmaCacheRef.current.has(wordCacheKey)) {
             const cached = lemmaCacheRef.current.get(wordCacheKey)
@@ -726,8 +749,10 @@ export default function MarkdownViewer({
                 const parsedCache = JSON.parse(cached)
                 pos = parsedCache.pos
                 gender = parsedCache.gender
+                phonetics = parsedCache.phonetics
                 conjugations = parsedCache.conjugations
                 level = parsedCache.level
+                examples = parsedCache.examples
               } catch {
                 // Ignore parse error
               }
@@ -741,7 +766,7 @@ export default function MarkdownViewer({
           defSpan.appendChild(document.createTextNode(': ' + meaning))
 
           if (articleId && onAddVocabulary) {
-            const buttonHtml = createVocabularyButtonHTML(word, displayLemma, meaning, sentence, relatedWords, spanId, isInVocabulary, pos, gender, conjugations, level)
+            const buttonHtml = createVocabularyButtonHTML(word, displayLemma, meaning, sentence, relatedWords, spanId, isInVocabulary, pos, gender, phonetics, conjugations, level, examples)
             // Create a temporary container to parse the button HTML
             const tempDiv = document.createElement('div')
             tempDiv.innerHTML = buttonHtml.trim()  // trim() to remove leading space
