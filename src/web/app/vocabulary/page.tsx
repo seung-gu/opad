@@ -7,7 +7,7 @@ import { VocabularyCount } from '@/types/article'
 import { fetchWithAuth, parseErrorResponse } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import { useVocabularyDelete } from '@/hooks/useVocabularyDelete'
-import { getLevelColor } from '@/lib/styleHelpers'
+import VocabularyCard from '@/components/VocabularyCard'
 import ErrorAlert from '@/components/ErrorAlert'
 import EmptyState from '@/components/EmptyState'
 
@@ -104,7 +104,7 @@ export default function VocabularyPage() {
               className="text-xl font-medium text-foreground hover:text-foreground/80 transition-colors"
               title="Go to Articles"
             >
-              ◀ Articles
+              <span className="text-[0.9rem]">◀</span> Articles
             </Link>
           </div>
           <p className="text-text-dim">
@@ -152,98 +152,28 @@ export default function VocabularyPage() {
                   {/* Words Grid */}
                   <div className="p-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {groups.map((group) => {
-                        return (
-                          <div
-                            key={`${group.language}-${group.lemma}`}
-                            className="bg-background rounded-lg p-4 border border-border-card hover:border-vocab/50 transition-colors flex flex-col"
-                          >
-                            {/* Header: Lemma with gender + badges */}
-                            <div className="flex items-start justify-between mb-2">
-                              <div className="flex items-baseline gap-1 flex-wrap">
-                                {/* Gender prefix (if available) */}
-                                {group.gender && (
-                                  <span className="text-sm font-medium text-text-dim">{group.gender}</span>
-                                )}
-                                {/* Lemma */}
-                                <span className="text-lg font-semibold text-foreground">{group.lemma}</span>
-                              </div>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                {/* Count badge */}
-                                {group.count > 1 && (
-                                  <span className="text-sm font-medium text-vocab bg-vocab/20 px-2 py-1 rounded">
-                                    x{group.count}
-                                  </span>
-                                )}
-                                {/* Delete button */}
-                                <button
-                                  onClick={() => handleDeleteVocabulary(group.id)}
-                                  className="btn-remove"
-                                  title="Remove from vocabulary"
-                                >
-                                  −
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Metadata badges: POS + Level */}
-                            <div className="flex items-center gap-2 mb-2 flex-wrap">
-                              {group.pos && (
-                                <span className="text-xs font-medium bg-accent/20 text-accent px-2 py-0.5 rounded">
-                                  {group.pos}
-                                </span>
-                              )}
-                              {group.level && (
-                                <span className={`text-xs font-medium px-2 py-0.5 rounded ${getLevelColor(group.level)}`}>
-                                  {group.level}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Original word form (if different from lemma) */}
-                            {group.word !== group.lemma && (
-                              <p className="text-xs text-text-dim italic mb-1">({group.word})</p>
-                            )}
-
-                            {/* Definition */}
-                            <p className="text-sm text-foreground mb-2">{group.definition}</p>
-
-                            {/* Conjugations (if verb) */}
-                            {group.conjugations && (group.conjugations.present || group.conjugations.past || group.conjugations.perfect) && (
-                              <div className="text-xs text-text-dim mb-2 bg-card-hover rounded p-2">
-                                {[group.conjugations.present, group.conjugations.past, group.conjugations.perfect]
-                                  .filter(Boolean)
-                                  .join(' - ')}
-                              </div>
-                            )}
-
-                            {/* Example sentence */}
-                            <p className="text-xs text-text-dim italic mb-2 line-clamp-2">
-                              &ldquo;{group.sentence}&rdquo;
-                            </p>
-
-                            {/* Footer: Date + Article count */}
-                            <div className="flex items-center justify-between text-xs text-text-dim mb-2">
-                              <span>
-                                {new Date(group.created_at).toLocaleDateString()}
-                              </span>
-                              <span>
-                                {group.article_ids.length} article{group.article_ids.length !== 1 ? 's' : ''}
-                              </span>
-                            </div>
-
-                            {/* Article link - most recent only, fixed at bottom */}
-                            <div className="mt-auto">
-                              <Link
-                                href={`/articles/${group.article_id}`}
-                                className="text-xs text-accent hover:text-accent/80 underline"
-                              >
-                                View in Article
-                              </Link>
-                            </div>
-                          </div>
-                        )
-                      })}
+                      {groups.map((group) => (
+                        <VocabularyCard
+                          key={`${group.language}-${group.lemma}`}
+                          id={group.id}
+                          lemma={group.lemma}
+                          word={group.word}
+                          definition={group.definition}
+                          sentence={group.sentence}
+                          gender={group.gender}
+                          phonetics={group.phonetics}
+                          pos={group.pos}
+                          level={group.level}
+                          conjugations={group.conjugations}
+                          examples={group.examples}
+                          count={group.count}
+                          articleId={group.article_id}
+                          createdAt={group.created_at}
+                          variant="card"
+                          showArticleLink
+                          onDelete={handleDeleteVocabulary}
+                        />
+                      ))}
                     </div>
                   </div>
                 </div>
