@@ -662,20 +662,67 @@ The system now supports vocabulary-aware article generation, where CrewAI adjust
   "created_at": "datetime",
   "pos": "string",               // Part of speech (noun, verb, adjective, etc.)
   "gender": "string",            // Grammatical gender (der/die/das for German, le/la for French, etc.)
-  "conjugations": {              // Verb conjugations (null for non-verbs)
+  "phonetics": "string",         // IPA pronunciation (e.g., /hʊnt/) - English only
+  "conjugations": {              // Verb conjugations or noun declensions (null if not applicable)
     "present": "string",
     "past": "string",
-    "perfect": "string"
+    "participle": "string",
+    "auxiliary": "string",
+    "genitive": "string",
+    "plural": "string"
   },
-  "level": "string"              // CEFR level (A1, A2, B1, B2, C1, C2)
+  "level": "string",             // CEFR level (A1, A2, B1, B2, C1, C2)
+  "examples": ["string"]         // Example sentences from dictionary
 }
 ```
 
-**New Grammatical Metadata Fields:**
+**Grammatical Metadata Fields:**
 - `pos`: Part of speech classification (noun, verb, adjective, adverb, preposition, etc.)
 - `gender`: Grammatical gender for nouns in gendered languages (German: der/die/das, French: le/la, Spanish: el/la). Null for non-gendered languages.
-- `conjugations`: Verb conjugation forms across tenses (present, past, perfect). Null for non-verbs.
+- `phonetics`: IPA pronunciation from Free Dictionary API. Only populated for English language lookups due to API accuracy.
+- `conjugations`: Verb conjugation forms (present, past, participle, auxiliary) or noun declensions (genitive, plural). Null for other parts of speech.
 - `level`: CEFR difficulty level (A1-C2) for vocabulary tracking and adaptive learning.
+- `examples`: Example sentences from Free Dictionary API showing word usage in context.
+
+#### VocabularyMetadata TypedDict (`src/utils/mongodb.py`)
+
+The `VocabularyMetadata` TypedDict provides type hints for optional grammatical metadata when saving vocabulary entries:
+
+```python
+class VocabularyMetadata(TypedDict, total=False):
+    """Optional grammatical metadata for vocabulary entries."""
+    pos: str | None
+    gender: str | None
+    phonetics: str | None
+    conjugations: dict | None
+    level: str | None
+    examples: list[str] | None
+```
+
+**Usage**:
+```python
+from utils.mongodb import save_vocabulary, VocabularyMetadata
+
+metadata: VocabularyMetadata = {
+    'pos': 'noun',
+    'gender': 'der',
+    'phonetics': '/hʊnt/',
+    'conjugations': {'genitive': 'Hundes', 'plural': 'Hunde'},
+    'level': 'A1',
+    'examples': ['Der Hund bellt.', 'Ich habe einen Hund.']
+}
+
+save_vocabulary(
+    article_id=article_id,
+    user_id=user_id,
+    word='Hunde',
+    lemma='Hund',
+    definition='dog',
+    sentence='Die Hunde spielen im Park.',
+    language='German',
+    metadata=metadata
+)
+```
 
 #### VocabularyCount Model (Aggregated Response)
 - Groups vocabularies by lemma
@@ -904,6 +951,7 @@ opad/
 │   │   │   ├── EmptyState.tsx      # Reusable empty state
 │   │   │   ├── ErrorAlert.tsx      # Reusable error alert
 │   │   │   ├── MarkdownViewer.tsx
+│   │   │   ├── VocabularyCard.tsx  # Unified vocabulary display component
 │   │   │   └── VocabularyList.tsx
 │   │   ├── hooks/        # Custom React hooks
 │   │   │   ├── useAsyncFetch.ts    # Generic fetch with loading/error
@@ -1088,6 +1136,178 @@ Visit `/endpoints` in browser to see all available API routes grouped by tag.
 
 ## 📡 Dictionary API
 
+### Hybrid Dictionary Lookup Architecture
+
+The dictionary search uses a hybrid approach combining LLM capabilities with the Free Dictionary API for optimal results.
+
+#### Overview
+
+```mermaid
+graph TB
+    subgraph "Hybrid Dictionary Lookup"
+        Request[POST /dictionary/search] --> LLM[LLM Reduced Prompt<br/>gpt-4.1]
+
+        LLM --> |lemma| API[Free Dictionary API]
+        LLM --> |related_words, level| Merge[Merge Results]
+        API --> |definition, pos, phonetics, conjugations, examples| Merge
+
+        Merge --> Response[SearchResponse]
+
+        LLM -.-> |LLM Failure| Fallback[Full LLM Fallback<br/>gpt-4.1-mini]
+        API -.-> |API Failure| Fallback
+        Fallback --> Response
+    end
+
+    style Request fill:#2196F3
+    style LLM fill:#10a37f
+    style API fill:#ff9500
+    style Merge fill:#9c27b0
+    style Response fill:#13aa52
+    style Fallback fill:#dc382d
+```
+
+#### Data Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as FastAPI<br/>(/dictionary/search)
+    participant LLM as LLM
+    participant FreeDict as Free Dictionary API
+
+    Client->>API: POST {word, sentence, language}
+
+    Note over API,LLM: Step 1: Get lemma from LLM
+    API->>LLM: Reduced prompt (gpt-4.1)<br/>(lemma, related_words, level)
+    LLM-->>API: {lemma, related_words, level}
+
+    Note over API,FreeDict: Step 2: Lookup using lemma
+    API->>FreeDict: GET /api/v1/entries/{lang}/{lemma}
+    FreeDict-->>API: {definition, pos, phonetics, forms}
+
+    alt API Success
+        API->>API: Merge LLM + API results
+        API-->>Client: SearchResponse (hybrid)
+    else API Failure or Missing Definition
+        API->>LLM: Full prompt (gpt-4.1-mini, all fields)
+        LLM-->>API: Complete definition
+        API-->>Client: SearchResponse (llm fallback)
+    end
+```
+
+#### Components
+
+| Component | Responsibility | Output Fields |
+|-----------|----------------|---------------|
+| **LLM (Reduced Prompt)** | Context-aware lemma extraction, CEFR level classification | `lemma`, `related_words`, `level` |
+| **Free Dictionary API** | Standard dictionary data, pronunciation, examples | `definition`, `pos`, `gender`, `phonetics`, `forms` → `conjugations`, `examples` |
+| **Merge Function** | Combines results, converts `forms` to `conjugations` format | All fields |
+| **Full LLM Fallback** | Complete definition when hybrid fails | All fields except `phonetics` and `examples` |
+
+#### Supported Languages
+
+The Free Dictionary API supports the following languages:
+
+| Language | Code | Example |
+|----------|------|---------|
+| German | `de` | `/api/v1/entries/de/Hund` |
+| English | `en` | `/api/v1/entries/en/dog` |
+| French | `fr` | `/api/v1/entries/fr/chien` |
+| Spanish | `es` | `/api/v1/entries/es/perro` |
+| Italian | `it` | `/api/v1/entries/it/cane` |
+| Portuguese | `pt` | `/api/v1/entries/pt/cao` |
+| Dutch | `nl` | `/api/v1/entries/nl/hond` |
+| Polish | `pl` | `/api/v1/entries/pl/pies` |
+| Russian | `ru` | `/api/v1/entries/ru/sobaka` |
+
+**Note**: For unsupported languages, the system automatically falls back to full LLM lookup.
+
+#### Fallback Mechanism
+
+The fallback to full LLM (gpt-4.1-mini) occurs in these scenarios:
+
+1. **LLM reduced prompt failure**: Failed to parse lemma from reduced prompt
+2. **Language not supported**: Language not in `LANGUAGE_CODE_MAP`
+3. **Word not found**: Free Dictionary API returns 404
+4. **API timeout**: Request exceeds 5-second timeout
+5. **API error**: HTTP error or network failure
+6. **Missing definition**: API response lacks definition field
+
+**Fallback Flow**:
+```
+Hybrid Lookup Failed (LLM or API)
+    |
+    v
+Full LLM Prompt (build_word_definition_prompt, gpt-4.1-mini)
+    |
+    v
+LLM returns all fields: lemma, definition, pos, gender, conjugations, level
+    |
+    v
+SearchResponse (without phonetics and examples)
+```
+
+**Note**: Fallback responses do NOT include `phonetics` or `examples` since these are only available from the Free Dictionary API.
+
+#### Phonetics and Examples Data Flow
+
+**Phonetics** (IPA pronunciation) and **examples** (usage sentences) are sourced exclusively from the Free Dictionary API and follow specific rules:
+
+**Data Sources**:
+```
+Free Dictionary API
+    |
+    +---> phonetics (IPA string, e.g., "/hʊnt/")
+    |
+    +---> examples (array of sentences)
+    |
+    v
+SearchResponse --> VocabularyRequest --> MongoDB
+```
+
+**Phonetics Restrictions**:
+- Only returned for **English** language lookups
+- Reason: Free Dictionary API provides most accurate IPA for English
+- Other languages: `phonetics` field is set to `null`
+
+**Implementation** (`src/api/routes/dictionary.py:335-337`):
+```python
+# Only include phonetics for English
+if request.language != "English":
+    phonetics = None
+```
+
+**Examples Behavior**:
+- Available for all supported languages
+- Returns up to 3 example sentences from dictionary
+- Falls back to empty array if no examples found
+
+**Frontend Display** (`VocabularyCard`):
+- Phonetics displayed next to lemma in monospace font
+- Examples shown in collapsible section with article sentence first
+
+#### Token Usage Tracking
+
+Token usage is tracked for all dictionary searches:
+
+- **Hybrid success**: Only reduced prompt tokens counted (~500 max, gpt-4.1)
+- **Fallback**: Full prompt tokens counted (~2000 max, gpt-4.1-mini)
+- **Source metadata**: Indicates `"hybrid"` or `"llm"` for cost analysis
+
+```json
+{
+  "operation": "dictionary_search",
+  "metadata": {
+    "word": "dog",
+    "language": "English",
+    "source": "hybrid",
+    "phonetics": "/dɔːɡ/"
+  }
+}
+```
+
+**Note**: `phonetics` is only included for English language lookups.
+
 ### Word Definition Endpoint
 
 **Endpoint**: `POST /dictionary/search`
@@ -1111,48 +1331,57 @@ Visit `/endpoints` in browser to see all available API routes grouped by tag.
   "related_words": ["hängt", "ab"],
   "pos": "verb",
   "gender": null,
+  "phonetics": null,
   "conjugations": {
     "present": "hängt ab",
     "past": "hing ab",
-    "perfect": "hat abgehangen"
+    "participle": "abgehangen",
+    "auxiliary": "haben"
   },
-  "level": "B1"
+  "level": "B1",
+  "examples": ["Das hängt vom Wetter ab.", "Es hängt davon ab, ob..."]
 }
 ```
 
+**Note**: `phonetics` is `null` for German (only available for English).
+
 **특징:**
+- **하이브리드 조회**: LLM + Free Dictionary API 결합으로 정확도와 비용 최적화
 - **분리동사 처리**: 독일어 등에서 동사가 분리된 경우 전체 lemma 반환 (예: `hängt ... ab` → `abhängen`)
 - **복합어 처리**: 단어가 복합어의 일부인 경우 전체 형태 반환
 - **related_words**: 문장에서 같은 lemma에 속하는 모든 단어들을 배열로 반환 (예: 분리 동사의 경우 모든 부분 포함)
-- **문법적 메타데이터**: 품사(pos), 성(gender), 동사 활용형(conjugations), CEFR 레벨(level) 자동 추출
-- **공통 유틸 사용**: `utils/llm.py`의 `call_openai_chat()` 함수 활용
-- **프롬프트 분리**: `utils/prompts.py`의 `build_word_definition_prompt()` 사용
+- **문법적 메타데이터**: 품사(pos), 성(gender), 동사 활용형(conjugations), CEFR 레벨(level), IPA 발음(phonetics), 예문(examples) 추출
+- **공통 유틸 사용**: `utils/llm.py`의 `call_llm_with_tracking()` 함수 활용
+- **프롬프트 분리**: `utils/prompts.py`의 `build_reduced_word_definition_prompt()` (하이브리드), `build_word_definition_prompt()` (폴백) 사용
 - **보안**: Regex injection 방지를 위한 `re.escape()` 적용
 
-**흐름:**
+**흐름 (Hybrid Approach):**
 
 ```mermaid
 sequenceDiagram
     participant Frontend as Frontend<br/>(MarkdownViewer)
     participant NextAPI as Next.js API<br/>(/api/dictionary/search)
     participant FastAPI as FastAPI<br/>(/dictionary/search)
-    participant Utils as Utils<br/>(prompts.py + llm.py)
-    participant OpenAI as OpenAI API
+    participant LLM as LLM<br/>(gpt-4.1)
+    participant FreeDict as Free Dictionary API
 
     Frontend->>NextAPI: POST /api/dictionary/search<br/>{word, sentence, language}
     NextAPI->>FastAPI: POST /dictionary/search<br/>{word, sentence, language}
 
-    FastAPI->>Utils: build_word_definition_prompt()
-    Utils-->>FastAPI: prompt string
+    Note over FastAPI,LLM: Step 1: Get lemma from LLM
+    FastAPI->>LLM: Reduced prompt<br/>(lemma, related_words, level)
+    LLM-->>FastAPI: {lemma, related_words, level}
 
-    FastAPI->>Utils: call_openai_chat(prompt)
-    Utils->>OpenAI: POST /v1/chat/completions
-    OpenAI-->>Utils: {lemma, definition, related_words, pos, gender, conjugations, level}
-    Utils->>Utils: parse_json_from_content()
-    Utils-->>FastAPI: {lemma, definition, related_words, pos, gender, conjugations, level}
+    Note over FastAPI,FreeDict: Step 2: Lookup using lemma
+    FastAPI->>FreeDict: GET /api/v1/entries/{lang}/{lemma}
+    FreeDict-->>FastAPI: {definition, pos, phonetics, forms, examples}
 
-    FastAPI-->>NextAPI: SearchResponse<br/>{lemma, definition, related_words, pos, gender, conjugations, level}
-    NextAPI-->>Frontend: {lemma, definition, related_words, pos, gender, conjugations, level}
+    Note over FastAPI: Step 3: Merge results
+    FastAPI->>FastAPI: _merge_llm_and_api_results()
+    FastAPI->>FastAPI: Filter phonetics (English only)
+
+    FastAPI-->>NextAPI: SearchResponse<br/>{lemma, definition, pos, gender, phonetics, conjugations, level, examples}
+    NextAPI-->>Frontend: Complete vocabulary data
 ```
 
 ---
@@ -1285,6 +1514,69 @@ Consistent empty state display:
 - Reduces code duplication
 - Easy to update design globally
 - Improves maintainability with single source of truth
+
+#### VocabularyCard (`src/web/components/VocabularyCard.tsx`)
+Unified vocabulary display component supporting both list and card layouts:
+- Displays lemma with gender prefix and IPA phonetics
+- Shows part of speech (POS) and CEFR level badges
+- Renders verb conjugations or noun declensions
+- Collapsible examples section with sentence context
+- Optional article link and creation date
+- Delete button with callback support
+
+**Props**:
+- `id` (string): Unique vocabulary entry ID
+- `lemma` (string): Dictionary form of the word
+- `word` (string): Original word as clicked
+- `definition` (string): Word definition
+- `sentence` (string): Context sentence from article
+- `gender` (optional): Grammatical gender (der/die/das)
+- `phonetics` (optional): IPA pronunciation (e.g., /hʊnt/)
+- `pos` (optional): Part of speech
+- `level` (optional): CEFR level (A1-C2)
+- `conjugations` (optional): Verb/noun forms (see Conjugations type)
+- `examples` (optional): Additional example sentences from dictionary
+- `count` (optional): Occurrence count across articles
+- `articleId` (optional): Article ID for linking
+- `createdAt` (optional): Creation timestamp
+- `variant` ('list' | 'card'): Display style (default: 'list')
+- `showArticleLink` (boolean): Show "View in Article" link (default: false)
+- `onDelete` (optional): Callback for delete button
+
+**Conjugations Type** (`src/web/types/article.ts`):
+```typescript
+export interface Conjugations {
+  present?: string    // Present tense (3rd person singular)
+  past?: string       // Past/preterite tense
+  participle?: string // Past participle
+  auxiliary?: string  // Auxiliary verb (haben/sein)
+  genitive?: string   // Genitive form (nouns)
+  plural?: string     // Plural form (nouns)
+}
+```
+
+**Usage**:
+```tsx
+import VocabularyCard from '@/components/VocabularyCard'
+
+<VocabularyCard
+  id="vocab-123"
+  lemma="Hund"
+  word="Hunde"
+  definition="dog"
+  sentence="Die Hunde spielen im Park."
+  gender="der"
+  phonetics="/hʊnt/"
+  pos="noun"
+  level="A1"
+  conjugations={{ genitive: "Hundes", plural: "Hunde" }}
+  examples={["Der Hund bellt.", "Ich habe einen Hund."]}
+  variant="card"
+  showArticleLink={true}
+  articleId="article-456"
+  onDelete={(id) => handleDelete(id)}
+/>
+```
 
 ### Refactoring Impact
 
