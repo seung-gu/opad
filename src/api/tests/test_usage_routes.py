@@ -269,28 +269,36 @@ class TestDictionarySearchTokenUsageIntegration(unittest.TestCase):
         """Clean up dependency overrides."""
         app.dependency_overrides.clear()
 
+    def _create_mock_service(self, lookup_result):
+        """Create a mock DictionaryService that returns the given result."""
+        from unittest.mock import AsyncMock
+        from services.dictionary_service import DictionaryService
+
+        mock_service = MagicMock(spec=DictionaryService)
+        mock_service.lookup = AsyncMock(return_value=lookup_result)
+        mock_service.last_token_stats = MagicMock(
+            model="gpt-4.1-mini",
+            prompt_tokens=100,
+            completion_tokens=50,
+            estimated_cost=0.0001
+        )
+        return mock_service
+
     @patch('api.routes.dictionary.save_token_usage')
-    @patch('api.routes.dictionary.call_llm_with_tracking')
-    @patch('api.routes.dictionary.build_word_definition_prompt')
-    def test_dictionary_search_calls_save_token_usage(self, mock_prompt, mock_llm, mock_save_usage):
+    def test_dictionary_search_calls_save_token_usage(self, mock_save_usage):
         """Test that dictionary search endpoint calls save_token_usage."""
-        from utils.llm import TokenUsageStats
+        from api.routes.dictionary import get_dictionary_service
+        from services.dictionary_service import LookupResult
 
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-        mock_prompt.return_value = "test prompt"
 
-        # Mock LLM response
-        mock_llm.return_value = (
-            '{"lemma": "test", "definition": "a procedure"}',
-            TokenUsageStats(
-                model="gpt-4.1-mini",
-                prompt_tokens=100,
-                completion_tokens=50,
-                total_tokens=150,
-                estimated_cost=0.0001,
-                provider="openai"
-            )
+        result = LookupResult(
+            lemma="test",
+            definition="a procedure",
+            source="hybrid"
         )
+        mock_service = self._create_mock_service(result)
+        app.dependency_overrides[get_dictionary_service] = lambda: mock_service
         mock_save_usage.return_value = "usage-id-123"
 
         response = self.client.post(
@@ -317,27 +325,20 @@ class TestDictionarySearchTokenUsageIntegration(unittest.TestCase):
         assert call_kwargs['metadata']['language'] == "English"
 
     @patch('api.routes.dictionary.save_token_usage')
-    @patch('api.routes.dictionary.call_llm_with_tracking')
-    @patch('api.routes.dictionary.build_word_definition_prompt')
-    def test_dictionary_search_token_usage_persists_on_success(self, mock_prompt, mock_llm, mock_save_usage):
+    def test_dictionary_search_token_usage_persists_on_success(self, mock_save_usage):
         """Test that token usage is saved even with partial JSON response."""
-        from utils.llm import TokenUsageStats
+        from api.routes.dictionary import get_dictionary_service
+        from services.dictionary_service import LookupResult
 
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-        mock_prompt.return_value = "test prompt"
 
-        # Response with minimal fields
-        mock_llm.return_value = (
-            '{"lemma": "word", "definition": "meaning"}',
-            TokenUsageStats(
-                model="gpt-4.1-mini",
-                prompt_tokens=50,
-                completion_tokens=25,
-                total_tokens=75,
-                estimated_cost=0.00005,
-                provider="openai"
-            )
+        result = LookupResult(
+            lemma="word",
+            definition="meaning",
+            source="hybrid"
         )
+        mock_service = self._create_mock_service(result)
+        app.dependency_overrides[get_dictionary_service] = lambda: mock_service
         mock_save_usage.return_value = "usage-id-456"
 
         response = self.client.post(
@@ -354,26 +355,21 @@ class TestDictionarySearchTokenUsageIntegration(unittest.TestCase):
         assert mock_save_usage.called
 
     @patch('api.routes.dictionary.save_token_usage')
-    @patch('api.routes.dictionary.call_llm_with_tracking')
-    @patch('api.routes.dictionary.build_word_definition_prompt')
-    def test_dictionary_search_token_usage_with_german_language(self, mock_prompt, mock_llm, mock_save_usage):
+    def test_dictionary_search_token_usage_with_german_language(self, mock_save_usage):
         """Test that token usage correctly captures non-English language."""
-        from utils.llm import TokenUsageStats
+        from api.routes.dictionary import get_dictionary_service
+        from services.dictionary_service import LookupResult
 
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-        mock_prompt.return_value = "test prompt"
 
-        mock_llm.return_value = (
-            '{"lemma": "gehen", "definition": "to go", "level": "A1"}',
-            TokenUsageStats(
-                model="gpt-4.1-mini",
-                prompt_tokens=120,
-                completion_tokens=60,
-                total_tokens=180,
-                estimated_cost=0.00015,
-                provider="openai"
-            )
+        result = LookupResult(
+            lemma="gehen",
+            definition="to go",
+            level="A1",
+            source="hybrid"
         )
+        mock_service = self._create_mock_service(result)
+        app.dependency_overrides[get_dictionary_service] = lambda: mock_service
         mock_save_usage.return_value = "usage-id-789"
 
         response = self.client.post(

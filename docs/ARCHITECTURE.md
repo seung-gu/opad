@@ -1057,80 +1057,29 @@ result = parse_json_from_content(content)
 ### 프롬프트 템플릿 (`utils/prompts.py`)
 재사용 가능한 LLM 프롬프트 빌더 함수들:
 
-- **`build_word_definition_prompt()`**: Dictionary API용 프롬프트 생성 (lemma 및 definition 추출)
+- **`build_reduced_word_definition_prompt()`**: 하이브리드 조회용 축소 프롬프트 생성 (lemma, related_words, level만 추출)
+  - 내부적으로 언어별 함수 사용: `build_reduced_prompt_de()` (독일어), `build_reduced_prompt_en()` (영어)
+  - 기타 언어는 범용 프롬프트 사용
+- **`build_word_definition_prompt()`**: Full LLM 폴백용 프롬프트 생성 (모든 필드 추출)
 
 **사용 예시:**
 ```python
-from utils.prompts import build_word_definition_prompt
+from utils.prompts import build_reduced_word_definition_prompt, build_word_definition_prompt
 
-prompt = build_word_definition_prompt(
+# Hybrid approach: reduced prompt (lemma + level only)
+reduced_prompt = build_reduced_word_definition_prompt(
+    language="German",
+    sentence="Diese große Spanne hängt von mehreren Faktoren ab.",
+    word="hängt"
+)
+
+# Full LLM fallback: all fields
+full_prompt = build_word_definition_prompt(
     language="German",
     sentence="Diese große Spanne hängt von mehreren Faktoren ab.",
     word="hängt"
 )
 ```
-
----
-
-## 📡 Dynamic Endpoint Discovery
-
-### Tag-Based Endpoint Grouping
-
-The `/endpoints` endpoint dynamically generates an HTML page listing all registered API routes, grouped by their tags. This system requires no code changes when new routes are added—they automatically appear in the listing.
-
-**Endpoint**: `GET /endpoints`
-
-**File**: `src/api/routes/endpoints.py`
-
-**How It Works**:
-
-1. **Route Introspection**: Scans `app.routes` to collect all routes with methods and paths
-2. **Tag Extraction**: Reads tags from route definitions (e.g., `tags=["articles"]`, `tags=["usage"]`)
-3. **Dynamic Grouping**: Groups endpoints by tag using `group_endpoints_by_tag()`
-4. **HTML Generation**: Renders grouped endpoints as styled HTML page
-
-**Helper Functions**:
-
-- **`group_endpoints_by_tag(endpoints)`**: Groups endpoints by tag (first tag if multiple), returns `dict[tag, list[endpoints]]`
-  - Uses `defaultdict(list)` to avoid KeyError
-  - Filters out `EXCLUDED_TAGS` (e.g., "meta")
-  - Sorts endpoints within each group by `(path, method)`
-  - Assigns "other" tag if endpoint has no tags
-
-- **`get_sorted_tags(grouped)`**: Returns alphabetically sorted tag list with "other" at end
-
-- **`format_endpoint(ep)`**: Formats single endpoint as HTML with method badge, path, and summary
-
-- **`format_tag_title(tag)`**: Converts tag name to display title (e.g., "articles" → "Articles Endpoints")
-
-**Configuration**:
-
-```python
-# src/api/routes/endpoints.py:13-14
-EXCLUDED_TAGS = {"meta"}  # Tags to hide from listing
-EXCLUDED_PATHS = {"/docs", "/openapi.json", "/redoc"}  # Paths to skip
-```
-
-**Example Route Definition**:
-
-```python
-# src/api/routes/usage.py
-router = APIRouter(tags=["usage"])  # Tag used for grouping
-
-@router.get("/me", summary="Get current user's token usage summary")
-async def get_my_usage(...):
-    """Detailed description..."""
-```
-
-**Benefits**:
-
-- **Zero-maintenance**: New routes automatically appear in listing
-- **Tag-based organization**: Routes grouped by domain (articles, usage, dictionary)
-- **Clean HTML output**: Color-coded HTTP methods (GET=blue, POST=green, DELETE=red)
-- **No hardcoding**: Eliminates manual endpoint lists
-
-**Usage**:
-Visit `/endpoints` in browser to see all available API routes grouped by tag.
 
 ---
 
@@ -1145,22 +1094,24 @@ The dictionary search uses a hybrid approach combining LLM capabilities with the
 ```mermaid
 graph TB
     subgraph "Hybrid Dictionary Lookup"
-        Request[POST /dictionary/search] --> LLM[LLM Reduced Prompt<br/>gpt-4.1]
+        Request[POST /dictionary/search] --> LLM[Step 1: LLM Reduced Prompt<br/>gpt-4.1-mini, max_tokens=200]
 
-        LLM --> |lemma| API[Free Dictionary API]
-        LLM --> |related_words, level| Merge[Merge Results]
-        API --> |definition, pos, phonetics, conjugations, examples| Merge
+        LLM --> |lemma| API[Step 2: Free Dictionary API]
+        API --> |senses > 1| SenseSelect[Step 3: LLM Sense Selection<br/>gpt-4.1-mini, max_tokens=10]
+        API --> Merge[Step 4: Merge Results]
+        SenseSelect --> Merge
 
         Merge --> Response[SearchResponse]
 
-        LLM -.-> |LLM Failure| Fallback[Full LLM Fallback<br/>gpt-4.1-mini]
-        API -.-> |API Failure| Fallback
+        LLM -.-> |LLM failure| Fallback[Full LLM Fallback<br/>gpt-4.1-mini, max_tokens=2000]
+        API -.-> |404 / timeout / no senses| Fallback
         Fallback --> Response
     end
 
     style Request fill:#2196F3
     style LLM fill:#10a37f
     style API fill:#ff9500
+    style SenseSelect fill:#10a37f
     style Merge fill:#9c27b0
     style Response fill:#13aa52
     style Fallback fill:#dc382d
@@ -1172,26 +1123,32 @@ graph TB
 sequenceDiagram
     participant Client
     participant API as FastAPI<br/>(/dictionary/search)
-    participant LLM as LLM
+    participant LLM as LLM<br/>(gpt-4.1-mini)
     participant FreeDict as Free Dictionary API
 
     Client->>API: POST {word, sentence, language}
 
     Note over API,LLM: Step 1: Get lemma from LLM
-    API->>LLM: Reduced prompt (gpt-4.1)<br/>(lemma, related_words, level)
+    API->>LLM: Reduced prompt (max_tokens=200)
     LLM-->>API: {lemma, related_words, level}
 
     Note over API,FreeDict: Step 2: Lookup using lemma
     API->>FreeDict: GET /api/v1/entries/{lang}/{lemma}
-    FreeDict-->>API: {definition, pos, phonetics, forms}
+    FreeDict-->>API: {all_senses, pos, phonetics, forms, gender}
 
-    alt API Success
-        API->>API: Merge LLM + API results
-        API-->>Client: SearchResponse (hybrid)
-    else API Failure or Missing Definition
-        API->>LLM: Full prompt (gpt-4.1-mini, all fields)
-        LLM-->>API: Complete definition
-        API-->>Client: SearchResponse (llm fallback)
+    alt API returns senses
+        alt senses > 1
+            Note over API,LLM: Step 3: Select best sense via LLM
+            API->>LLM: Sense selection prompt (max_tokens=10)
+            LLM-->>API: Selected sense number
+        end
+        Note over API: Step 4: Merge LLM + API results
+        API-->>Client: SearchResponse (source: hybrid)
+    else API failure (404, timeout, no senses)
+        Note over API,LLM: Fallback: Full LLM prompt
+        API->>LLM: Full prompt (max_tokens=2000)
+        LLM-->>API: {lemma, definition, pos, gender, conjugations, level}
+        API-->>Client: SearchResponse (source: llm)
     end
 ```
 
@@ -1199,10 +1156,11 @@ sequenceDiagram
 
 | Component | Responsibility | Output Fields |
 |-----------|----------------|---------------|
-| **LLM (Reduced Prompt)** | Context-aware lemma extraction, CEFR level classification | `lemma`, `related_words`, `level` |
-| **Free Dictionary API** | Standard dictionary data, pronunciation, examples | `definition`, `pos`, `gender`, `phonetics`, `forms` → `conjugations`, `examples` |
-| **Merge Function** | Combines results, converts `forms` to `conjugations` format | All fields |
-| **Full LLM Fallback** | Complete definition when hybrid fails | All fields except `phonetics` and `examples` |
+| **LLM (Reduced Prompt)** | Context-aware lemma extraction, CEFR level classification (max_tokens=200) | `lemma`, `related_words`, `level` |
+| **Free Dictionary API** | Standard dictionary data, pronunciation, senses | `senses`, `pos`, `gender`, `phonetics`, `forms` |
+| **LLM (Sense Selection)** | Selects best sense from API senses based on sentence context (max_tokens=10) | `definition`, `examples` (from selected sense) |
+| **Merge Function** | Combines results, converts `forms` to `conjugations` format, accumulates token stats | All fields |
+| **Full LLM Fallback** | Complete definition when hybrid fails (max_tokens=2000) | All fields except `phonetics` and `examples` |
 
 #### Supported Languages
 
@@ -1231,7 +1189,7 @@ The fallback to full LLM (gpt-4.1-mini) occurs in these scenarios:
 3. **Word not found**: Free Dictionary API returns 404
 4. **API timeout**: Request exceeds 5-second timeout
 5. **API error**: HTTP error or network failure
-6. **Missing definition**: API response lacks definition field
+6. **Missing senses**: API response lacks senses (definition/examples selection requires senses)
 
 **Fallback Flow**:
 ```
@@ -1290,7 +1248,7 @@ if request.language != "English":
 
 Token usage is tracked for all dictionary searches:
 
-- **Hybrid success**: Only reduced prompt tokens counted (~500 max, gpt-4.1)
+- **Hybrid success**: Reduced prompt tokens (~200 max) + sense selection tokens (~10 max) accumulated (gpt-4.1-mini)
 - **Fallback**: Full prompt tokens counted (~2000 max, gpt-4.1-mini)
 - **Source metadata**: Indicates `"hybrid"` or `"llm"` for cost analysis
 
@@ -1355,34 +1313,8 @@ Token usage is tracked for all dictionary searches:
 - **프롬프트 분리**: `utils/prompts.py`의 `build_reduced_word_definition_prompt()` (하이브리드), `build_word_definition_prompt()` (폴백) 사용
 - **보안**: Regex injection 방지를 위한 `re.escape()` 적용
 
-**흐름 (Hybrid Approach):**
-
-```mermaid
-sequenceDiagram
-    participant Frontend as Frontend<br/>(MarkdownViewer)
-    participant NextAPI as Next.js API<br/>(/api/dictionary/search)
-    participant FastAPI as FastAPI<br/>(/dictionary/search)
-    participant LLM as LLM<br/>(gpt-4.1)
-    participant FreeDict as Free Dictionary API
-
-    Frontend->>NextAPI: POST /api/dictionary/search<br/>{word, sentence, language}
-    NextAPI->>FastAPI: POST /dictionary/search<br/>{word, sentence, language}
-
-    Note over FastAPI,LLM: Step 1: Get lemma from LLM
-    FastAPI->>LLM: Reduced prompt<br/>(lemma, related_words, level)
-    LLM-->>FastAPI: {lemma, related_words, level}
-
-    Note over FastAPI,FreeDict: Step 2: Lookup using lemma
-    FastAPI->>FreeDict: GET /api/v1/entries/{lang}/{lemma}
-    FreeDict-->>FastAPI: {definition, pos, phonetics, forms, examples}
-
-    Note over FastAPI: Step 3: Merge results
-    FastAPI->>FastAPI: _merge_llm_and_api_results()
-    FastAPI->>FastAPI: Filter phonetics (English only)
-
-    FastAPI-->>NextAPI: SearchResponse<br/>{lemma, definition, pos, gender, phonetics, conjugations, level, examples}
-    NextAPI-->>Frontend: Complete vocabulary data
-```
+**흐름**: 위 [Hybrid Dictionary Lookup Architecture](#hybrid-dictionary-lookup-architecture) 섹션의 Data Flow 참조.
+Frontend → Next.js API(`/api/dictionary/search`) → FastAPI(`/dictionary/search`) → DictionaryService 순으로 프록시됨.
 
 ---
 

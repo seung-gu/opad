@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-02-06
+
+### Added
+- Reduced prompt testing script (`test_reduced_prompt.py`) with 50 new unit tests for dictionary service refactoring
+- Test cases and test definition selection scripts for comprehensive dictionary service validation
+- `test_cases.py` for benchmarking and testing sense selection improvements
+- `max_tokens=10` parameter for sense selection LLM calls to prevent unbounded token usage
+
+### Changed
+- Refactored dictionary service with strategy pattern for improved code organization
+- Consolidated `TokenUsageStats` - removed duplicate from dictionary_service.py, now uses canonical version from utils/llm
+- Updated `_select_best_sense` to use `call_llm_with_tracking` instead of raw litellm for consistent token tracking
+- Renamed prompt building functions `build_test_prompt_de/en` to `build_reduced_prompt_de/en` in prompts.py for clarity
+- Reduced `REDUCED_PROMPT_MAX_TOKENS` from 2000 to 200 for more efficient prompt usage
+- Improved sense selection parsing with robust regex (`re.search`) instead of fragile `int()` conversion
+- Enhanced token stats accumulation to include sense selection LLM costs
+- Fixed formatting in full fallback prompt (added missing space before colon)
+
+### Fixed
+- Always returns `DEFAULT_DEFINITION` on JSON parse failure instead of exposing raw LLM content
+- Robust handling of sense selection responses with regex-based parsing for edge cases
+- Eliminated duplicate prompt definitions from test scripts
+- Dictionary service no longer exposes raw LLM errors to frontend
+
+### Removed
+- Dead code: `_extract_definition()` and `_extract_examples()` functions from dictionary_api.py
+- Redundant `--test-prompt` CLI flag from test script
+- Duplicate `TokenUsageStats` class definition from dictionary_service.py
+
 ## [0.11.0] - 2026-02-03
 
 ### Added
