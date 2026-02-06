@@ -8,6 +8,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+import litellm
+
 from utils.dictionary_api import fetch_from_free_dictionary_api, DictionaryAPIResult
 from utils.llm import call_llm_with_tracking, parse_json_from_content
 from utils.prompts import build_word_definition_prompt, build_reduced_word_definition_prompt
@@ -15,7 +17,7 @@ from utils.prompts import build_word_definition_prompt, build_reduced_word_defin
 logger = logging.getLogger(__name__)
 
 # Token limits for LLM calls
-REDUCED_PROMPT_MAX_TOKENS = 500
+REDUCED_PROMPT_MAX_TOKENS = 2000
 FULL_PROMPT_MAX_TOKENS = 2000
 
 # Default messages
@@ -74,7 +76,7 @@ class DictionaryService:
 
     def __init__(
         self,
-        reduced_llm_model: str = "openai/gpt-4.1",
+        reduced_llm_model: str = "openai/gpt-4.1-mini",
         full_llm_model: str = "openai/gpt-4.1-mini"
     ):
         """Initialize dictionary service.
@@ -127,14 +129,38 @@ class DictionaryService:
 
         # Step 2: Get definition and forms from Dictionary API
         lemma = llm_data.get("lemma", request.word)
+        related_words = llm_data.get("related_words", [])
+
+        logger.info("LLM reduced response", extra={
+            "word": request.word,
+            "lemma": lemma,
+            "related_words": related_words,
+            "level": llm_data.get("level"),
+            "api_lookup": lemma
+        })
         dict_data = await fetch_from_free_dictionary_api(
             word=lemma,
             language=request.language
         )
 
-        if dict_data is None or dict_data.definition is None:
+        if dict_data is None:
             logger.info(
-                "Dictionary API missing definition, falling back to full LLM",
+                "Dictionary API returned None, falling back to full LLM",
+                extra={"word": request.word, "lemma": lemma}
+            )
+            return None
+
+        # Select best sense from available senses
+        if dict_data.all_senses:
+            selected_sense = await self._select_best_sense(
+                request.sentence,
+                dict_data.all_senses
+            )
+            dict_data.definition = selected_sense.get("definition", DEFAULT_DEFINITION)
+            dict_data.examples = self._extract_examples_from_sense(selected_sense)
+        else:
+            logger.info(
+                "Dictionary API missing senses, falling back to full LLM",
                 extra={"word": request.word, "lemma": lemma}
             )
             return None
@@ -157,6 +183,7 @@ class DictionaryService:
         logger.info("Word definition extracted (hybrid)", extra={
             "word": request.word,
             "lemma": result.lemma,
+            "related_words": result.related_words,
             "pos": result.pos,
             "gender": result.gender,
             "level": result.level,
@@ -257,6 +284,7 @@ class DictionaryService:
             logger.info("Word definition extracted (full LLM fallback)", extra={
                 "word": request.word,
                 "lemma": result.get("lemma", request.word),
+                "related_words": result.get("related_words"),
                 "pos": result.get("pos"),
                 "gender": result.get("gender"),
                 "level": result.get("level"),
@@ -352,3 +380,72 @@ class DictionaryService:
         if language not in PHONETICS_SUPPORTED_LANGUAGES:
             result.phonetics = None
         return result
+
+    async def _select_best_sense(
+        self,
+        sentence: str,
+        senses: list[dict]
+    ) -> dict:
+        """Select the best sense based on sentence context using LLM.
+
+        Args:
+            sentence: The sentence containing the word.
+            senses: List of sense dictionaries from API.
+
+        Returns:
+            The best matching sense dictionary.
+        """
+        if not senses:
+            return {"definition": DEFAULT_DEFINITION}
+
+        if len(senses) == 1:
+            return senses[0]
+
+        # Build options (limit to 6 for context length)
+        options = []
+        for i, sense in enumerate(senses[:6]):
+            defn = sense.get("definition", "")
+            options.append(f"{i+1}. {defn}")
+
+        prompt = f"""Sentence: "{sentence}"
+
+Which definition best matches the word usage in this sentence?
+Reply with the number only.
+
+{chr(10).join(options)}"""
+
+        try:
+            response = await litellm.acompletion(
+                model=self.full_llm_model,  # Use OpenAI to avoid Gemini rate limit
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+                timeout=15
+            )
+            selected = int(response.choices[0].message.content.strip()) - 1
+            if 0 <= selected < len(senses):
+                return senses[selected]
+        except Exception as e:
+            logger.warning(
+                "Failed to select sense via LLM, using first",
+                extra={"error": str(e)}
+            )
+
+        return senses[0]
+
+    def _extract_examples_from_sense(self, sense: dict, max_examples: int = 3) -> list[str] | None:
+        """Extract examples from a single sense.
+
+        Args:
+            sense: Sense dictionary from API.
+            max_examples: Maximum number of examples.
+
+        Returns:
+            List of example strings or None.
+        """
+        examples = []
+        for example in sense.get("examples", [])[:max_examples]:
+            if isinstance(example, str):
+                examples.append(example)
+            elif isinstance(example, dict) and "text" in example:
+                examples.append(example["text"])
+        return examples if examples else None

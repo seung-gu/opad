@@ -53,6 +53,7 @@ class DictionaryAPIResult:
         forms: Grammatical forms (e.g., genitive, plural).
         gender: Grammatical gender for nouns (e.g., "der", "die", "das").
         examples: Example sentences showing word usage.
+        all_senses: All available senses/definitions from API.
     """
     definition: str | None = None
     pos: str | None = None
@@ -60,6 +61,7 @@ class DictionaryAPIResult:
     forms: dict[str, str] | None = None
     gender: str | None = None
     examples: list[str] | None = None
+    all_senses: list[dict] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -70,6 +72,7 @@ class DictionaryAPIResult:
             "forms": self.forms,
             "gender": self.gender,
             "examples": self.examples,
+            "all_senses": self.all_senses,
         }
 
 
@@ -342,11 +345,11 @@ def _parse_api_response(data: dict[str, Any], language_code: str) -> DictionaryA
     # Extract part of speech
     result.pos = entry.get("partOfSpeech")
 
-    # Extract pronunciation, definition, forms, and examples using helper functions
+    # Extract pronunciation and forms
     result.phonetics = _extract_phonetics(entry)
-    result.definition = _extract_definition(entry)
+    result.all_senses = entry.get("senses", [])
+    # definition, examples는 service에서 문맥 기반 선택
     result.forms = _extract_forms(entry)
-    result.examples = _extract_examples(entry)
 
     # Extract gender from senses tags (for German nouns)
     result.gender = _extract_gender_from_senses(entry, language_code)
