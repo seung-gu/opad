@@ -142,55 +142,6 @@ def _extract_phonetics(entry: dict[str, Any]) -> str | None:
     return None
 
 
-def _extract_definition(entry: dict[str, Any]) -> str | None:
-    """Extract first definition from entry senses.
-
-    Args:
-        entry: Dictionary entry from API response.
-
-    Returns:
-        Definition string or None if not found.
-    """
-    senses = entry.get("senses", [])
-    if not senses:
-        return None
-
-    first_sense = senses[0]
-    return first_sense.get("definition")
-
-
-def _extract_examples(entry: dict[str, Any], max_examples: int = 3) -> list[str] | None:
-    """Extract example sentences from entry senses.
-
-    Args:
-        entry: Dictionary entry from API response.
-        max_examples: Maximum number of examples to return.
-
-    Returns:
-        List of example sentences or None if not found.
-    """
-    senses = entry.get("senses", [])
-    if not senses:
-        return None
-
-    examples: list[str] = []
-    for sense in senses:
-        sense_examples = sense.get("examples", [])
-        for example in sense_examples:
-            # Examples can be strings or dicts with 'text' key
-            if isinstance(example, str):
-                examples.append(example)
-            elif isinstance(example, dict) and "text" in example:
-                examples.append(example["text"])
-
-            if len(examples) >= max_examples:
-                break
-        if len(examples) >= max_examples:
-            break
-
-    return examples if examples else None
-
-
 # Tags to skip during form extraction
 _SKIP_TAGS = {"table-tags", "inflection-template", "class", "multiword-construction"}
 
@@ -348,7 +299,7 @@ def _parse_api_response(data: dict[str, Any], language_code: str) -> DictionaryA
     # Extract pronunciation and forms
     result.phonetics = _extract_phonetics(entry)
     result.all_senses = entry.get("senses", [])
-    # definition, examples는 service에서 문맥 기반 선택
+    # definition and examples are selected by service layer based on sentence context
     result.forms = _extract_forms(entry)
 
     # Extract gender from senses tags (for German nouns)

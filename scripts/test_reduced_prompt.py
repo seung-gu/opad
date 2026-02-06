@@ -17,117 +17,13 @@ import litellm
 from utils.prompts import build_reduced_word_definition_prompt
 from scripts.test_cases import TEST_CASES_DE, TEST_CASES_EN
 
-
-def build_test_prompt(language: str, sentence: str, word: str) -> str:
-    """Build test prompt for lemma extraction based on language."""
-
-    if language == "English":
-        return build_test_prompt_en(sentence, word)
-    else:
-        return build_test_prompt_de(sentence, word)
-
-
-def build_test_prompt_de(sentence: str, word: str) -> str:
-    """German test prompt."""
-    return f"""Sentence: "{sentence}"
-Word: "{word}"
-
-lemma = dictionary lemma of "{word}".
-    - Verbs: infinitive 
-        1. SEPARABLE: What is the LAST word of "{sentence}" (before punctuation)?
-            If it's: ab/an/auf/aus/bei/ein/mit/nach/vor/weg/zu/zurück/teil/statt/unter/über/um)? → combine with verb
-        2. REFLEXIVE: Does any reflexive pronoun (sich/mich/dich/uns/euch) appear with the verb? → add "sich " to lemma
-    - Nouns: singular nominative without article
-    - Other (articles, adverbs, pronouns, particles): lowercase, as-is
-
-related_words = exact words from sentence forming this {{lemma}}, sorted by position in "{sentence}" (left → right)
-    - Verbs: collect ONLY conjugated verb + reflexive pronoun (sich/mich/dich/uns/euch) + separable prefix. Nothing else.
-      EXCLUDE: subjects, modals (kann/muss/will/soll/darf/möchte/sollte/sollten/müsst/könnte/wollte), auxiliaries (hat/ist/war/wurde/haben/sein/werden).
-      Past participles (ge- forms like angefangen/ausgemacht): include ONLY the participle, never hat/ist/wurde.
-    - Non-verbs (nouns, adjectives, adverbs, prepositions, articles, conjunctions): ["{word}"]
-level (CEFR) = A1(basic) A2(daily) B1(general) B2(professional) C1(academic) C2(literary)
-
-Respond with JSON only, no explanation:
-{{"lemma": "...", "related_words": [...], "level": "..."}}
-
-example:
-Sentence: "Er singt unter der Dusche", Word: "singt"
-→ {{"lemma": "singen", "related_words": ["singt"], "level": "A1"}}
-
-Sentence: "Der Laden macht um 18 Uhr zu", Word: "macht"
-→ {{"lemma": "zumachen", "related_words": ["macht", "zu"], "level": "A2"}}
-
-Sentence: "Er beschäftigt sich mit Geschichte", Word: "beschäftigt"
-→ {{"lemma": "sich beschäftigen", "related_words": ["beschäftigt", "sich"], "level": "B1"}}
-
-Sentence: "Sie bereitet sich auf die Prüfung vor", Word: "bereitet"
-→ {{"lemma": "sich vorbereiten", "related_words": ["bereitet", "sich", "vor"], "level": "B1"}}
-
-Sentence: "Ich glaube, dass er sich langweilt", Word: "langweilt"
-→ {{"lemma": "sich langweilen", "related_words": ["sich", "langweilt"], "level": "B1"}}
-
-Sentence: "Sie kann sich nicht entschließen", Word: "entschließen"
-→ {{"lemma": "sich entschließen", "related_words": ["sich", "entschließen"], "level": "B2"}}
-
-Sentence: "Wir dürfen uns nicht verspäten", Word: "verspäten"
-→ {{"lemma": "sich verspäten", "related_words": ["uns", "verspäten"], "level": "B1"}}
-
-Sentence: "Sie hat die Tür zugemacht", Word: "zugemacht"
-→ {{"lemma": "zumachen", "related_words": ["zugemacht"], "level": "A2"}}
-
-Sentence: "Er ist nach Berlin abgereist", Word: "abgereist"
-→ {{"lemma": "abreisen", "related_words": ["abgereist"], "level": "B1"}}
-
-"""
-
-
-def build_test_prompt_en(sentence: str, word: str) -> str:
-    """English test prompt."""
-    return f"""Sentence: "{sentence}"
-Word: "{word}"
-
-Return the English dictionary lemma of "{word}".
-- Verbs: base form (infinitive without "to")
-    1. PHRASAL VERB: What is the word after "{word}" OR after the object of "{word}"?
-        If it's: up/down/off/on/out/in/away/back/over/through
-        → combine verb + particle as lemma (e.g., "give up", "turn off")
-    2. IRREGULAR: Return base form (went→go, written→write)
-- Nouns: singular form (children→child)
-- Adjectives: positive form (better→good)
-- If "{word}" IS the particle → find its verb and combine (e.g., "up" in "gave up" → "give up")
-- Other (adverbs, prepositions, conjunctions): as-is
-
-related_words = exact words from sentence forming this lemma (always includes "{word}")
-level (CEFR) = A1(basic) A2(daily) B1(general) B2(professional) C1(academic) C2(literary)
-
-Respond with JSON only, no explanation:
-{{"lemma": "...", "related_words": ["{word}", ...], "level": "..."}}
-
-Examples:
-Sentence: "She gave up smoking", Word: "gave"
-→ {{"lemma": "give up", "related_words": ["gave", "up"], "level": "B1"}}
-
-Sentence: "She picked her keys up from the table", Word: "picked"
-→ {{"lemma": "pick up", "related_words": ["picked", "up"], "level": "A2"}}
-
-Sentence: "She picked her keys up from the table", Word: "up"
-→ {{"lemma": "pick up", "related_words": ["picked", "up"], "level": "A2"}}
-
-Sentence: "I saw the movie yesterday", Word: "saw"
-→ {{"lemma": "see", "related_words": ["saw"], "level": "A1"}}
-
-"""
-
 # Use German test cases by default (imported from test_cases.py)
 TEST_CASES = TEST_CASES_DE
 
 
-async def test_single(model: str, sentence: str, word: str, expected_lemma: str, expected_rw: list[str], use_test_prompt: bool = False, language: str = "German") -> dict:
+async def test_single(model: str, sentence: str, word: str, expected_lemma: str, expected_rw: list[str], language: str = "German") -> dict:
     """Test a single case and return result."""
-    if use_test_prompt:
-        prompt = build_test_prompt(language, sentence, word)
-    else:
-        prompt = build_reduced_word_definition_prompt(language, sentence, word)
+    prompt = build_reduced_word_definition_prompt(language, sentence, word)
 
     start_time = time.time()
     try:
@@ -188,7 +84,7 @@ async def test_single(model: str, sentence: str, word: str, expected_lemma: str,
         }
 
 
-async def run_tests(model: str, delay: float = 0.5, use_test_prompt: bool = False, sample_pct: int = 100, test_cases_input: list = None, language: str = "German", start_index: int = 0, end_index: int = None):
+async def run_tests(model: str, delay: float = 0.5, sample_pct: int = 100, test_cases_input: list = None, language: str = "German", start_index: int = 0, end_index: int = None):
     """Run all tests and print results."""
     all_cases = test_cases_input or TEST_CASES
 
@@ -208,7 +104,7 @@ async def run_tests(model: str, delay: float = 0.5, use_test_prompt: bool = Fals
     else:
         test_cases = all_cases
         print(f"=" * 80)
-        print(f"Testing: {model} [{language}]" + (" (TEST PROMPT)" if use_test_prompt else ""))
+        print(f"Testing: {model} [{language}]")
         print(f"=" * 80)
 
     results_by_category = {}
@@ -219,7 +115,7 @@ async def run_tests(model: str, delay: float = 0.5, use_test_prompt: bool = Fals
     times_ms = []
 
     for sentence, word, exp_lemma, exp_rw, category in test_cases:
-        result = await test_single(model, sentence, word, exp_lemma, exp_rw, use_test_prompt, language)
+        result = await test_single(model, sentence, word, exp_lemma, exp_rw, language)
         times_ms.append(result.get("time_ms", 0))
 
         # Track by category
@@ -301,11 +197,6 @@ def main():
         help="Delay between requests in seconds (default: 0.5)"
     )
     parser.add_argument(
-        "--test-prompt",
-        action="store_true",
-        help="Use test prompt (build_test_prompt) instead of main prompt"
-    )
-    parser.add_argument(
         "--sample",
         type=int,
         default=100,
@@ -339,7 +230,7 @@ def main():
         test_cases = TEST_CASES_DE
         language = "German"
 
-    asyncio.run(run_tests(args.model, args.delay, args.test_prompt, args.sample, test_cases, language, args.start_index, args.end_index))
+    asyncio.run(run_tests(args.model, args.delay, args.sample, test_cases, language, args.start_index, args.end_index))
 
 
 if __name__ == "__main__":

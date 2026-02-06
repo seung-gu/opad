@@ -5,19 +5,18 @@ business logic from HTTP handling in the routes layer.
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
-import litellm
-
 from utils.dictionary_api import fetch_from_free_dictionary_api, DictionaryAPIResult
-from utils.llm import call_llm_with_tracking, parse_json_from_content
+from utils.llm import TokenUsageStats, call_llm_with_tracking, parse_json_from_content
 from utils.prompts import build_word_definition_prompt, build_reduced_word_definition_prompt
 
 logger = logging.getLogger(__name__)
 
 # Token limits for LLM calls
-REDUCED_PROMPT_MAX_TOKENS = 2000
+REDUCED_PROMPT_MAX_TOKENS = 200
 FULL_PROMPT_MAX_TOKENS = 2000
 
 # Default messages
@@ -49,15 +48,6 @@ class LookupResult:
     conjugations: dict[str, str] | None = None
     examples: list[str] | None = None
     source: str = "hybrid"
-
-
-@dataclass
-class TokenUsageStats:
-    """Token usage statistics from LLM call."""
-    model: str
-    prompt_tokens: int
-    completion_tokens: int
-    estimated_cost: float
 
 
 class DictionaryService:
@@ -151,8 +141,9 @@ class DictionaryService:
             return None
 
         # Select best sense from available senses
+        sense_stats = None
         if dict_data.all_senses:
-            selected_sense = await self._select_best_sense(
+            selected_sense, sense_stats = await self._select_best_sense(
                 request.sentence,
                 dict_data.all_senses
             )
@@ -165,14 +156,18 @@ class DictionaryService:
             )
             return None
 
-        # Store stats for tracking
+        # Store stats for tracking (accumulate sense selection tokens)
         if stats:
-            self._last_stats = TokenUsageStats(
-                model=stats.model,
-                prompt_tokens=stats.prompt_tokens,
-                completion_tokens=stats.completion_tokens,
-                estimated_cost=stats.estimated_cost
-            )
+            if sense_stats:
+                stats = TokenUsageStats(
+                    model=stats.model,
+                    prompt_tokens=stats.prompt_tokens + sense_stats.prompt_tokens,
+                    completion_tokens=stats.completion_tokens + sense_stats.completion_tokens,
+                    total_tokens=stats.total_tokens + sense_stats.total_tokens,
+                    estimated_cost=stats.estimated_cost + sense_stats.estimated_cost,
+                    provider=stats.provider,
+                )
+            self._last_stats = stats
 
         # Merge results
         result = self._merge_results(llm_data, dict_data, request.word)
@@ -271,12 +266,7 @@ class DictionaryService:
         )
 
         # Store stats for tracking
-        self._last_stats = TokenUsageStats(
-            model=stats.model,
-            prompt_tokens=stats.prompt_tokens,
-            completion_tokens=stats.completion_tokens,
-            estimated_cost=stats.estimated_cost
-        )
+        self._last_stats = stats
 
         result = parse_json_from_content(content)
 
@@ -311,7 +301,7 @@ class DictionaryService:
 
         return LookupResult(
             lemma=request.word,
-            definition=content if len(content) < 500 else DEFAULT_DEFINITION,
+            definition=DEFAULT_DEFINITION,
             source="llm"
         )
 
@@ -384,8 +374,8 @@ class DictionaryService:
     async def _select_best_sense(
         self,
         sentence: str,
-        senses: list[dict]
-    ) -> dict:
+        senses: list[dict[str, Any]]
+    ) -> tuple[dict[str, Any], TokenUsageStats | None]:
         """Select the best sense based on sentence context using LLM.
 
         Args:
@@ -393,13 +383,13 @@ class DictionaryService:
             senses: List of sense dictionaries from API.
 
         Returns:
-            The best matching sense dictionary.
+            Tuple of (best matching sense dict, token usage stats or None).
         """
         if not senses:
-            return {"definition": DEFAULT_DEFINITION}
+            return {"definition": DEFAULT_DEFINITION}, None
 
         if len(senses) == 1:
-            return senses[0]
+            return senses[0], None
 
         # Build options (limit to 6 for context length)
         options = []
@@ -415,24 +405,28 @@ Reply with the number only.
 {chr(10).join(options)}"""
 
         try:
-            response = await litellm.acompletion(
-                model=self.full_llm_model,  # Use OpenAI to avoid Gemini rate limit
+            content, sense_stats = await call_llm_with_tracking(
                 messages=[{"role": "user", "content": prompt}],
+                model=self.full_llm_model,
                 temperature=0,
-                timeout=15
+                timeout=15,
+                max_tokens=10
             )
-            selected = int(response.choices[0].message.content.strip()) - 1
-            if 0 <= selected < len(senses):
-                return senses[selected]
+            match = re.search(r"\d+", content)
+            if match:
+                selected = int(match.group()) - 1
+                if 0 <= selected < len(senses):
+                    return senses[selected], sense_stats
+            return senses[0], sense_stats
         except Exception as e:
             logger.warning(
                 "Failed to select sense via LLM, using first",
                 extra={"error": str(e)}
             )
 
-        return senses[0]
+        return senses[0], None
 
-    def _extract_examples_from_sense(self, sense: dict, max_examples: int = 3) -> list[str] | None:
+    def _extract_examples_from_sense(self, sense: dict[str, Any], max_examples: int = 3) -> list[str] | None:
         """Extract examples from a single sense.
 
         Args:

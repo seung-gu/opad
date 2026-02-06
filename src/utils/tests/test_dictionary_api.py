@@ -15,7 +15,6 @@ from ..dictionary_api import (
     _extract_gender_from_pos,
     _extract_gender_from_senses,
     _extract_phonetics,
-    _extract_definition,
     _extract_forms,
     _strip_reflexive_pronoun,
     _parse_api_response,
@@ -359,64 +358,6 @@ class TestExtractPhonetics(unittest.TestCase):
         self.assertIsNone(_extract_phonetics(entry))
 
 
-class TestExtractDefinition(unittest.TestCase):
-    """Test definition extraction from API response.
-
-    Note: Free Dictionary API uses 'senses' with direct 'definition' field,
-    not 'meanings' with nested 'definitions' array.
-    """
-
-    def test_extract_first_definition(self):
-        """Test extracting first definition from senses."""
-        entry = {
-            "senses": [
-                {"definition": "A domesticated carnivorous mammal"}
-            ]
-        }
-        result = _extract_definition(entry)
-        self.assertEqual(result, "A domesticated carnivorous mammal")
-
-    def test_multiple_senses_returns_first(self):
-        """Test that first sense's definition is returned."""
-        entry = {
-            "senses": [
-                {"definition": "First definition"},
-                {"definition": "Second definition"}
-            ]
-        }
-        result = _extract_definition(entry)
-        self.assertEqual(result, "First definition")
-
-    def test_no_senses(self):
-        """Test entry with no senses returns None."""
-        entry = {"senses": []}
-        self.assertIsNone(_extract_definition(entry))
-
-    def test_missing_senses_key(self):
-        """Test entry without senses key returns None."""
-        entry = {}
-        self.assertIsNone(_extract_definition(entry))
-
-    def test_sense_missing_definition_key(self):
-        """Test sense without definition key returns None."""
-        entry = {
-            "senses": [
-                {"examples": ["Example text"]}
-            ]
-        }
-        self.assertIsNone(_extract_definition(entry))
-
-    def test_sense_with_tags_and_definition(self):
-        """Test sense with both tags and definition."""
-        entry = {
-            "senses": [
-                {"definition": "dog, hound", "tags": ["masculine"]}
-            ]
-        }
-        result = _extract_definition(entry)
-        self.assertEqual(result, "dog, hound")
-
-
 class TestExtractForms(unittest.TestCase):
     """Test grammatical forms extraction.
 
@@ -616,7 +557,8 @@ class TestParseApiResponse(unittest.TestCase):
         self.assertEqual(result.pos, "noun")
         self.assertEqual(result.gender, "der")
         self.assertEqual(result.phonetics, "/hʊnt/")
-        self.assertEqual(result.definition, "dog, hound")
+        self.assertIsNone(result.definition)  # definition selection moved to service layer
+        self.assertEqual(result.all_senses, [{"definition": "dog, hound", "tags": ["masculine"]}])
         self.assertEqual(result.forms, {"genitive": "Hundes", "plural": "Hunde"})
 
     def test_parse_response_without_gender(self):
@@ -665,7 +607,8 @@ class TestParseApiResponse(unittest.TestCase):
         }
         result = _parse_api_response(data, "de")
         self.assertEqual(result.pos, "verb")
-        self.assertEqual(result.definition, "to go, to drive")
+        self.assertIsNone(result.definition)  # definition selection moved to service layer
+        self.assertEqual(result.all_senses, [{"definition": "to go, to drive"}])
         self.assertEqual(result.phonetics, "[ˈfaːʁən]")
         self.assertEqual(result.forms, {
             "present": "fährt",
@@ -722,7 +665,7 @@ class TestParseApiResponse(unittest.TestCase):
         }
         result = _parse_api_response(data, "de")
         self.assertEqual(result.pos, "first entry")
-        self.assertEqual(result.definition, "First")
+        self.assertEqual(result.all_senses, [{"definition": "First"}])
 
     def test_result_to_dict(self):
         """Test DictionaryAPIResult.to_dict() method."""
@@ -751,7 +694,7 @@ class TestParseApiResponse(unittest.TestCase):
         self.assertIsNone(result_dict["gender"])
 
 
-class TestFetchFromFreePatternaryApi(unittest.IsolatedAsyncioTestCase):
+class TestFetchFromFreeDictionaryApi(unittest.IsolatedAsyncioTestCase):
     """Test async fetch from Free Dictionary API."""
 
     @patch('utils.dictionary_api.httpx.AsyncClient')
@@ -782,7 +725,8 @@ class TestFetchFromFreePatternaryApi(unittest.IsolatedAsyncioTestCase):
         result = await fetch_from_free_dictionary_api("Hund", "German")
 
         self.assertIsNotNone(result)
-        self.assertEqual(result.definition, "dog, hound")
+        self.assertIsNone(result.definition)  # definition selection moved to service layer
+        self.assertEqual(result.all_senses, [{"definition": "dog, hound", "tags": ["masculine"]}])
         self.assertEqual(result.phonetics, "/hʊnt/")
         self.assertEqual(result.pos, "noun")
         self.assertEqual(result.gender, "der")
@@ -1007,7 +951,8 @@ async def test_fetch_successful_with_pytest():
         result = await fetch_from_free_dictionary_api("test", "English")
 
         assert result is not None
-        assert result.definition == "Test definition"
+        assert result.definition is None  # definition selection moved to service layer
+        assert result.all_senses == [{"definition": "Test definition"}]
         assert result.phonetics == "/test/"
 
 

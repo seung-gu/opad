@@ -1,8 +1,8 @@
 """Prompt templates for LLM interactions."""
 
 
-def build_test_prompt_de(sentence: str, word: str) -> str:
-    """German test prompt."""
+def build_reduced_prompt_de(sentence: str, word: str) -> str:
+    """German reduced prompt for lemma extraction."""
     return f"""Sentence: "{sentence}"
 Word: "{word}"
 
@@ -55,8 +55,8 @@ Sentence: "Er ist nach Berlin abgereist", Word: "abgereist"
 """
 
 
-def build_test_prompt_en(sentence: str, word: str) -> str:
-    """English test prompt."""
+def build_reduced_prompt_en(sentence: str, word: str) -> str:
+    """English reduced prompt for lemma extraction."""
     return f"""Sentence: "{sentence}"
 Word: "{word}"
 
@@ -109,9 +109,9 @@ def build_reduced_word_definition_prompt(language: str, sentence: str, word: str
         Formatted prompt string ready for LLM.
     """
     if language == "English":
-        return build_test_prompt_en(sentence, word)
+        return build_reduced_prompt_en(sentence, word)
     elif language == "German":
-        return build_test_prompt_de(sentence, word)
+        return build_reduced_prompt_de(sentence, word)
     
     prompt = f"""You are analyzing a {language} sentence to find the complete dictionary form of a clicked word.
 
@@ -191,7 +191,7 @@ Return ONLY valid JSON:
   "level": "CEFR level of this word (A1/A2/B1/B2/C1/C2)"
 }}
 
-IMPORTANT: related_words must contain ONLY the grammatical parts of the lemma (e.g., separable verb prefix + stem, reflexive pronoun for reflexive verbs). The order in related_words must match the exact order these words appear in the provided sentence :{sentence}."""
+IMPORTANT: related_words must contain ONLY the grammatical parts of the lemma (e.g., separable verb prefix + stem, reflexive pronoun for reflexive verbs). The order in related_words must match the exact order these words appear in the provided sentence: {sentence}."""
     if language == "German":
         prompt += """
         
