@@ -38,6 +38,24 @@ export interface ArticleListFilters {
 }
 
 /**
+ * Verb conjugation forms and noun declension forms.
+ */
+export interface Conjugations {
+  /** Present tense form (3rd person singular) */
+  present?: string
+  /** Past/preterite tense form */
+  past?: string
+  /** Past participle form */
+  participle?: string
+  /** Auxiliary verb (haben/sein) */
+  auxiliary?: string
+  /** Genitive form (for nouns) */
+  genitive?: string
+  /** Plural form (for nouns) */
+  plural?: string
+}
+
+/**
  * Vocabulary entry with grammatical metadata for language learning.
  *
  * Stores word definitions with contextual information and grammatical features
@@ -70,17 +88,14 @@ export interface Vocabulary {
   pos?: string
   /** Grammatical gender for nouns in gendered languages (German: der/die/das, French: le/la, Spanish: el/la). Null for non-gendered languages or non-nouns. */
   gender?: string
-  /** Verb conjugation forms across different tenses. Null for non-verbs. */
-  conjugations?: {
-    /** Present tense form */
-    present?: string
-    /** Past/preterite tense form */
-    past?: string
-    /** Perfect/past participle form */
-    perfect?: string
-  }
+  /** IPA pronunciation (e.g., /hʊnt/) */
+  phonetics?: string
+  /** Verb conjugation forms and noun declension forms. */
+  conjugations?: Conjugations
   /** CEFR difficulty level (A1, A2, B1, B2, C1, C2) for vocabulary tracking and adaptive learning */
   level?: string
+  /** Example sentences from dictionary showing word usage */
+  examples?: string[]
 }
 
 /**

@@ -662,20 +662,67 @@ The system now supports vocabulary-aware article generation, where CrewAI adjust
   "created_at": "datetime",
   "pos": "string",               // Part of speech (noun, verb, adjective, etc.)
   "gender": "string",            // Grammatical gender (der/die/das for German, le/la for French, etc.)
-  "conjugations": {              // Verb conjugations (null for non-verbs)
+  "phonetics": "string",         // IPA pronunciation (e.g., /hʊnt/) - English only
+  "conjugations": {              // Verb conjugations or noun declensions (null if not applicable)
     "present": "string",
     "past": "string",
-    "perfect": "string"
+    "participle": "string",
+    "auxiliary": "string",
+    "genitive": "string",
+    "plural": "string"
   },
-  "level": "string"              // CEFR level (A1, A2, B1, B2, C1, C2)
+  "level": "string",             // CEFR level (A1, A2, B1, B2, C1, C2)
+  "examples": ["string"]         // Example sentences from dictionary
 }
 ```
 
-**New Grammatical Metadata Fields:**
+**Grammatical Metadata Fields:**
 - `pos`: Part of speech classification (noun, verb, adjective, adverb, preposition, etc.)
 - `gender`: Grammatical gender for nouns in gendered languages (German: der/die/das, French: le/la, Spanish: el/la). Null for non-gendered languages.
-- `conjugations`: Verb conjugation forms across tenses (present, past, perfect). Null for non-verbs.
+- `phonetics`: IPA pronunciation from Free Dictionary API. Only populated for English language lookups due to API accuracy.
+- `conjugations`: Verb conjugation forms (present, past, participle, auxiliary) or noun declensions (genitive, plural). Null for other parts of speech.
 - `level`: CEFR difficulty level (A1-C2) for vocabulary tracking and adaptive learning.
+- `examples`: Example sentences from Free Dictionary API showing word usage in context.
+
+#### VocabularyMetadata TypedDict (`src/utils/mongodb.py`)
+
+The `VocabularyMetadata` TypedDict provides type hints for optional grammatical metadata when saving vocabulary entries:
+
+```python
+class VocabularyMetadata(TypedDict, total=False):
+    """Optional grammatical metadata for vocabulary entries."""
+    pos: str | None
+    gender: str | None
+    phonetics: str | None
+    conjugations: dict | None
+    level: str | None
+    examples: list[str] | None
+```
+
+**Usage**:
+```python
+from utils.mongodb import save_vocabulary, VocabularyMetadata
+
+metadata: VocabularyMetadata = {
+    'pos': 'noun',
+    'gender': 'der',
+    'phonetics': '/hʊnt/',
+    'conjugations': {'genitive': 'Hundes', 'plural': 'Hunde'},
+    'level': 'A1',
+    'examples': ['Der Hund bellt.', 'Ich habe einen Hund.']
+}
+
+save_vocabulary(
+    article_id=article_id,
+    user_id=user_id,
+    word='Hunde',
+    lemma='Hund',
+    definition='dog',
+    sentence='Die Hunde spielen im Park.',
+    language='German',
+    metadata=metadata
+)
+```
 
 #### VocabularyCount Model (Aggregated Response)
 - Groups vocabularies by lemma
@@ -904,6 +951,7 @@ opad/
 │   │   │   ├── EmptyState.tsx      # Reusable empty state
 │   │   │   ├── ErrorAlert.tsx      # Reusable error alert
 │   │   │   ├── MarkdownViewer.tsx
+│   │   │   ├── VocabularyCard.tsx  # Unified vocabulary display component
 │   │   │   └── VocabularyList.tsx
 │   │   ├── hooks/        # Custom React hooks
 │   │   │   ├── useAsyncFetch.ts    # Generic fetch with loading/error
@@ -1009,13 +1057,24 @@ result = parse_json_from_content(content)
 ### 프롬프트 템플릿 (`utils/prompts.py`)
 재사용 가능한 LLM 프롬프트 빌더 함수들:
 
-- **`build_word_definition_prompt()`**: Dictionary API용 프롬프트 생성 (lemma 및 definition 추출)
+- **`build_reduced_word_definition_prompt()`**: 하이브리드 조회용 축소 프롬프트 생성 (lemma, related_words, level만 추출)
+  - 내부적으로 언어별 함수 사용: `build_reduced_prompt_de()` (독일어), `build_reduced_prompt_en()` (영어)
+  - 기타 언어는 범용 프롬프트 사용
+- **`build_word_definition_prompt()`**: Full LLM 폴백용 프롬프트 생성 (모든 필드 추출)
 
 **사용 예시:**
 ```python
-from utils.prompts import build_word_definition_prompt
+from utils.prompts import build_reduced_word_definition_prompt, build_word_definition_prompt
 
-prompt = build_word_definition_prompt(
+# Hybrid approach: reduced prompt (lemma + level only)
+reduced_prompt = build_reduced_word_definition_prompt(
+    language="German",
+    sentence="Diese große Spanne hängt von mehreren Faktoren ab.",
+    word="hängt"
+)
+
+# Full LLM fallback: all fields
+full_prompt = build_word_definition_prompt(
     language="German",
     sentence="Diese große Spanne hängt von mehreren Faktoren ab.",
     word="hängt"
@@ -1024,69 +1083,188 @@ prompt = build_word_definition_prompt(
 
 ---
 
-## 📡 Dynamic Endpoint Discovery
-
-### Tag-Based Endpoint Grouping
-
-The `/endpoints` endpoint dynamically generates an HTML page listing all registered API routes, grouped by their tags. This system requires no code changes when new routes are added—they automatically appear in the listing.
-
-**Endpoint**: `GET /endpoints`
-
-**File**: `src/api/routes/endpoints.py`
-
-**How It Works**:
-
-1. **Route Introspection**: Scans `app.routes` to collect all routes with methods and paths
-2. **Tag Extraction**: Reads tags from route definitions (e.g., `tags=["articles"]`, `tags=["usage"]`)
-3. **Dynamic Grouping**: Groups endpoints by tag using `group_endpoints_by_tag()`
-4. **HTML Generation**: Renders grouped endpoints as styled HTML page
-
-**Helper Functions**:
-
-- **`group_endpoints_by_tag(endpoints)`**: Groups endpoints by tag (first tag if multiple), returns `dict[tag, list[endpoints]]`
-  - Uses `defaultdict(list)` to avoid KeyError
-  - Filters out `EXCLUDED_TAGS` (e.g., "meta")
-  - Sorts endpoints within each group by `(path, method)`
-  - Assigns "other" tag if endpoint has no tags
-
-- **`get_sorted_tags(grouped)`**: Returns alphabetically sorted tag list with "other" at end
-
-- **`format_endpoint(ep)`**: Formats single endpoint as HTML with method badge, path, and summary
-
-- **`format_tag_title(tag)`**: Converts tag name to display title (e.g., "articles" → "Articles Endpoints")
-
-**Configuration**:
-
-```python
-# src/api/routes/endpoints.py:13-14
-EXCLUDED_TAGS = {"meta"}  # Tags to hide from listing
-EXCLUDED_PATHS = {"/docs", "/openapi.json", "/redoc"}  # Paths to skip
-```
-
-**Example Route Definition**:
-
-```python
-# src/api/routes/usage.py
-router = APIRouter(tags=["usage"])  # Tag used for grouping
-
-@router.get("/me", summary="Get current user's token usage summary")
-async def get_my_usage(...):
-    """Detailed description..."""
-```
-
-**Benefits**:
-
-- **Zero-maintenance**: New routes automatically appear in listing
-- **Tag-based organization**: Routes grouped by domain (articles, usage, dictionary)
-- **Clean HTML output**: Color-coded HTTP methods (GET=blue, POST=green, DELETE=red)
-- **No hardcoding**: Eliminates manual endpoint lists
-
-**Usage**:
-Visit `/endpoints` in browser to see all available API routes grouped by tag.
-
----
-
 ## 📡 Dictionary API
+
+### Hybrid Dictionary Lookup Architecture
+
+The dictionary search uses a hybrid approach combining LLM capabilities with the Free Dictionary API for optimal results.
+
+#### Overview
+
+```mermaid
+graph TB
+    subgraph "Hybrid Dictionary Lookup"
+        Request[POST /dictionary/search] --> LLM[Step 1: LLM Reduced Prompt<br/>gpt-4.1-mini, max_tokens=200]
+
+        LLM --> |lemma| API[Step 2: Free Dictionary API]
+        API --> |senses > 1| SenseSelect[Step 3: LLM Sense Selection<br/>gpt-4.1-mini, max_tokens=10]
+        API --> Merge[Step 4: Merge Results]
+        SenseSelect --> Merge
+
+        Merge --> Response[SearchResponse]
+
+        LLM -.-> |LLM failure| Fallback[Full LLM Fallback<br/>gpt-4.1-mini, max_tokens=2000]
+        API -.-> |404 / timeout / no senses| Fallback
+        Fallback --> Response
+    end
+
+    style Request fill:#2196F3
+    style LLM fill:#10a37f
+    style API fill:#ff9500
+    style SenseSelect fill:#10a37f
+    style Merge fill:#9c27b0
+    style Response fill:#13aa52
+    style Fallback fill:#dc382d
+```
+
+#### Data Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as FastAPI<br/>(/dictionary/search)
+    participant LLM as LLM<br/>(gpt-4.1-mini)
+    participant FreeDict as Free Dictionary API
+
+    Client->>API: POST {word, sentence, language}
+
+    Note over API,LLM: Step 1: Get lemma from LLM
+    API->>LLM: Reduced prompt (max_tokens=200)
+    LLM-->>API: {lemma, related_words, level}
+
+    Note over API,FreeDict: Step 2: Lookup using lemma
+    API->>FreeDict: GET /api/v1/entries/{lang}/{lemma}
+    FreeDict-->>API: {all_senses, pos, phonetics, forms, gender}
+
+    alt API returns senses
+        alt senses > 1
+            Note over API,LLM: Step 3: Select best sense via LLM
+            API->>LLM: Sense selection prompt (max_tokens=10)
+            LLM-->>API: Selected sense number
+        end
+        Note over API: Step 4: Merge LLM + API results
+        API-->>Client: SearchResponse (source: hybrid)
+    else API failure (404, timeout, no senses)
+        Note over API,LLM: Fallback: Full LLM prompt
+        API->>LLM: Full prompt (max_tokens=2000)
+        LLM-->>API: {lemma, definition, pos, gender, conjugations, level}
+        API-->>Client: SearchResponse (source: llm)
+    end
+```
+
+#### Components
+
+| Component | Responsibility | Output Fields |
+|-----------|----------------|---------------|
+| **LLM (Reduced Prompt)** | Context-aware lemma extraction, CEFR level classification (max_tokens=200) | `lemma`, `related_words`, `level` |
+| **Free Dictionary API** | Standard dictionary data, pronunciation, senses | `senses`, `pos`, `gender`, `phonetics`, `forms` |
+| **LLM (Sense Selection)** | Selects best sense from API senses based on sentence context (max_tokens=10) | `definition`, `examples` (from selected sense) |
+| **Merge Function** | Combines results, converts `forms` to `conjugations` format, accumulates token stats | All fields |
+| **Full LLM Fallback** | Complete definition when hybrid fails (max_tokens=2000) | All fields except `phonetics` and `examples` |
+
+#### Supported Languages
+
+The Free Dictionary API supports the following languages:
+
+| Language | Code | Example |
+|----------|------|---------|
+| German | `de` | `/api/v1/entries/de/Hund` |
+| English | `en` | `/api/v1/entries/en/dog` |
+| French | `fr` | `/api/v1/entries/fr/chien` |
+| Spanish | `es` | `/api/v1/entries/es/perro` |
+| Italian | `it` | `/api/v1/entries/it/cane` |
+| Portuguese | `pt` | `/api/v1/entries/pt/cao` |
+| Dutch | `nl` | `/api/v1/entries/nl/hond` |
+| Polish | `pl` | `/api/v1/entries/pl/pies` |
+| Russian | `ru` | `/api/v1/entries/ru/sobaka` |
+
+**Note**: For unsupported languages, the system automatically falls back to full LLM lookup.
+
+#### Fallback Mechanism
+
+The fallback to full LLM (gpt-4.1-mini) occurs in these scenarios:
+
+1. **LLM reduced prompt failure**: Failed to parse lemma from reduced prompt
+2. **Language not supported**: Language not in `LANGUAGE_CODE_MAP`
+3. **Word not found**: Free Dictionary API returns 404
+4. **API timeout**: Request exceeds 5-second timeout
+5. **API error**: HTTP error or network failure
+6. **Missing senses**: API response lacks senses (definition/examples selection requires senses)
+
+**Fallback Flow**:
+```
+Hybrid Lookup Failed (LLM or API)
+    |
+    v
+Full LLM Prompt (build_word_definition_prompt, gpt-4.1-mini)
+    |
+    v
+LLM returns all fields: lemma, definition, pos, gender, conjugations, level
+    |
+    v
+SearchResponse (without phonetics and examples)
+```
+
+**Note**: Fallback responses do NOT include `phonetics` or `examples` since these are only available from the Free Dictionary API.
+
+#### Phonetics and Examples Data Flow
+
+**Phonetics** (IPA pronunciation) and **examples** (usage sentences) are sourced exclusively from the Free Dictionary API and follow specific rules:
+
+**Data Sources**:
+```
+Free Dictionary API
+    |
+    +---> phonetics (IPA string, e.g., "/hʊnt/")
+    |
+    +---> examples (array of sentences)
+    |
+    v
+SearchResponse --> VocabularyRequest --> MongoDB
+```
+
+**Phonetics Restrictions**:
+- Only returned for **English** language lookups
+- Reason: Free Dictionary API provides most accurate IPA for English
+- Other languages: `phonetics` field is set to `null`
+
+**Implementation** (`src/api/routes/dictionary.py:335-337`):
+```python
+# Only include phonetics for English
+if request.language != "English":
+    phonetics = None
+```
+
+**Examples Behavior**:
+- Available for all supported languages
+- Returns up to 3 example sentences from dictionary
+- Falls back to empty array if no examples found
+
+**Frontend Display** (`VocabularyCard`):
+- Phonetics displayed next to lemma in monospace font
+- Examples shown in collapsible section with article sentence first
+
+#### Token Usage Tracking
+
+Token usage is tracked for all dictionary searches:
+
+- **Hybrid success**: Reduced prompt tokens (~200 max) + sense selection tokens (~10 max) accumulated (gpt-4.1-mini)
+- **Fallback**: Full prompt tokens counted (~2000 max, gpt-4.1-mini)
+- **Source metadata**: Indicates `"hybrid"` or `"llm"` for cost analysis
+
+```json
+{
+  "operation": "dictionary_search",
+  "metadata": {
+    "word": "dog",
+    "language": "English",
+    "source": "hybrid",
+    "phonetics": "/dɔːɡ/"
+  }
+}
+```
+
+**Note**: `phonetics` is only included for English language lookups.
 
 ### Word Definition Endpoint
 
@@ -1111,49 +1289,32 @@ Visit `/endpoints` in browser to see all available API routes grouped by tag.
   "related_words": ["hängt", "ab"],
   "pos": "verb",
   "gender": null,
+  "phonetics": null,
   "conjugations": {
     "present": "hängt ab",
     "past": "hing ab",
-    "perfect": "hat abgehangen"
+    "participle": "abgehangen",
+    "auxiliary": "haben"
   },
-  "level": "B1"
+  "level": "B1",
+  "examples": ["Das hängt vom Wetter ab.", "Es hängt davon ab, ob..."]
 }
 ```
 
+**Note**: `phonetics` is `null` for German (only available for English).
+
 **특징:**
+- **하이브리드 조회**: LLM + Free Dictionary API 결합으로 정확도와 비용 최적화
 - **분리동사 처리**: 독일어 등에서 동사가 분리된 경우 전체 lemma 반환 (예: `hängt ... ab` → `abhängen`)
 - **복합어 처리**: 단어가 복합어의 일부인 경우 전체 형태 반환
 - **related_words**: 문장에서 같은 lemma에 속하는 모든 단어들을 배열로 반환 (예: 분리 동사의 경우 모든 부분 포함)
-- **문법적 메타데이터**: 품사(pos), 성(gender), 동사 활용형(conjugations), CEFR 레벨(level) 자동 추출
-- **공통 유틸 사용**: `utils/llm.py`의 `call_openai_chat()` 함수 활용
-- **프롬프트 분리**: `utils/prompts.py`의 `build_word_definition_prompt()` 사용
+- **문법적 메타데이터**: 품사(pos), 성(gender), 동사 활용형(conjugations), CEFR 레벨(level), IPA 발음(phonetics), 예문(examples) 추출
+- **공통 유틸 사용**: `utils/llm.py`의 `call_llm_with_tracking()` 함수 활용
+- **프롬프트 분리**: `utils/prompts.py`의 `build_reduced_word_definition_prompt()` (하이브리드), `build_word_definition_prompt()` (폴백) 사용
 - **보안**: Regex injection 방지를 위한 `re.escape()` 적용
 
-**흐름:**
-
-```mermaid
-sequenceDiagram
-    participant Frontend as Frontend<br/>(MarkdownViewer)
-    participant NextAPI as Next.js API<br/>(/api/dictionary/search)
-    participant FastAPI as FastAPI<br/>(/dictionary/search)
-    participant Utils as Utils<br/>(prompts.py + llm.py)
-    participant OpenAI as OpenAI API
-
-    Frontend->>NextAPI: POST /api/dictionary/search<br/>{word, sentence, language}
-    NextAPI->>FastAPI: POST /dictionary/search<br/>{word, sentence, language}
-
-    FastAPI->>Utils: build_word_definition_prompt()
-    Utils-->>FastAPI: prompt string
-
-    FastAPI->>Utils: call_openai_chat(prompt)
-    Utils->>OpenAI: POST /v1/chat/completions
-    OpenAI-->>Utils: {lemma, definition, related_words, pos, gender, conjugations, level}
-    Utils->>Utils: parse_json_from_content()
-    Utils-->>FastAPI: {lemma, definition, related_words, pos, gender, conjugations, level}
-
-    FastAPI-->>NextAPI: SearchResponse<br/>{lemma, definition, related_words, pos, gender, conjugations, level}
-    NextAPI-->>Frontend: {lemma, definition, related_words, pos, gender, conjugations, level}
-```
+**흐름**: 위 [Hybrid Dictionary Lookup Architecture](#hybrid-dictionary-lookup-architecture) 섹션의 Data Flow 참조.
+Frontend → Next.js API(`/api/dictionary/search`) → FastAPI(`/dictionary/search`) → DictionaryService 순으로 프록시됨.
 
 ---
 
@@ -1286,6 +1447,69 @@ Consistent empty state display:
 - Easy to update design globally
 - Improves maintainability with single source of truth
 
+#### VocabularyCard (`src/web/components/VocabularyCard.tsx`)
+Unified vocabulary display component supporting both list and card layouts:
+- Displays lemma with gender prefix and IPA phonetics
+- Shows part of speech (POS) and CEFR level badges
+- Renders verb conjugations or noun declensions
+- Collapsible examples section with sentence context
+- Optional article link and creation date
+- Delete button with callback support
+
+**Props**:
+- `id` (string): Unique vocabulary entry ID
+- `lemma` (string): Dictionary form of the word
+- `word` (string): Original word as clicked
+- `definition` (string): Word definition
+- `sentence` (string): Context sentence from article
+- `gender` (optional): Grammatical gender (der/die/das)
+- `phonetics` (optional): IPA pronunciation (e.g., /hʊnt/)
+- `pos` (optional): Part of speech
+- `level` (optional): CEFR level (A1-C2)
+- `conjugations` (optional): Verb/noun forms (see Conjugations type)
+- `examples` (optional): Additional example sentences from dictionary
+- `count` (optional): Occurrence count across articles
+- `articleId` (optional): Article ID for linking
+- `createdAt` (optional): Creation timestamp
+- `variant` ('list' | 'card'): Display style (default: 'list')
+- `showArticleLink` (boolean): Show "View in Article" link (default: false)
+- `onDelete` (optional): Callback for delete button
+
+**Conjugations Type** (`src/web/types/article.ts`):
+```typescript
+export interface Conjugations {
+  present?: string    // Present tense (3rd person singular)
+  past?: string       // Past/preterite tense
+  participle?: string // Past participle
+  auxiliary?: string  // Auxiliary verb (haben/sein)
+  genitive?: string   // Genitive form (nouns)
+  plural?: string     // Plural form (nouns)
+}
+```
+
+**Usage**:
+```tsx
+import VocabularyCard from '@/components/VocabularyCard'
+
+<VocabularyCard
+  id="vocab-123"
+  lemma="Hund"
+  word="Hunde"
+  definition="dog"
+  sentence="Die Hunde spielen im Park."
+  gender="der"
+  phonetics="/hʊnt/"
+  pos="noun"
+  level="A1"
+  conjugations={{ genitive: "Hundes", plural: "Hunde" }}
+  examples={["Der Hund bellt.", "Ich habe einen Hund."]}
+  variant="card"
+  showArticleLink={true}
+  articleId="article-456"
+  onDelete={(id) => handleDelete(id)}
+/>
+```
+
 ### Refactoring Impact
 
 **Before Refactoring**:
@@ -1396,6 +1620,142 @@ if (containerRef.current.getAttribute('data-processed') === 'true') {
 - Simplifies component update logic
 - Ensures consistent behavior across content changes
 
+#### Sentence Extraction via DOM Offset Matching (`src/web/components/MarkdownViewer.tsx`)
+
+**Purpose**: Accurately extract the sentence containing a clicked word for dictionary lookup context, even when the same word appears in multiple sentences.
+
+**Problem with Previous Approach**:
+The previous `extractSentence` implementation normalized whitespace up front, then used `String.includes()` to find the first sentence containing the clicked word. This was inaccurate when the same word appeared in multiple sentences -- the function always returned the first occurrence regardless of which instance the user actually clicked.
+
+**Current Approach -- DOM Offset-Based Matching**:
+
+1. **`getTextOffset(parent, target)`**: A helper function that calculates the character offset of a target node (the clicked word span) within a parent element's `textContent`. Uses `TreeWalker` with `NodeFilter.SHOW_TEXT` to iterate through all text nodes in DOM order, accumulating character lengths until the target node is found.
+
+2. **`extractSentence(wordSpan)`**: Uses the computed offset to match against sentence-splitter's range metadata:
+   - Retrieves raw `textContent` from the parent element (no whitespace normalization, to preserve accurate character offsets)
+   - Calls `getTextOffset()` to determine where the clicked span sits in the text
+   - Passes the raw text to `sentence-splitter`'s `split()` function, which returns sentence nodes with `range: [start, end]` metadata
+   - Finds the sentence whose range contains the span offset (`spanOffset >= range[0] && spanOffset < range[1]`)
+   - Applies whitespace normalization (`replace(/\s+/g, ' ').trim()`) only at return-time on the matched sentence
+
+**Fallback Chain**:
+```
+DOM offset + sentence-splitter range matching
+    |
+    v (if getTextOffset returns -1)
+includes-based first-match (original behavior)
+    |
+    v (if sentence-splitter throws)
+Simple regex split on punctuation
+```
+
+**Implementation** (`src/web/components/MarkdownViewer.tsx:256-319`):
+```typescript
+/** Calculate the character offset of a target node within a parent's textContent. */
+const getTextOffset = (parent: Node, target: Node): number => {
+  let offset = 0
+  const walker = document.createTreeWalker(parent, NodeFilter.SHOW_TEXT)
+  let node: Text | null
+  while ((node = walker.nextNode() as Text | null)) {
+    if (target.contains(node)) {
+      return offset
+    }
+    offset += (node.textContent || '').length
+  }
+  return -1
+}
+
+const extractSentence = (wordSpan: HTMLElement): string => {
+  // ...parent resolution...
+  const text = parent.textContent || ''  // Raw text, no normalization
+  const spanOffset = getTextOffset(parent, wordSpan)
+
+  const result = split(text)
+  const sentences = result.filter(node => node.type === 'Sentence')
+
+  if (spanOffset >= 0) {
+    const found = sentences.find(node =>
+      spanOffset >= node.range[0] && spanOffset < node.range[1]
+    )
+    if (found) {
+      return found.raw.replace(/\s+/g, ' ').trim()  // Normalize only at return
+    }
+  }
+  // ...fallback logic...
+}
+```
+
+**Key Design Decisions**:
+- **No early whitespace normalization**: Raw `textContent` is used for offset calculation and sentence-splitter input so that character positions remain aligned between `getTextOffset` and the splitter's range metadata
+- **Whitespace normalization at return-time only**: The matched sentence's `raw` value is normalized before being returned, ensuring clean output for the dictionary API
+- **Graceful degradation**: If `getTextOffset` returns `-1` (target node not found in parent), the function falls back to the original `includes`-based matching with a console warning
+
+**Benefits**:
+- Correctly identifies the sentence for duplicate words (e.g., "die" appearing in multiple German sentences)
+- Preserves offset accuracy by deferring whitespace normalization
+- Maintains backward compatibility through the fallback chain
+
+#### Dictionary Lookup Caching with Sentence Context (`src/web/components/MarkdownViewer.tsx`)
+
+**Purpose**: Cache dictionary lookup results so that the same word in the same sentence context returns the cached lemma and definition without making duplicate API calls. Sentence context is included in cache keys to correctly handle context-dependent words (e.g., German "sich" mapping to different lemmas in different sentences).
+
+**Cache Refs**:
+
+| Ref | Key Format | Value | Purpose |
+|-----|-----------|-------|---------|
+| `lemmaCacheRef` | `language:word:sentence` | JSON string of `{lemma, definition, related_words, ...}` | Full LLM response cache keyed by language, word, and sentence context |
+| `wordToLemmaRef` | `word:sentence` | `lemma` string | Quick word-to-lemma mapping for finding same-lemma variants within a sentence |
+
+**Key Format Examples**:
+```
+lemmaCacheRef:  "German:hängt:diese große spanne hängt von mehreren faktoren ab." -> '{"lemma":"abhängen","definition":"..."}'
+wordToLemmaRef: "hängt:diese große spanne hängt von mehreren faktoren ab." -> "abhängen"
+```
+
+**Why Sentence Context in Cache Keys**:
+The same word can have different meanings (and different lemmas) depending on the sentence. For example, German "sich" could map to "sich befinden" (to be located) in one sentence and "sich freuen" (to be happy) in another. Using word-only keys (`language:word`) would incorrectly return the cached result from the first lookup for all subsequent lookups of the same word, regardless of context. The sentence-context key format (`language:word:sentence`) ensures each unique word+sentence combination gets its own cache entry.
+
+**Helper Functions**:
+
+- **`getWordMeaning(word, sentence)`**: Retrieves the cached definition and display lemma for a word within a specific sentence context. Checks `wordToLemmaRef` first (fast path), then `lemmaCacheRef`, then falls back to `wordDefinitions` state by word key.
+
+- **`getRelatedWords(word, sentence)`**: Retrieves cached related words (e.g., separable verb particles) for a word within a specific sentence context from `lemmaCacheRef`.
+
+**`handleWordClick` Cache Lookup Flow**:
+```
+handleWordClick(spanId, word)
+    |
+    v
+extractSentence(spanElement)         <-- Called BEFORE any cache checks
+    |
+    v
+Build sentenceCacheKey = "language:word:sentence"
+    |
+    v
+Check lemmaCacheRef[sentenceCacheKey]
+    |-- hit + definition exists --> return (no API call)
+    |
+    v
+Check wordToLemmaRef["word:sentence"]
+    |-- hit + definition exists --> return (no API call)
+    |
+    v
+Check wordDefinitions[word]          <-- Fallback for old cache format
+    |-- hit --> return (no API call)
+    |
+    v
+Check loadingWordsRef (prevent duplicate fetches)
+    |
+    v
+getWordDefinitionFromLLM(word, sentence)
+    |
+    v
+Store results:
+  - wordToLemmaRef["word:sentence"] = lemma
+  - wordToLemmaRef["relatedWord:sentence"] = lemma (for each related word)
+  - lemmaCacheRef["language:word:sentence"] = JSON({lemma, definition, ...})
+```
+
 ### Bug Fixes
 
 #### 1. Conjugations Type Conversion
@@ -1464,6 +1824,13 @@ The `formatOperationName()` helper prioritizes `agent_name` over the raw operati
 User clicks word in MarkdownViewer
     |
     v
+extractSentence(spanElement)       <-- Sentence extracted early
+    |
+    v
+Cache check (lemmaCacheRef, wordToLemmaRef) using sentence-context key
+    |-- cache hit --> show cached definition (no API call, no token usage update)
+    |
+    v (cache miss)
 Dictionary API call (POST /dictionary/search)
     |
     v

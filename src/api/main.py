@@ -19,7 +19,7 @@ load_dotenv()
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.routes import articles, jobs, health, endpoints, stats, dictionary, auth, usage
+from api.routes import articles, jobs, health, stats, dictionary, auth, usage
 from utils.logging import setup_structured_logging
 from utils.mongodb import ensure_indexes
 
@@ -76,7 +76,6 @@ app.add_middleware(
 app.include_router(articles.router)
 app.include_router(jobs.router)
 app.include_router(health.router)
-app.include_router(endpoints.router)
 app.include_router(stats.router)
 app.include_router(dictionary.router)
 app.include_router(auth.router)

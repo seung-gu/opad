@@ -4,7 +4,7 @@ import os
 import logging
 import uuid
 import re
-from typing import Optional
+from typing import Optional, TypedDict
 from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, PyMongoError
@@ -31,6 +31,16 @@ _connection_failed = False
 
 # CEFR levels in order
 CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+
+
+class VocabularyMetadata(TypedDict, total=False):
+    """Optional grammatical metadata for vocabulary entries."""
+    pos: str | None
+    gender: str | None
+    phonetics: str | None
+    conjugations: dict | None
+    level: str | None
+    examples: list[str] | None
 
 
 def get_allowed_vocab_levels(target_level: str, max_above: int = 1) -> list[str]:
@@ -76,7 +86,7 @@ def get_mongodb_client() -> Optional[MongoClient]:
         try:
             _client_cache.admin.command('ping')
             return _client_cache
-        except:
+        except Exception:
             _client_cache = None
             logger.debug("[MONGODB] Cached client failed ping, attempting reconnection...")
     
@@ -961,10 +971,7 @@ def save_vocabulary(
     related_words: list[str] | None = None,
     span_id: str | None = None,
     user_id: str | None = None,
-    pos: str | None = None,
-    gender: str | None = None,
-    conjugations: dict | None = None,
-    level: str | None = None
+    metadata: VocabularyMetadata | None = None
 ) -> str | None:
     """Save vocabulary word to MongoDB.
 
@@ -978,14 +985,19 @@ def save_vocabulary(
         related_words: All words in sentence belonging to this lemma (e.g., for separable verbs)
         span_id: Span ID of the clicked word
         user_id: User ID for multi-user support
-        pos: Part of speech (noun, verb, adjective, etc.)
-        gender: Grammatical gender (der/die/das, le/la, el/la)
-        conjugations: Verb conjugations by tense
-        level: CEFR level (A1-C2)
+        metadata: Optional grammatical metadata (pos, gender, phonetics, conjugations, level, examples)
 
     Returns:
         Vocabulary ID if successful, None otherwise
     """
+    # Extract metadata fields with defaults
+    meta = metadata or {}
+    pos = meta.get('pos')
+    gender = meta.get('gender')
+    phonetics = meta.get('phonetics')
+    conjugations = meta.get('conjugations')
+    level = meta.get('level')
+    examples = meta.get('examples')
     client = get_mongodb_client()
     if not client:
         return None
@@ -1033,8 +1045,10 @@ def save_vocabulary(
             'user_id': user_id,
             'pos': pos,
             'gender': gender,
+            'phonetics': phonetics,
             'conjugations': conjugations,
             'level': level,
+            'examples': examples,
             'created_at': datetime.now(timezone.utc),
             'updated_at': datetime.now(timezone.utc)
         }
@@ -1098,8 +1112,10 @@ def get_vocabularies(article_id: str | None = None, user_id: str | None = None) 
                 'user_id': vocab.get('user_id'),
                 'pos': vocab.get('pos'),
                 'gender': vocab.get('gender'),
+                'phonetics': vocab.get('phonetics'),
                 'conjugations': vocab.get('conjugations'),
-                'level': vocab.get('level')
+                'level': vocab.get('level'),
+                'examples': vocab.get('examples')
             })
 
         return result
@@ -1146,8 +1162,10 @@ def get_vocabulary_by_id(vocabulary_id: str) -> dict | None:
             'user_id': vocab.get('user_id'),
             'pos': vocab.get('pos'),
             'gender': vocab.get('gender'),
+            'phonetics': vocab.get('phonetics'),
             'conjugations': vocab.get('conjugations'),
-            'level': vocab.get('level')
+            'level': vocab.get('level'),
+            'examples': vocab.get('examples')
         }
     except PyMongoError as e:
         logger.error("Failed to get vocabulary", extra={
@@ -1416,8 +1434,10 @@ def get_vocabulary_counts(
                 'user_id': {'$first': '$user_id'},
                 'pos': {'$first': '$pos'},
                 'gender': {'$first': '$gender'},
+                'phonetics': {'$first': '$phonetics'},
                 'conjugations': {'$first': '$conjugations'},
-                'level': {'$first': '$level'}
+                'level': {'$first': '$level'},
+                'examples': {'$first': '$examples'}
             }
         })
 
@@ -1450,8 +1470,10 @@ def get_vocabulary_counts(
                 'user_id': doc.get('user_id'),
                 'pos': doc.get('pos'),
                 'gender': doc.get('gender'),
+                'phonetics': doc.get('phonetics'),
                 'conjugations': doc.get('conjugations'),
-                'level': doc.get('level')
+                'level': doc.get('level'),
+                'examples': doc.get('examples')
             })
 
         return result

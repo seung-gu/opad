@@ -108,7 +108,7 @@ export default function UsagePage() {
               className="text-xl font-medium text-foreground hover:text-foreground transition-colors"
               title="Go to Articles"
             >
-              ◀ Articles
+              <span className="text-[0.9rem]">◀</span> Articles
             </Link>
           </div>
           <p className="text-text-dim">

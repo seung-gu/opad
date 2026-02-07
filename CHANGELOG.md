@@ -5,7 +5,77 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.3] - 2026-02-07
+
+### Fixed
+- Word-only cache key (`language:word`) in dictionary lookup now includes sentence context (`language:word:sentence`) to ensure correct lemma and definition selection for context-dependent words like "sich", "an", "auf" in German (issue #88)
+- Updated cache logic in `lemmaCacheRef` (6 locations) and `wordToLemmaRef` (4 locations) to use context-aware cache keys
+- Moved `extractSentence` call before cache checks in `handleWordClick` to ensure sentence context is available for cache key generation
+- Enhanced `getWordMeaning` and `getRelatedWords` functions to accept sentence parameter for accurate cache key generation
+
+## [0.11.2] - 2026-02-07
+
+### Fixed
+- Sentence extraction for duplicate words in same paragraph now uses DOM offset-based matching with TreeWalker and sentence-splitter range info instead of fragile includes-based first-match (issue #87)
+- Added fallback warning log for sentence extraction when DOM offset calculation fails
+- Vocabulary button no longer appears for `<code>` and `<pre>` blocks (code review improvement)
+
+## [0.11.1] - 2026-02-06
+
+### Added
+- Reduced prompt testing script (`test_reduced_prompt.py`) with 50 new unit tests for dictionary service refactoring
+- Test cases and test definition selection scripts for comprehensive dictionary service validation
+- `test_cases.py` for benchmarking and testing sense selection improvements
+- `max_tokens=10` parameter for sense selection LLM calls to prevent unbounded token usage
+
+### Changed
+- Refactored dictionary service with strategy pattern for improved code organization
+- Consolidated `TokenUsageStats` - removed duplicate from dictionary_service.py, now uses canonical version from utils/llm
+- Updated `_select_best_sense` to use `call_llm_with_tracking` instead of raw litellm for consistent token tracking
+- Renamed prompt building functions `build_test_prompt_de/en` to `build_reduced_prompt_de/en` in prompts.py for clarity
+- Reduced `REDUCED_PROMPT_MAX_TOKENS` from 2000 to 200 for more efficient prompt usage
+- Improved sense selection parsing with robust regex (`re.search`) instead of fragile `int()` conversion
+- Enhanced token stats accumulation to include sense selection LLM costs
+- Fixed formatting in full fallback prompt (added missing space before colon)
+
+### Fixed
+- Always returns `DEFAULT_DEFINITION` on JSON parse failure instead of exposing raw LLM content
+- Robust handling of sense selection responses with regex-based parsing for edge cases
+- Eliminated duplicate prompt definitions from test scripts
+- Dictionary service no longer exposes raw LLM errors to frontend
+
+### Removed
+- Dead code: `_extract_definition()` and `_extract_examples()` functions from dictionary_api.py
+- Redundant `--test-prompt` CLI flag from test script
+- Duplicate `TokenUsageStats` class definition from dictionary_service.py
+
+## [0.11.0] - 2026-02-03
+
+### Added
+- Free Dictionary API integration (freedictionaryapi.com) for hybrid dictionary lookup combining LLM and API sources
+- Support for German pronunciation (IPA) and word forms/conjugations via Free Dictionary API
+- Automatic fallback to LLM-based dictionary lookup when API fails
+- New `DictionaryAPIClient` utility class for managing Free Dictionary API calls
+- Comprehensive API integration tests for dictionary lookup functionality
+- Phonetics (IPA pronunciation) support displayed next to lemma for English words only
+- Example sentences from Free Dictionary API with collapsible display
+- VocabularyCard component for unified vocabulary display across views
+
+### Changed
+- Enhanced dictionary lookup prompts to leverage Free Dictionary API data
+- Optimized token usage in vocabulary extraction (approximately 40% reduction)
+- Updated dictionary route to utilize hybrid LLM + API approach for improved accuracy and cost efficiency
+- Unified VocabularyCard component from duplicate code in VocabularyList and vocabulary/page
+- Made examples always collapsible (removed collapsibleExamples prop)
+- Used VocabularyMetadata TypedDict to reduce save_vocabulary parameters from 15 to 10
+- Unified Conjugations type definition (exported from types/article.ts)
+- Added Readonly<VocabularyCardProps> for props immutability
+
+### Fixed
+- Improved robustness of dictionary lookups with proper error handling and graceful fallback
+- Fixed bare except clause in mongodb.py (changed to except Exception)
+- Improved count condition clarity in VocabularyCard
+- Fixed TypeScript error in phonetics/word conditional rendering
 
 ## [0.10.0] - 2026-02-03
 

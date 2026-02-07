@@ -31,59 +31,59 @@ class TestConjugationsModel(unittest.TestCase):
         conj = Conjugations(
             present="gehe, gehst, geht",
             past="ging",
-            perfect="gegangen"
+            participle="gegangen"
         )
         self.assertEqual(conj.present, "gehe, gehst, geht")
         self.assertEqual(conj.past, "ging")
-        self.assertEqual(conj.perfect, "gegangen")
+        self.assertEqual(conj.participle, "gegangen")
 
     def test_conjugations_creation_with_none_fields(self):
         """Test creating Conjugations with None fields."""
         conj = Conjugations(
             present="run, runs",
             past=None,
-            perfect=None
+            participle=None
         )
         self.assertEqual(conj.present, "run, runs")
         self.assertIsNone(conj.past)
-        self.assertIsNone(conj.perfect)
+        self.assertIsNone(conj.participle)
 
     def test_conjugations_creation_without_fields(self):
         """Test creating Conjugations without any fields."""
         conj = Conjugations()
         self.assertIsNone(conj.present)
         self.assertIsNone(conj.past)
-        self.assertIsNone(conj.perfect)
+        self.assertIsNone(conj.participle)
 
     def test_conjugations_serialization(self):
         """Test Conjugations JSON serialization."""
         conj = Conjugations(
             present="ich gehe",
             past="ich ging",
-            perfect="ich bin gegangen"
+            participle="ich bin gegangen"
         )
         serialized = conj.dict()
         self.assertEqual(serialized['present'], "ich gehe")
         self.assertEqual(serialized['past'], "ich ging")
-        self.assertEqual(serialized['perfect'], "ich bin gegangen")
+        self.assertEqual(serialized['participle'], "ich bin gegangen")
 
     def test_conjugations_with_empty_strings(self):
         """Test Conjugations with empty strings."""
-        conj = Conjugations(present="", past="", perfect="")
+        conj = Conjugations(present="", past="", participle="")
         self.assertEqual(conj.present, "")
         self.assertEqual(conj.past, "")
-        self.assertEqual(conj.perfect, "")
+        self.assertEqual(conj.participle, "")
 
     def test_conjugations_with_unicode(self):
         """Test Conjugations with unicode characters."""
         conj = Conjugations(
             present="über, überst",
             past="überging",
-            perfect="übergangen"
+            participle="übergangen"
         )
         self.assertIn("ü", conj.present)
         self.assertIn("ü", conj.past)
-        self.assertIn("ü", conj.perfect)
+        self.assertIn("ü", conj.participle)
 
 
 class TestSearchResponseModel(unittest.TestCase):
@@ -100,7 +100,7 @@ class TestSearchResponseModel(unittest.TestCase):
             conjugations=Conjugations(
                 present="gehe, gehst, geht",
                 past="ging",
-                perfect="gegangen"
+                participle="gegangen"
             ),
             level="A1"
         )
@@ -183,7 +183,7 @@ class TestVocabularyRequestModel(unittest.TestCase):
             span_id="span-123",
             pos="verb",
             gender=None,
-            conjugations={"present": "gehe", "past": "ging", "perfect": "gegangen"},
+            conjugations={"present": "gehe", "past": "ging", "participle": "gegangen"},
             level="A1"
         )
         self.assertEqual(request.article_id, "article-123")
@@ -285,7 +285,7 @@ class TestVocabularyResponseModel(unittest.TestCase):
             conjugations=Conjugations(
                 present="gehe",
                 past="ging",
-                perfect="gegangen"
+                participle="gegangen"
             ),
             level="A1"
         )
@@ -396,7 +396,7 @@ class TestVocabularyCountModel(unittest.TestCase):
             conjugations=Conjugations(
                 present="gehe",
                 past="ging",
-                perfect="gegangen"
+                participle="gegangen"
             ),
             level="A1"
         )
@@ -584,7 +584,7 @@ class TestModelIntegration(unittest.TestCase):
             sentence="Ich gehe nach Hause.",
             language="German",
             pos="verb",
-            conjugations={"present": "gehe", "past": "ging", "perfect": "gegangen"},
+            conjugations={"present": "gehe", "past": "ging", "participle": "gegangen"},
             level="A1"
         )
 
@@ -661,7 +661,7 @@ class TestModelIntegration(unittest.TestCase):
             count=5,  # Seen 5 times
             article_ids=["article-1", "article-2", "article-3"],
             pos="verb",
-            conjugations=Conjugations(present="gehe", past="ging", perfect="gegangen"),
+            conjugations=Conjugations(present="gehe", past="ging", participle="gegangen"),
             level="A1"
         )
 
