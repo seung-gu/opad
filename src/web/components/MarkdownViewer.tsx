@@ -618,70 +618,73 @@ export default function MarkdownViewer({
     
     // Process each vocabulary
     vocabularies.forEach(v => {
-      if (!v.span_id || !v.related_words || v.related_words.length === 0) return
-      
+      if (!v.span_id) return
+
       const spanId = v.span_id
-      
+
       // Find the clicked word's span by span_id
       const clickedSpan = containerRef.current!.querySelector(`[data-span-id="${spanId}"]`) as HTMLElement
       if (!clickedSpan) return
-      
+
+      // Always highlight the clicked word itself
+      clickedSpan.classList.add(CSS_CLASS.VOCAB_SAVED)
+
+      // If related_words exist, also highlight surrounding related words
+      if (!v.related_words || v.related_words.length === 0) return
+
       // Get all vocab-word spans in container, in DOM order
       const allSpans = Array.from(containerRef.current!.querySelectorAll('.vocab-word')) as HTMLElement[]
-      
+
       // Find clicked span index
       const clickedIndex = allSpans.findIndex(span => span.getAttribute(DATA_ATTR.SPAN_ID) === spanId)
       if (clickedIndex === -1) return
-      
+
       // Find clicked word's index in related_words array
       const clickedWord = clickedSpan.getAttribute(DATA_ATTR.WORD)
       if (!clickedWord) return
-      
+
       const clickedWordIndex = v.related_words.findIndex(w => w.toLowerCase() === clickedWord.toLowerCase())
       if (clickedWordIndex === -1) return
-      
-      // Color clicked word first
-      clickedSpan.classList.add(CSS_CLASS.VOCAB_SAVED)
-      
+
       // Find words to the left (before clicked word in related_words)
       // Search backwards from clickedIndex
       for (let i = clickedWordIndex - 1; i >= 0; i--) {
         const targetWord = v.related_words[i]
         let found = false
-        
+
         // Search backwards from clickedIndex
         for (let j = clickedIndex - 1; j >= 0; j--) {
           const span = allSpans[j]
           const word = span.getAttribute(DATA_ATTR.WORD)
-          
+
           if (word && word.toLowerCase() === targetWord.toLowerCase()) {
             span.classList.add(CSS_CLASS.VOCAB_SAVED)
             found = true
             break
           }
         }
-        
+
         if (!found) break // If we can't find a word, stop searching
       }
-      
+
       // Find words to the right (after clicked word in related_words)
       // Search forwards from clickedIndex
       for (let i = clickedWordIndex + 1; i < v.related_words.length; i++) {
         const targetWord = v.related_words[i]
         let found = false
-        
+
         // Search forwards from clickedIndex
         for (let j = clickedIndex + 1; j < allSpans.length; j++) {
           const span = allSpans[j]
           const word = span.getAttribute(DATA_ATTR.WORD)
-          
+
           if (word && word.toLowerCase() === targetWord.toLowerCase()) {
             span.classList.add(CSS_CLASS.VOCAB_SAVED)
             found = true
             break
           }
         }
-        
+
         if (!found) break // If we can't find a word, stop searching
       }
     })

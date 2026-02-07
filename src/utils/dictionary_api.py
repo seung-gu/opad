@@ -53,7 +53,7 @@ class DictionaryAPIResult:
         forms: Grammatical forms (e.g., genitive, plural).
         gender: Grammatical gender for nouns (e.g., "der", "die", "das").
         examples: Example sentences showing word usage.
-        all_senses: All available senses/definitions from API.
+        all_entries: All entries from API for context-aware selection.
     """
     definition: str | None = None
     pos: str | None = None
@@ -61,7 +61,7 @@ class DictionaryAPIResult:
     forms: dict[str, str] | None = None
     gender: str | None = None
     examples: list[str] | None = None
-    all_senses: list[dict] | None = None
+    all_entries: list[dict] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -72,11 +72,11 @@ class DictionaryAPIResult:
             "forms": self.forms,
             "gender": self.gender,
             "examples": self.examples,
-            "all_senses": self.all_senses,
+            "all_entries": self.all_entries,
         }
 
 
-def _get_language_code(language: str) -> str | None:
+def get_language_code(language: str) -> str | None:
     """Convert full language name to ISO 639-1 code.
 
     Args:
@@ -269,46 +269,36 @@ def _extract_forms(entry: dict[str, Any]) -> dict[str, str] | None:
     return result if result else None
 
 
-def _parse_api_response(data: dict[str, Any], language_code: str) -> DictionaryAPIResult:
-    """Parse Free Dictionary API response into structured result.
+
+def extract_entry_metadata(entry: dict[str, Any], language_code: str) -> dict[str, Any]:
+    """Extract metadata from a single dictionary entry.
+
+    Used by the service layer to get POS, phonetics, forms, and gender
+    from a specific entry (not necessarily entries[0]).
 
     Args:
-        data: Raw API response dict containing 'word' and 'entries' keys.
+        entry: A single entry dict from API response.
         language_code: ISO 639-1 language code.
 
     Returns:
-        Parsed DictionaryAPIResult.
+        Dict with keys: pos, phonetics, forms, gender, senses.
     """
-    result = DictionaryAPIResult()
+    pos = entry.get("partOfSpeech")
+    phonetics = _extract_phonetics(entry)
+    forms = _extract_forms(entry)
+    senses = entry.get("senses", [])
 
-    if not data:
-        return result
+    gender = _extract_gender_from_senses(entry, language_code)
+    if gender is None and pos:
+        gender = _extract_gender_from_pos(pos, language_code)
 
-    # API response is a dict: {"word": "...", "entries": [...]}
-    entries = data.get("entries", [])
-
-    if not entries:
-        return result
-
-    # Get first entry details
-    entry = entries[0]
-
-    # Extract part of speech
-    result.pos = entry.get("partOfSpeech")
-
-    # Extract pronunciation and forms
-    result.phonetics = _extract_phonetics(entry)
-    result.all_senses = entry.get("senses", [])
-    # definition and examples are selected by service layer based on sentence context
-    result.forms = _extract_forms(entry)
-
-    # Extract gender from senses tags (for German nouns)
-    result.gender = _extract_gender_from_senses(entry, language_code)
-    # Fallback to POS-based extraction if senses didn't have gender
-    if result.gender is None and result.pos:
-        result.gender = _extract_gender_from_pos(result.pos, language_code)
-
-    return result
+    return {
+        "pos": pos,
+        "phonetics": phonetics,
+        "forms": forms,
+        "gender": gender,
+        "senses": senses,
+    }
 
 
 def _strip_reflexive_pronoun(word: str, language_code: str) -> str:
@@ -371,7 +361,7 @@ async def fetch_from_free_dictionary_api(
         DictionaryAPIResult with pronunciation, forms, etc., or None on error.
         Returns None if the language is not supported or API call fails.
     """
-    language_code = _get_language_code(language)
+    language_code = get_language_code(language)
 
     if not language_code:
         logger.debug(
@@ -407,16 +397,22 @@ async def fetch_from_free_dictionary_api(
                 )
                 return None
 
-            result = _parse_api_response(data, language_code)
+            entries = data.get("entries", [])
+            if not entries:
+                logger.debug(
+                    "Free Dictionary API returned no entries",
+                    extra={"word": word, "language": language}
+                )
+                return None
+
+            result = DictionaryAPIResult(all_entries=entries)
 
             logger.debug(
                 "Free Dictionary API lookup successful",
                 extra={
                     "word": word,
                     "language": language,
-                    "has_definition": result.definition is not None,
-                    "has_phonetics": result.phonetics is not None,
-                    "has_forms": result.forms is not None,
+                    "entry_count": len(entries),
                 }
             )
 

@@ -11,13 +11,13 @@ import pytest
 
 from ..dictionary_api import (
     DictionaryAPIResult,
-    _get_language_code,
+    get_language_code,
     _extract_gender_from_pos,
     _extract_gender_from_senses,
     _extract_phonetics,
     _extract_forms,
     _strip_reflexive_pronoun,
-    _parse_api_response,
+    extract_entry_metadata,
     fetch_from_free_dictionary_api,
     LANGUAGE_CODE_MAP,
 )
@@ -28,61 +28,61 @@ class TestGetLanguageCode(unittest.TestCase):
 
     def test_supported_german(self):
         """Test German language code."""
-        self.assertEqual(_get_language_code("German"), "de")
+        self.assertEqual(get_language_code("German"), "de")
 
     def test_supported_english(self):
         """Test English language code."""
-        self.assertEqual(_get_language_code("English"), "en")
+        self.assertEqual(get_language_code("English"), "en")
 
     def test_supported_french(self):
         """Test French language code."""
-        self.assertEqual(_get_language_code("French"), "fr")
+        self.assertEqual(get_language_code("French"), "fr")
 
     def test_supported_spanish(self):
         """Test Spanish language code."""
-        self.assertEqual(_get_language_code("Spanish"), "es")
+        self.assertEqual(get_language_code("Spanish"), "es")
 
     def test_supported_italian(self):
         """Test Italian language code."""
-        self.assertEqual(_get_language_code("Italian"), "it")
+        self.assertEqual(get_language_code("Italian"), "it")
 
     def test_supported_portuguese(self):
         """Test Portuguese language code."""
-        self.assertEqual(_get_language_code("Portuguese"), "pt")
+        self.assertEqual(get_language_code("Portuguese"), "pt")
 
     def test_supported_dutch(self):
         """Test Dutch language code."""
-        self.assertEqual(_get_language_code("Dutch"), "nl")
+        self.assertEqual(get_language_code("Dutch"), "nl")
 
     def test_supported_polish(self):
         """Test Polish language code."""
-        self.assertEqual(_get_language_code("Polish"), "pl")
+        self.assertEqual(get_language_code("Polish"), "pl")
 
     def test_supported_russian(self):
         """Test Russian language code."""
-        self.assertEqual(_get_language_code("Russian"), "ru")
+        self.assertEqual(get_language_code("Russian"), "ru")
 
     def test_unsupported_language(self):
         """Test unsupported language returns None."""
-        self.assertIsNone(_get_language_code("Japanese"))
+        self.assertIsNone(get_language_code("Japanese"))
 
     def test_case_sensitive(self):
         """Test that language names are case-sensitive."""
-        self.assertIsNone(_get_language_code("german"))
-        self.assertIsNone(_get_language_code("GERMAN"))
+        self.assertIsNone(get_language_code("german"))
+        self.assertIsNone(get_language_code("GERMAN"))
 
     def test_empty_string(self):
         """Test empty string returns None."""
-        self.assertIsNone(_get_language_code(""))
+        self.assertIsNone(get_language_code(""))
 
     def test_none_value(self):
         """Test None value returns None."""
-        self.assertIsNone(_get_language_code(None))
+        self.assertIsNone(get_language_code(None))
 
     def test_all_supported_languages(self):
         """Test all languages in the LANGUAGE_CODE_MAP."""
         for language, code in LANGUAGE_CODE_MAP.items():
-            self.assertEqual(_get_language_code(language), code)
+            self.assertEqual(get_language_code(language), code)
 
 
 class TestStripReflexivePronoun(unittest.TestCase):
@@ -523,158 +523,19 @@ class TestExtractForms(unittest.TestCase):
         self.assertEqual(result, {"plural": "schneller"})
 
 
-class TestParseApiResponse(unittest.TestCase):
-    """Test parsing complete API response.
-
-    Note: Free Dictionary API uses 'senses' with direct 'definition' field
-    and 'tags' for grammatical info like gender.
-    """
-
-    def test_parse_complete_response_german(self):
-        """Test parsing complete German response with senses."""
-        data = {
-            "word": "Hund",
-            "entries": [
-                {
-                    "partOfSpeech": "noun",
-                    "pronunciations": [
-                        {"type": "ipa", "text": "/hʊnt/"}
-                    ],
-                    "senses": [
-                        {
-                            "definition": "dog, hound",
-                            "tags": ["masculine"]
-                        }
-                    ],
-                    "forms": [
-                        {"word": "Hundes", "tags": ["genitive"]},
-                        {"word": "Hunde", "tags": ["plural"]}
-                    ]
-                }
-            ]
-        }
-        result = _parse_api_response(data, "de")
-        self.assertEqual(result.pos, "noun")
-        self.assertEqual(result.gender, "der")
-        self.assertEqual(result.phonetics, "/hʊnt/")
-        self.assertIsNone(result.definition)  # definition selection moved to service layer
-        self.assertEqual(result.all_senses, [{"definition": "dog, hound", "tags": ["masculine"]}])
-        self.assertEqual(result.forms, {"genitive": "Hundes", "plural": "Hunde"})
-
-    def test_parse_response_without_gender(self):
-        """Test parsing English response without gender."""
-        data = {
-            "word": "dog",
-            "entries": [
-                {
-                    "partOfSpeech": "noun",
-                    "pronunciations": [
-                        {"type": "ipa", "text": "/dɒɡ/"}
-                    ],
-                    "senses": [
-                        {"definition": "A domesticated carnivorous mammal"}
-                    ]
-                }
-            ]
-        }
-        result = _parse_api_response(data, "en")
-        self.assertEqual(result.pos, "noun")
-        self.assertIsNone(result.gender)
-        self.assertEqual(result.phonetics, "/dɒɡ/")
-
-    def test_parse_verb_response_german(self):
-        """Test parsing German verb with conjugation forms."""
-        data = {
-            "word": "fahren",
-            "entries": [
-                {
-                    "partOfSpeech": "verb",
-                    "pronunciations": [
-                        {"type": "ipa", "text": "[ˈfaːʁən]"}
-                    ],
-                    "senses": [
-                        {"definition": "to go, to drive"}
-                    ],
-                    "forms": [
-                        {"word": "fährt", "tags": ["present", "singular", "third-person"]},
-                        {"word": "fuhr", "tags": ["past"]},
-                        {"word": "gefahren", "tags": ["participle", "past"]},
-                        {"word": "haben", "tags": ["auxiliary"]},
-                        {"word": "sein", "tags": ["auxiliary"]}
-                    ]
-                }
-            ]
-        }
-        result = _parse_api_response(data, "de")
-        self.assertEqual(result.pos, "verb")
-        self.assertIsNone(result.definition)  # definition selection moved to service layer
-        self.assertEqual(result.all_senses, [{"definition": "to go, to drive"}])
-        self.assertEqual(result.phonetics, "[ˈfaːʁən]")
-        self.assertEqual(result.forms, {
-            "present": "fährt",
-            "past": "fuhr",
-            "participle": "gefahren",
-            "auxiliary": "haben / sein"
-        })
-
-    def test_parse_partial_response(self):
-        """Test parsing response with missing optional fields."""
-        data = {
-            "word": "test",
-            "entries": [
-                {
-                    "partOfSpeech": "noun"
-                }
-            ]
-        }
-        result = _parse_api_response(data, "de")
-        self.assertEqual(result.pos, "noun")
-        self.assertIsNone(result.phonetics)
-        self.assertIsNone(result.definition)
-        self.assertIsNone(result.forms)
-
-    def test_parse_empty_data(self):
-        """Test parsing empty data returns empty result."""
-        result = _parse_api_response({}, "de")
-        self.assertIsNone(result.pos)
-        self.assertIsNone(result.phonetics)
-        self.assertIsNone(result.definition)
-        self.assertIsNone(result.forms)
-        self.assertIsNone(result.gender)
-
-    def test_parse_no_entries(self):
-        """Test parsing response without entries."""
-        data = {"word": "test", "entries": []}
-        result = _parse_api_response(data, "de")
-        self.assertIsNone(result.pos)
-
-    def test_parse_uses_first_entry(self):
-        """Test that first entry is used."""
-        data = {
-            "word": "test",
-            "entries": [
-                {
-                    "partOfSpeech": "first entry",
-                    "senses": [{"definition": "First"}]
-                },
-                {
-                    "partOfSpeech": "second entry",
-                    "senses": [{"definition": "Second"}]
-                }
-            ]
-        }
-        result = _parse_api_response(data, "de")
-        self.assertEqual(result.pos, "first entry")
-        self.assertEqual(result.all_senses, [{"definition": "First"}])
+class TestDictionaryAPIResult(unittest.TestCase):
+    """Test DictionaryAPIResult dataclass."""
 
     def test_result_to_dict(self):
         """Test DictionaryAPIResult.to_dict() method."""
+        entries = [{"partOfSpeech": "noun", "senses": [{"definition": "Test definition"}]}]
         result = DictionaryAPIResult(
             definition="Test definition",
             pos="noun",
             phonetics="/test/",
             forms={"plural": "tests"},
-            gender="der"
+            gender="der",
+            all_entries=entries,
         )
         result_dict = result.to_dict()
         self.assertEqual(result_dict["definition"], "Test definition")
@@ -682,6 +543,8 @@ class TestParseApiResponse(unittest.TestCase):
         self.assertEqual(result_dict["phonetics"], "/test/")
         self.assertEqual(result_dict["forms"], {"plural": "tests"})
         self.assertEqual(result_dict["gender"], "der")
+        self.assertEqual(result_dict["all_entries"], entries)
+        self.assertNotIn("all_senses", result_dict)
 
     def test_result_to_dict_with_none_values(self):
         """Test to_dict with None values."""
@@ -692,6 +555,64 @@ class TestParseApiResponse(unittest.TestCase):
         self.assertIsNone(result_dict["phonetics"])
         self.assertIsNone(result_dict["forms"])
         self.assertIsNone(result_dict["gender"])
+        self.assertIsNone(result_dict["all_entries"])
+
+
+class TestExtractEntryMetadata(unittest.TestCase):
+    """Test extract_entry_metadata helper function."""
+
+    def test_extracts_full_metadata(self):
+        """Test extracting all metadata fields from entry."""
+        entry = {
+            "partOfSpeech": "noun",
+            "pronunciations": [{"type": "ipa", "text": "/hʊnt/"}],
+            "senses": [
+                {"definition": "dog, hound", "tags": ["masculine"]}
+            ],
+            "forms": [
+                {"word": "Hundes", "tags": ["genitive"]},
+                {"word": "Hunde", "tags": ["plural"]},
+            ]
+        }
+        meta = extract_entry_metadata(entry, "de")
+        self.assertEqual(meta["pos"], "noun")
+        self.assertEqual(meta["phonetics"], "/hʊnt/")
+        self.assertEqual(meta["forms"], {"genitive": "Hundes", "plural": "Hunde"})
+        self.assertEqual(meta["gender"], "der")
+        self.assertEqual(len(meta["senses"]), 1)
+
+    def test_extracts_verb_metadata(self):
+        """Test extracting verb metadata without gender."""
+        entry = {
+            "partOfSpeech": "verb",
+            "senses": [{"definition": "to go"}],
+            "forms": [
+                {"word": "geht", "tags": ["present", "singular", "third-person"]},
+            ]
+        }
+        meta = extract_entry_metadata(entry, "de")
+        self.assertEqual(meta["pos"], "verb")
+        self.assertIsNone(meta["gender"])
+        self.assertEqual(meta["forms"], {"present": "geht"})
+
+    def test_minimal_entry(self):
+        """Test extracting metadata from minimal entry."""
+        entry = {"partOfSpeech": "adjective"}
+        meta = extract_entry_metadata(entry, "en")
+        self.assertEqual(meta["pos"], "adjective")
+        self.assertIsNone(meta["phonetics"])
+        self.assertIsNone(meta["forms"])
+        self.assertIsNone(meta["gender"])
+        self.assertEqual(meta["senses"], [])
+
+    def test_gender_fallback_to_pos(self):
+        """Test gender extraction falls back to POS when senses lack tags."""
+        entry = {
+            "partOfSpeech": "masculine noun",
+            "senses": [{"definition": "dog"}],
+        }
+        meta = extract_entry_metadata(entry, "de")
+        self.assertEqual(meta["gender"], "der")
 
 
 class TestFetchFromFreeDictionaryApi(unittest.IsolatedAsyncioTestCase):
@@ -725,11 +646,9 @@ class TestFetchFromFreeDictionaryApi(unittest.IsolatedAsyncioTestCase):
         result = await fetch_from_free_dictionary_api("Hund", "German")
 
         self.assertIsNotNone(result)
-        self.assertIsNone(result.definition)  # definition selection moved to service layer
-        self.assertEqual(result.all_senses, [{"definition": "dog, hound", "tags": ["masculine"]}])
-        self.assertEqual(result.phonetics, "/hʊnt/")
-        self.assertEqual(result.pos, "noun")
-        self.assertEqual(result.gender, "der")
+        self.assertIsNotNone(result.all_entries)
+        self.assertEqual(len(result.all_entries), 1)
+        self.assertEqual(result.all_entries[0]["partOfSpeech"], "noun")
 
     @patch('utils.dictionary_api.httpx.AsyncClient')
     async def test_unsupported_language(self, mock_client_class):
@@ -915,10 +834,8 @@ class TestFetchFromFreeDictionaryApi(unittest.IsolatedAsyncioTestCase):
 
         result = await fetch_from_free_dictionary_api("Hund", "German")
 
-        # Should return DictionaryAPIResult with all None values
-        self.assertIsNotNone(result)
-        self.assertIsNone(result.definition)
-        self.assertIsNone(result.pos)
+        # Empty response has no entries, returns None
+        self.assertIsNone(result)
 
 
 # Pytest-style tests for convenience
@@ -951,9 +868,9 @@ async def test_fetch_successful_with_pytest():
         result = await fetch_from_free_dictionary_api("test", "English")
 
         assert result is not None
-        assert result.definition is None  # definition selection moved to service layer
-        assert result.all_senses == [{"definition": "Test definition"}]
-        assert result.phonetics == "/test/"
+        assert result.all_entries is not None
+        assert len(result.all_entries) == 1
+        assert result.all_entries[0]["senses"] == [{"definition": "Test definition"}]
 
 
 if __name__ == '__main__':

@@ -80,7 +80,7 @@ sequenceDiagram
 | **API** | **MongoDB** | (via utils.mongodb) | 중복 체크, Article metadata 저장/조회, Vocabulary 저장/조회, Token usage 저장/조회 |
 | **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
 | **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.job_queue` 사용) |
-| **API** | **LLM** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 (lemma, definition, related_words) + Token tracking |
+| **API** | **LLM** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 (lemma extraction + entry/sense selection) + Token tracking |
 | **API** | **API** | Internal | Token usage endpoints (`/usage/me`, `/usage/articles/{id}`) |
 | **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
 | **Worker** | **Redis** | `SET` | Job 상태 업데이트 (공통 모듈 `api.job_queue` 사용) |
@@ -343,38 +343,36 @@ def get_article_token_usage(article_id: str) -> list[dict]:
 
 ```python
 @router.post("/search", response_model=SearchResponse)
-async def search_word(request: SearchRequest, current_user: User = Depends(get_current_user_required)):
-    # Build prompt
-    prompt = build_word_definition_prompt(
-        language=request.language,
+async def search_word(
+    request: SearchRequest,
+    current_user: User = Depends(get_current_user_required),
+    service: DictionaryService = Depends(get_dictionary_service)
+):
+    # Convert API request to service request
+    lookup_request = LookupRequest(
+        word=request.word,
         sentence=request.sentence,
-        word=request.word
+        language=request.language,
+        article_id=request.article_id
     )
 
-    # Call LLM with tracking
-    content, stats = await call_llm_with_tracking(
-        messages=[{"role": "user", "content": prompt}],
-        model="gpt-4.1-mini",
-        max_tokens=200
-    )
+    # Perform lookup via DictionaryService (hybrid LLM + API approach)
+    result = await service.lookup(lookup_request)
 
-    # Log token usage
-    logger.info("Token usage for dictionary search", extra=stats.to_dict())
+    # Track token usage (accumulated from reduced prompt + entry/sense selection)
+    stats = service.last_token_stats
+    if stats:
+        save_token_usage(
+            user_id=current_user.id,
+            operation="dictionary_search",
+            model=stats.model,
+            prompt_tokens=stats.prompt_tokens,
+            completion_tokens=stats.completion_tokens,
+            estimated_cost=stats.estimated_cost,
+            metadata={"query": request.word, "language": request.language}
+        )
 
-    # Save to database (Phase 2)
-    save_token_usage(
-        user_id=current_user.id,
-        operation="dictionary_search",
-        model=stats.model,
-        prompt_tokens=stats.prompt_tokens,
-        completion_tokens=stats.completion_tokens,
-        estimated_cost=stats.estimated_cost,
-        metadata={"query": request.word, "language": request.language}
-    )
-
-    # Parse and return response
-    result = parse_json_from_content(content)
-    return SearchResponse(**result)
+    return SearchResponse(**result.__dict__)
 ```
 
 #### Token Usage API Endpoints (`src/api/routes/usage.py`)
@@ -443,9 +441,12 @@ sequenceDiagram
     Note over User,LLM: Dictionary Search with Token Tracking
     User->>WebUI: Click word
     WebUI->>API: POST /dictionary/search
-    API->>LLM: Call LLM API (via utils/llm.py)
-    LLM-->>API: Response + usage stats
-    API->>MongoDB: save_token_usage()
+    API->>LLM: Step 1: Reduced prompt (lemma extraction)
+    LLM-->>API: {lemma, related_words, level} + stats
+    API->>API: Step 2: Free Dictionary API (all entries)
+    API->>LLM: Step 3: Entry+sense selection (X.Y.Z)
+    LLM-->>API: Selected entry.sense.subsense + stats
+    API->>MongoDB: save_token_usage() (accumulated stats)
     API-->>WebUI: Definition response
 
     Note over User,MongoDB: Article Generation with Token Tracking
@@ -629,8 +630,8 @@ The system now supports vocabulary-aware article generation, where CrewAI adjust
 ### Vocabulary Features
 
 #### 1. Dictionary API - Word Definition
-- **POST /dictionary/search**: Get word definition and lemma using OpenAI API
-- **Returns**: lemma, definition, and related_words (for complex structures like separable verbs)
+- **POST /dictionary/search**: Get word definition and lemma using hybrid LLM + Free Dictionary API (entry+sense+subsense selection via X.Y.Z format)
+- **Returns**: lemma, definition, related_words, pos, gender, phonetics, conjugations, level, examples
 - **Auth**: Required (JWT) to prevent API abuse
 
 #### 2. Vocabulary Storage
@@ -1097,21 +1098,22 @@ graph TB
         Request[POST /dictionary/search] --> LLM[Step 1: LLM Reduced Prompt<br/>gpt-4.1-mini, max_tokens=200]
 
         LLM --> |lemma| API[Step 2: Free Dictionary API]
-        API --> |senses > 1| SenseSelect[Step 3: LLM Sense Selection<br/>gpt-4.1-mini, max_tokens=10]
-        API --> Merge[Step 4: Merge Results]
-        SenseSelect --> Merge
+        API --> |all entries| EntrySelect[Step 3: LLM Entry+Sense Selection<br/>X.Y.Z format, gpt-4.1-mini, max_tokens=10]
+        EntrySelect --> Metadata[Step 3b: Extract Metadata<br/>from selected entry]
+        Metadata --> Merge[Step 4: Merge Results]
 
         Merge --> Response[SearchResponse]
 
         LLM -.-> |LLM failure| Fallback[Full LLM Fallback<br/>gpt-4.1-mini, max_tokens=2000]
-        API -.-> |404 / timeout / no senses| Fallback
+        API -.-> |404 / timeout / no entries| Fallback
         Fallback --> Response
     end
 
     style Request fill:#2196F3
     style LLM fill:#10a37f
     style API fill:#ff9500
-    style SenseSelect fill:#10a37f
+    style EntrySelect fill:#10a37f
+    style Metadata fill:#9c27b0
     style Merge fill:#9c27b0
     style Response fill:#13aa52
     style Fallback fill:#dc382d
@@ -1134,17 +1136,18 @@ sequenceDiagram
 
     Note over API,FreeDict: Step 2: Lookup using lemma
     API->>FreeDict: GET /api/v1/entries/{lang}/{lemma}
-    FreeDict-->>API: {all_senses, pos, phonetics, forms, gender}
+    FreeDict-->>API: {all_entries}
 
-    alt API returns senses
-        alt senses > 1
-            Note over API,LLM: Step 3: Select best sense via LLM
-            API->>LLM: Sense selection prompt (max_tokens=10)
-            LLM-->>API: Selected sense number
+    alt API returns entries
+        alt multiple entries/senses/subsenses
+            Note over API,LLM: Step 3: Select best entry+sense+subsense via LLM
+            API->>LLM: X.Y.Z selection prompt (max_tokens=10)
+            LLM-->>API: Selected X.Y.Z (entry.sense.subsense)
         end
+        Note over API: Step 3b: Extract metadata from selected entry
         Note over API: Step 4: Merge LLM + API results
         API-->>Client: SearchResponse (source: hybrid)
-    else API failure (404, timeout, no senses)
+    else API failure (404, timeout, no entries)
         Note over API,LLM: Fallback: Full LLM prompt
         API->>LLM: Full prompt (max_tokens=2000)
         LLM-->>API: {lemma, definition, pos, gender, conjugations, level}
@@ -1157,8 +1160,9 @@ sequenceDiagram
 | Component | Responsibility | Output Fields |
 |-----------|----------------|---------------|
 | **LLM (Reduced Prompt)** | Context-aware lemma extraction, CEFR level classification (max_tokens=200) | `lemma`, `related_words`, `level` |
-| **Free Dictionary API** | Standard dictionary data, pronunciation, senses | `senses`, `pos`, `gender`, `phonetics`, `forms` |
-| **LLM (Sense Selection)** | Selects best sense from API senses based on sentence context (max_tokens=10) | `definition`, `examples` (from selected sense) |
+| **Free Dictionary API** | Returns all dictionary entries with senses and subsenses | `all_entries` (containing `pos`, `senses`, `phonetics`, `forms` per entry) |
+| **LLM (Entry+Sense Selection)** | Selects best entry+sense+subsense using X.Y.Z format based on sentence context (max_tokens=10) | `definition`, `examples` (from selected sense/subsense) |
+| **Metadata Extraction** | Extracts POS, phonetics, forms, gender from the selected entry (not always entries[0]) | `pos`, `phonetics`, `forms`, `gender` |
 | **Merge Function** | Combines results, converts `forms` to `conjugations` format, accumulates token stats | All fields |
 | **Full LLM Fallback** | Complete definition when hybrid fails (max_tokens=2000) | All fields except `phonetics` and `examples` |
 
@@ -1189,7 +1193,7 @@ The fallback to full LLM (gpt-4.1-mini) occurs in these scenarios:
 3. **Word not found**: Free Dictionary API returns 404
 4. **API timeout**: Request exceeds 5-second timeout
 5. **API error**: HTTP error or network failure
-6. **Missing senses**: API response lacks senses (definition/examples selection requires senses)
+6. **Missing entries**: API response lacks entries (entry/sense/subsense selection requires entries)
 
 **Fallback Flow**:
 ```
@@ -1248,7 +1252,7 @@ if request.language != "English":
 
 Token usage is tracked for all dictionary searches:
 
-- **Hybrid success**: Reduced prompt tokens (~200 max) + sense selection tokens (~10 max) accumulated (gpt-4.1-mini)
+- **Hybrid success**: Reduced prompt tokens (~200 max) + entry+sense selection tokens (~10 max) accumulated (gpt-4.1-mini)
 - **Fallback**: Full prompt tokens counted (~2000 max, gpt-4.1-mini)
 - **Source metadata**: Indicates `"hybrid"` or `"llm"` for cost analysis
 
@@ -1304,7 +1308,7 @@ Token usage is tracked for all dictionary searches:
 **Note**: `phonetics` is `null` for German (only available for English).
 
 **특징:**
-- **하이브리드 조회**: LLM + Free Dictionary API 결합으로 정확도와 비용 최적화
+- **하이브리드 조회**: LLM + Free Dictionary API 결합으로 정확도와 비용 최적화 (X.Y.Z entry+sense+subsense 선택)
 - **분리동사 처리**: 독일어 등에서 동사가 분리된 경우 전체 lemma 반환 (예: `hängt ... ab` → `abhängen`)
 - **복합어 처리**: 단어가 복합어의 일부인 경우 전체 형태 반환
 - **related_words**: 문장에서 같은 lemma에 속하는 모든 단어들을 배열로 반환 (예: 분리 동사의 경우 모든 부분 포함)
@@ -1883,9 +1887,9 @@ const fetchTokenUsage = useCallback(async (isRefresh = false) => {
 - Article별로 그룹화하여 관리
 
 **Vocabulary 표시:**
-- 저장된 단어는 초록색으로 하이라이트
-- `related_words`에 포함된 단어들도 함께 초록색 표시
-- 예: "hängt" 저장 시 "ab"도 자동으로 초록색 표시
+- 저장된 단어(`span_id`로 식별)는 항상 초록색으로 하이라이트 (`related_words` 존재 여부와 무관)
+- `related_words`가 존재하는 경우, 해당 단어들도 함께 초록색 표시 (분리 동사 등 복합 표현 지원)
+- 예: "hängt" 저장 시 "ab"도 자동으로 초록색 표시 (`related_words: ["hängt", "ab"]`)
 
 ---
 
