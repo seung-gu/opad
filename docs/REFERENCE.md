@@ -594,7 +594,7 @@ generateResponse.status === 409  ← Response handling!
 
 #### POST /dictionary/search
 
-**Description**: Search for word definition, lemma, and grammatical metadata using hybrid LLM + Free Dictionary API lookup.
+**Description**: Search for word definition, lemma, and grammatical metadata using hybrid LLM + Free Dictionary API lookup. The hybrid approach uses a two-step LLM process: (1) extract lemma and CEFR level, then (2) select the best entry+sense+subsense from the Free Dictionary API response using X.Y.Z format (entry.sense.subsense). Metadata (POS, phonetics, forms, gender) is extracted from the selected entry rather than always using the first entry.
 
 **Auth**: Required (JWT) - Prevents API abuse
 
@@ -1403,43 +1403,40 @@ print(f"Response: {content}")
 
 **Integration Example** (Dictionary API):
 ```python
-from utils.llm import call_llm_with_tracking
-from utils.prompts import build_word_definition_prompt
+from services.dictionary_service import DictionaryService, LookupRequest
 from utils.mongodb import save_token_usage
 
 @router.post("/dictionary/search")
-async def search_word(request: SearchRequest, current_user: User):
-    # Build prompt
-    prompt = build_word_definition_prompt(
-        language=request.language,
+async def search_word(
+    request: SearchRequest,
+    current_user: User = Depends(get_current_user_required),
+    service: DictionaryService = Depends(get_dictionary_service)
+):
+    # Convert API request to service request
+    lookup_request = LookupRequest(
+        word=request.word,
         sentence=request.sentence,
-        word=request.word
+        language=request.language,
+        article_id=request.article_id
     )
 
-    # Call LLM with tracking
-    content, stats = await call_llm_with_tracking(
-        messages=[{"role": "user", "content": prompt}],
-        model="gpt-4.1-mini",
-        max_tokens=200
-    )
+    # Perform hybrid lookup (LLM lemma extraction + API + LLM entry/sense selection)
+    result = await service.lookup(lookup_request)
 
-    # Log token usage
-    logger.info("Token usage", extra=stats.to_dict())
+    # Track accumulated token usage (reduced prompt + entry/sense selection)
+    stats = service.last_token_stats
+    if stats:
+        save_token_usage(
+            user_id=current_user.id,
+            operation="dictionary_search",
+            model=stats.model,
+            prompt_tokens=stats.prompt_tokens,
+            completion_tokens=stats.completion_tokens,
+            estimated_cost=stats.estimated_cost,
+            metadata={"query": request.word, "language": request.language}
+        )
 
-    # Save to database
-    save_token_usage(
-        user_id=current_user.id,
-        operation="dictionary_search",
-        model=stats.model,
-        prompt_tokens=stats.prompt_tokens,
-        completion_tokens=stats.completion_tokens,
-        estimated_cost=stats.estimated_cost,
-        metadata={"query": request.word, "language": request.language}
-    )
-
-    # Parse response
-    result = parse_json_from_content(content)
-    return SearchResponse(**result)
+    return SearchResponse(**result.__dict__)
 ```
 
 ---

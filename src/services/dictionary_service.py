@@ -9,7 +9,12 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from utils.dictionary_api import fetch_from_free_dictionary_api, DictionaryAPIResult
+from utils.dictionary_api import (
+    fetch_from_free_dictionary_api,
+    DictionaryAPIResult,
+    extract_entry_metadata,
+    get_language_code,
+)
 from utils.llm import TokenUsageStats, call_llm_with_tracking, parse_json_from_content
 from utils.prompts import build_word_definition_prompt, build_reduced_word_definition_prompt
 
@@ -140,21 +145,37 @@ class DictionaryService:
             )
             return None
 
-        # Select best sense from available senses
+        # Select best entry+sense from all entries
         sense_stats = None
-        if dict_data.all_senses:
-            selected_sense, sense_stats = await self._select_best_sense(
-                request.sentence,
-                dict_data.all_senses
-            )
-            dict_data.definition = selected_sense.get("definition", DEFAULT_DEFINITION)
-            dict_data.examples = self._extract_examples_from_sense(selected_sense)
-        else:
+        entries = dict_data.all_entries
+        if not entries:
             logger.info(
-                "Dictionary API missing senses, falling back to full LLM",
+                "Dictionary API missing entries, falling back to full LLM",
                 extra={"word": request.word, "lemma": lemma}
             )
             return None
+
+        ei, si, ssi, sense_stats = await self._select_best_entry_sense(
+            request.sentence, request.word, entries
+        )
+
+        # Extract metadata from selected entry
+        language_code = get_language_code(request.language)
+        selected_entry = entries[ei]
+        if language_code:
+            metadata = extract_entry_metadata(selected_entry, language_code)
+            dict_data.pos = metadata["pos"]
+            dict_data.phonetics = metadata["phonetics"]
+            dict_data.forms = metadata["forms"]
+            dict_data.gender = metadata["gender"]
+
+        # Get definition from selected sense or subsense
+        definition, selected_sense = self._get_definition_from_selection(
+            selected_entry, si, ssi
+        )
+        dict_data.definition = definition
+        if selected_sense:
+            dict_data.examples = self._extract_examples_from_sense(selected_sense)
 
         # Store stats for tracking (accumulate sense selection tokens)
         if stats:
@@ -371,38 +392,109 @@ class DictionaryService:
             result.phonetics = None
         return result
 
-    async def _select_best_sense(
+    @staticmethod
+    def _get_definition_from_selection(
+        entry: dict[str, Any],
+        sense_idx: int,
+        subsense_idx: int,
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Extract definition from selected entry/sense/subsense indices.
+
+        Args:
+            entry: The selected dictionary entry.
+            sense_idx: Index of the selected sense.
+            subsense_idx: Index of the selected subsense (-1 for sense level).
+
+        Returns:
+            Tuple of (definition_string, selected_sense_dict_or_None).
+        """
+        senses = entry.get("senses", [])
+        if sense_idx >= len(senses):
+            return "", None
+
+        sense = senses[sense_idx]
+        subsenses = sense.get("subsenses", [])
+        if 0 <= subsense_idx < len(subsenses):
+            return subsenses[subsense_idx].get("definition", ""), sense
+        return sense.get("definition", ""), sense
+
+    @staticmethod
+    def _build_entry_sense_prompt(
+        sentence: str,
+        word: str,
+        entries: list[dict[str, Any]]
+    ) -> str:
+        """Build X.Y.Z format prompt for LLM entry+sense selection."""
+        options = []
+        for i, entry in enumerate(entries):
+            pos = entry.get("partOfSpeech", "unknown")
+            options.append(f"entries[{i}] ({pos}):")
+            for j, sense in enumerate(entry.get("senses", [])):
+                options.append(f"  {i}.{j} {sense.get('definition', '')}")
+                for k, sub in enumerate(sense.get("subsenses", [])):
+                    options.append(f"    {i}.{j}.{k} {sub.get('definition', '')}")
+
+        return f"""Sentence: "{sentence}"
+Word: "{word}"
+
+Which definition best matches the word usage in this sentence?
+Reply with the number only (e.g. 1.0 or 0.0.1 for a subsense).
+
+{chr(10).join(options)}"""
+
+    @staticmethod
+    def _parse_entry_sense_response(
+        content: str,
+        entries: list[dict[str, Any]]
+    ) -> tuple[int, int, int]:
+        """Parse LLM response into (entry_idx, sense_idx, subsense_idx) with clamping."""
+        match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", content)
+        if not match:
+            return 0, 0, -1
+
+        ei = max(0, min(int(match.group(1)), len(entries) - 1))
+        senses = entries[ei].get("senses", [])
+        si = max(0, min(int(match.group(2)), len(senses) - 1)) if senses else 0
+
+        ssi = -1
+        if match.group(3) is not None and senses:
+            subsenses = senses[si].get("subsenses", [])
+            ssi = max(0, min(int(match.group(3)), len(subsenses) - 1)) if subsenses else -1
+
+        return ei, si, ssi
+
+    async def _select_best_entry_sense(
         self,
         sentence: str,
-        senses: list[dict[str, Any]]
-    ) -> tuple[dict[str, Any], TokenUsageStats | None]:
-        """Select the best sense based on sentence context using LLM.
+        word: str,
+        entries: list[dict[str, Any]]
+    ) -> tuple[int, int, int, TokenUsageStats | None]:
+        """Select the best entry, sense, and subsense based on sentence context.
+
+        Uses X.Y.Z format (entry.sense.subsense) matching the benchmark approach.
 
         Args:
             sentence: The sentence containing the word.
-            senses: List of sense dictionaries from API.
+            word: The word being looked up.
+            entries: All entries from the dictionary API.
 
         Returns:
-            Tuple of (best matching sense dict, token usage stats or None).
+            Tuple of (entry_idx, sense_idx, subsense_idx, token_stats).
+            subsense_idx is -1 when selection is at the sense level.
         """
-        if not senses:
-            return {"definition": DEFAULT_DEFINITION}, None
+        if not entries:
+            return 0, 0, -1, None
 
-        if len(senses) == 1:
-            return senses[0], None
+        # Skip LLM if only one entry with one sense and no subsenses
+        total_senses = sum(len(e.get("senses", [])) for e in entries)
+        total_subsenses = sum(
+            len(s.get("subsenses", []))
+            for e in entries for s in e.get("senses", [])
+        )
+        if len(entries) == 1 and total_senses <= 1 and total_subsenses == 0:
+            return 0, 0, -1, None
 
-        # Build options (limit to 6 for context length)
-        options = []
-        for i, sense in enumerate(senses[:6]):
-            defn = sense.get("definition", "")
-            options.append(f"{i+1}. {defn}")
-
-        prompt = f"""Sentence: "{sentence}"
-
-Which definition best matches the word usage in this sentence?
-Reply with the number only.
-
-{chr(10).join(options)}"""
+        prompt = self._build_entry_sense_prompt(sentence, word, entries)
 
         try:
             content, sense_stats = await call_llm_with_tracking(
@@ -412,19 +504,15 @@ Reply with the number only.
                 timeout=15,
                 max_tokens=10
             )
-            match = re.search(r"\d+", content)
-            if match:
-                selected = int(match.group()) - 1
-                if 0 <= selected < len(senses):
-                    return senses[selected], sense_stats
-            return senses[0], sense_stats
+            ei, si, ssi = self._parse_entry_sense_response(content, entries)
+            return ei, si, ssi, sense_stats
         except Exception as e:
             logger.warning(
-                "Failed to select sense via LLM, using first",
+                "Failed to select entry/sense via LLM, using defaults",
                 extra={"error": str(e)}
             )
 
-        return senses[0], None
+        return 0, 0, -1, None
 
     def _extract_examples_from_sense(self, sense: dict[str, Any], max_examples: int = 3) -> list[str] | None:
         """Extract examples from a single sense.

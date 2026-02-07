@@ -89,59 +89,59 @@ TEST_CASES_DE = [
     # ═══════════════════════════════════════════════════════════════════════════
 
     # --- sich (3인칭) ---
-    ("Die Bevölkerung informiert sich jetzt stärker über Möglichkeiten.", "informiert", "sich informieren", ["informiert", "sich"], "재귀동사"),
-    ("Sie freut sich auf den Urlaub.", "freut", "sich freuen", ["freut", "sich"], "재귀동사"),
-    ("Er interessiert sich für Musik.", "interessiert", "sich interessieren", ["interessiert", "sich"], "재귀동사"),
-    ("Sie erinnert sich an den Tag.", "erinnert", "sich erinnern", ["erinnert", "sich"], "재귀동사"),
-    ("Sie fühlt sich krank.", "fühlt", "sich fühlen", ["fühlt", "sich"], "재귀동사"),
-    ("Er konzentriert sich auf die Arbeit.", "konzentriert", "sich konzentrieren", ["konzentriert", "sich"], "재귀동사"),
+    ("Die Bevölkerung informiert sich jetzt stärker über Möglichkeiten der Online-Sicherheit.", "informiert", "sich informieren", ["informiert", "sich"], "재귀동사"),
+    ("Sie freut sich auf den Skiurlaub in den Alpen nächste Woche.", "freut", "sich freuen", ["freut", "sich"], "재귀동사"),
+    ("Er interessiert sich seit Jahren für klassische Musik und besucht oft Konzerte.", "interessiert", "sich interessieren", ["interessiert", "sich"], "재귀동사"),
+    ("Sie erinnert sich noch genau an den Tag, als sie ihren Führerschein gemacht hat.", "erinnert", "sich erinnern", ["erinnert", "sich"], "재귀동사"),
+    ("Nach der langen Wanderung fühlt sie sich erschöpft und will nur noch schlafen.", "fühlt", "sich fühlen", ["fühlt", "sich"], "재귀동사"),
+    ("Er konzentriert sich auf die Steuererklärung, obwohl die Kinder laut spielen.", "konzentriert", "sich konzentrieren", ["konzentriert", "sich"], "재귀동사"),
 
     # --- mich (1인칭 단수 Akkusativ) ---
-    ("Ich wasche mich jeden Morgen.", "wasche", "sich waschen", ["wasche", "mich"], "재귀동사"),
-    ("Ich freue mich auf das Wochenende.", "freue", "sich freuen", ["freue", "mich"], "재귀동사"),
-    ("Ich erinnere mich an den Urlaub.", "erinnere", "sich erinnern", ["erinnere", "mich"], "재귀동사"),
-    ("Ich fühle mich heute gut.", "fühle", "sich fühlen", ["fühle", "mich"], "재귀동사"),
+    ("Ich wasche mich nach dem Training unter der Dusche.", "wasche", "sich waschen", ["wasche", "mich"], "재귀동사"),
+    ("Ich freue mich auf das lange Wochenende, weil wir endlich wandern gehen.", "freue", "sich freuen", ["freue", "mich"], "재귀동사"),
+    ("Ich erinnere mich noch gut an unseren Sommerurlaub am Mittelmeer.", "erinnere", "sich erinnern", ["erinnere", "mich"], "재귀동사"),
+    ("Nach dem Arztbesuch fühle ich mich deutlich besser als gestern.", "fühle", "sich fühlen", ["fühle", "mich"], "재귀동사"),
 
     # --- uns (1인칭 복수) ---
-    ("Wir freuen uns auf die Ferien.", "freuen", "sich freuen", ["freuen", "uns"], "재귀동사"),
-    ("Wir treffen uns um 8 Uhr.", "treffen", "sich treffen", ["treffen", "uns"], "재귀동사"),
-    ("Wir erinnern uns gern daran.", "erinnern", "sich erinnern", ["erinnern", "uns"], "재귀동사"),
+    ("Wir freuen uns auf die Sommerferien in Italien.", "freuen", "sich freuen", ["freuen", "uns"], "재귀동사"),
+    ("Wir treffen uns um 8 Uhr vor dem Kino, um den neuen Film zu sehen.", "treffen", "sich treffen", ["treffen", "uns"], "재귀동사"),
+    ("Wir erinnern uns gern an die gemeinsame Schulzeit in Hamburg.", "erinnern", "sich erinnern", ["erinnern", "uns"], "재귀동사"),
 
     # --- dich (2인칭 단수 Akkusativ) ---
-    ("Du freust dich über das Geschenk.", "freust", "sich freuen", ["freust", "dich"], "재귀동사"),
-    ("Du wäschst dich zu langsam.", "wäschst", "sich waschen", ["wäschst", "dich"], "재귀동사"),
+    ("Du freust dich über das Geburtstagsgeschenk von deiner Schwester.", "freust", "sich freuen", ["freust", "dich"], "재귀동사"),
+    ("Du wäschst dich nach dem Fußballtraining immer viel zu langsam.", "wäschst", "sich waschen", ["wäschst", "dich"], "재귀동사"),
 
     # --- euch (2인칭 복수) ---
-    ("Ihr freut euch auf den Ausflug.", "freut", "sich freuen", ["freut", "euch"], "재귀동사"),
-    ("Trefft ihr euch morgen?", "Trefft", "sich treffen", ["Trefft", "euch"], "재귀동사"),
+    ("Ihr freut euch bestimmt auf den Schulausflug nach München.", "freut", "sich freuen", ["freut", "euch"], "재귀동사"),
+    ("Trefft ihr euch morgen Nachmittag im Café am Marktplatz?", "Trefft", "sich treffen", ["Trefft", "euch"], "재귀동사"),
 
     # --- 재귀대명사가 동사 앞에 오는 경우 (종속절) ---
-    ("Ich weiß, dass er sich sehr freut.", "freut", "sich freuen", ["sich", "freut"], "재귀동사"),
-    ("Sie sagt, dass sie sich gut fühlt.", "fühlt", "sich fühlen", ["sich", "fühlt"], "재귀동사"),
-    ("Er fragt, ob sie sich erinnert.", "erinnert", "sich erinnern", ["sich", "erinnert"], "재귀동사"),
-    ("Ich hoffe, dass du dich bald erholst.", "erholst", "sich erholen", ["dich", "erholst"], "재귀동사"),
-    ("Wir wissen, dass ihr euch trefft.", "trefft", "sich treffen", ["euch", "trefft"], "재귀동사"),
-    ("Er meint, dass wir uns irren.", "irren", "sich irren", ["uns", "irren"], "재귀동사"),
-    ("Sie glaubt, dass ich mich verspäte.", "verspäte", "sich verspäten", ["mich", "verspäte"], "재귀동사"),
-    ("Ich bin froh, dass er sich entschuldigt hat.", "entschuldigt", "sich entschuldigen", ["sich", "entschuldigt"], "재귀동사"),
+    ("Ich weiß, dass er sich sehr über die Beförderung freut.", "freut", "sich freuen", ["sich", "freut"], "재귀동사"),
+    ("Sie sagt, dass sie sich nach der Operation wieder gut fühlt.", "fühlt", "sich fühlen", ["sich", "fühlt"], "재귀동사"),
+    ("Er fragt, ob sie sich noch an das Passwort erinnert.", "erinnert", "sich erinnern", ["sich", "erinnert"], "재귀동사"),
+    ("Ich hoffe, dass du dich nach der Grippe bald erholst.", "erholst", "sich erholen", ["dich", "erholst"], "재귀동사"),
+    ("Wir wissen, dass ihr euch nächsten Samstag zum Grillen trefft.", "trefft", "sich treffen", ["euch", "trefft"], "재귀동사"),
+    ("Er meint, dass wir uns bei der Berechnung der Kosten irren.", "irren", "sich irren", ["uns", "irren"], "재귀동사"),
+    ("Sie glaubt, dass ich mich wegen des Staus zum Meeting verspäte.", "verspäte", "sich verspäten", ["mich", "verspäte"], "재귀동사"),
+    ("Ich bin froh, dass er sich für den unhöflichen Kommentar entschuldigt hat.", "entschuldigt", "sich entschuldigen", ["sich", "entschuldigt"], "재귀동사"),
 
     # --- 재귀대명사가 동사 앞에 오는 경우 (조동사 + Infinitiv) ---
-    ("Er kann sich nicht erinnern.", "erinnern", "sich erinnern", ["sich", "erinnern"], "재귀동사"),
-    ("Sie muss sich beeilen.", "beeilen", "sich beeilen", ["sich", "beeilen"], "재귀동사"),
-    ("Wir sollten uns treffen.", "treffen", "sich treffen", ["uns", "treffen"], "재귀동사"),
-    ("Du darfst dich nicht aufregen.", "aufregen", "sich aufregen", ["dich", "aufregen"], "재귀동사"),
-    ("Ich will mich beschweren.", "beschweren", "sich beschweren", ["mich", "beschweren"], "재귀동사"),
-    ("Ihr müsst euch anstrengen.", "anstrengen", "sich anstrengen", ["euch", "anstrengen"], "재귀동사"),
-    ("Man sollte sich regelmäßig bewegen.", "bewegen", "sich bewegen", ["sich", "bewegen"], "재귀동사"),
-    ("Er möchte sich vorstellen.", "vorstellen", "sich vorstellen", ["sich", "vorstellen"], "재귀동사"),
+    ("Er kann sich nach dem Unfall nicht mehr an die Adresse erinnern.", "erinnern", "sich erinnern", ["sich", "erinnern"], "재귀동사"),
+    ("Der Zug fährt in fünf Minuten — sie muss sich beeilen.", "beeilen", "sich beeilen", ["sich", "beeilen"], "재귀동사"),
+    ("Wir sollten uns am Wochenende zum Brunch im neuen Restaurant treffen.", "treffen", "sich treffen", ["uns", "treffen"], "재귀동사"),
+    ("Du darfst dich wegen der schlechten Note nicht so aufregen.", "aufregen", "sich aufregen", ["dich", "aufregen"], "재귀동사"),
+    ("Das Essen im Hotel war kalt — ich will mich an der Rezeption beschweren.", "beschweren", "sich beschweren", ["mich", "beschweren"], "재귀동사"),
+    ("Ihr müsst euch bei der Matheprüfung nächste Woche mehr anstrengen.", "anstrengen", "sich anstrengen", ["euch", "anstrengen"], "재귀동사"),
+    ("Man sollte sich regelmäßig bewegen, um Rückenschmerzen vorzubeugen.", "bewegen", "sich bewegen", ["sich", "bewegen"], "재귀동사"),
+    ("Er möchte sich bei dem neuen Team als Projektleiter vorstellen.", "vorstellen", "sich vorstellen", ["sich", "vorstellen"], "재귀동사"),
 
     # --- 재귀대명사가 동사 앞에 오는 경우 (zu-Infinitiv) ---
-    ("Es ist wichtig, sich zu konzentrieren.", "konzentrieren", "sich konzentrieren", ["sich", "konzentrieren"], "재귀동사"),
-    ("Er versucht, sich zu erinnern.", "erinnern", "sich erinnern", ["sich", "erinnern"], "재귀동사"),
-    ("Sie hat vor, sich zu bewerben.", "bewerben", "sich bewerben", ["sich", "bewerben"], "재귀동사"),
-    ("Es fällt mir schwer, mich zu entscheiden.", "entscheiden", "sich entscheiden", ["mich", "entscheiden"], "재귀동사"),
-    ("Wir planen, uns zu treffen.", "treffen", "sich treffen", ["uns", "treffen"], "재귀동사"),
-    ("Er vergisst oft, sich zu melden.", "melden", "sich melden", ["sich", "melden"], "재귀동사"),
+    ("Bei der lauten Baustelle nebenan ist es schwer, sich auf die Arbeit zu konzentrieren.", "konzentrieren", "sich konzentrieren", ["sich", "konzentrieren"], "재귀동사"),
+    ("Er versucht, sich an den Namen des Restaurants zu erinnern.", "erinnern", "sich erinnern", ["sich", "erinnern"], "재귀동사"),
+    ("Nach dem Studium hat sie vor, sich bei einem großen Unternehmen zu bewerben.", "bewerben", "sich bewerben", ["sich", "bewerben"], "재귀동사"),
+    ("Bei so vielen guten Optionen fällt es mir schwer, mich für ein Gericht zu entscheiden.", "entscheiden", "sich entscheiden", ["mich", "entscheiden"], "재귀동사"),
+    ("Wir planen, uns nächsten Freitag nach der Arbeit im Park zu treffen.", "treffen", "sich treffen", ["uns", "treffen"], "재귀동사"),
+    ("Er vergisst oft, sich bei seiner Mutter zu melden, wenn er auf Reisen ist.", "melden", "sich melden", ["sich", "melden"], "재귀동사"),
 
     # --- 재귀동사 + 분리동사 복합 ---
     ("Sie sprechen sich dafür aus, die Absicherung zu verbessern.", "sprechen", "sich aussprechen", ["sprechen", "sich", "aus"], "재귀동사+분리"),
@@ -149,7 +149,7 @@ TEST_CASES_DE = [
     ("Er kann sich vorstellen, als Teamchef zu arbeiten.", "vorstellen", "sich vorstellen", ["sich", "vorstellen"], "재귀동사+분리"),
     ("Er meldet sich bei der Konferenz an.", "meldet", "sich anmelden", ["meldet", "sich", "an"], "재귀동사+분리"),
     ("Ich melde mich für den Kurs an.", "melde", "sich anmelden", ["melde", "mich", "an"], "재귀동사+분리"),
-    ("Wir melden uns morgen an.", "melden", "sich anmelden", ["melden", "uns", "an"], "재귀동사+분리"),
+    ("Wir melden uns morgen für den Sprachkurs an der Volkshochschule an.", "melden", "sich anmelden", ["melden", "uns", "an"], "재귀동사+분리"),
 
     # --- 재귀동사 + 분리동사 복합 (재귀대명사가 먼저) ---
     ("Ich weiß, dass er sich morgen anmeldet.", "anmeldet", "sich anmelden", ["sich", "anmeldet"], "재귀동사+분리"),
@@ -157,7 +157,7 @@ TEST_CASES_DE = [
     ("Er muss sich warm anziehen.", "anziehen", "sich anziehen", ["sich", "anziehen"], "재귀동사+분리"),
     ("Du solltest dich hinsetzen.", "hinsetzen", "sich hinsetzen", ["dich", "hinsetzen"], "재귀동사+분리"),
     ("Wir wollen uns ausruhen.", "ausruhen", "sich ausruhen", ["uns", "ausruhen"], "재귀동사+분리"),
-    ("Es ist Zeit, sich umzuziehen.", "umzuziehen", "sich umziehen", ["sich", "umzuziehen"], "재귀동사+분리"),
+    ("Nach dem Schwimmen ist es Zeit, sich in der Umkleidekabine umzuziehen.", "umzuziehen", "sich umziehen", ["sich", "umzuziehen"], "재귀동사+분리"),
 
     # ═══════════════════════════════════════════════════════════════════════════
     # 3. 오추론 방지 (False Positive Prevention) ⭐ 가장 중요
@@ -176,22 +176,22 @@ TEST_CASES_DE = [
     ("Er läuft durch den Park.", "läuft", "laufen", ["läuft"], "오추론방지"),
 
     # --- 문장 끝에 명사/형용사가 있는 경우 ---
-    ("Er fährt mit dem Rennfahren.", "fährt", "fahren", ["fährt"], "오추론방지"),
+    ("Er verdient sein Geld mit dem Rennfahren.", "verdient", "verdienen", ["verdient"], "오추론방지"),
     ("Sie geht in den Garten.", "geht", "gehen", ["geht"], "오추론방지"),
-    ("Er sieht den Film.", "sieht", "sehen", ["sieht"], "오추론방지"),
-    ("Sie hört die Musik.", "hört", "hören", ["hört"], "오추론방지"),
-    ("Er macht die Hausaufgaben.", "macht", "machen", ["macht"], "오추론방지"),
+    ("Er sieht den neuen Film im Kino mit seinen Freunden.", "sieht", "sehen", ["sieht"], "오추론방지"),
+    ("Sie hört die laute Musik aus dem Nachbarzimmer, obwohl sie schlafen will.", "hört", "hören", ["hört"], "오추론방지"),
+    ("Er macht die Hausaufgaben am Küchentisch, bevor er nach draußen geht.", "macht", "machen", ["macht"], "오추론방지"),
 
     # --- 비분리 접두사 동사 (be-, ge-, er-, ver-, zer-, ent-, emp-, miss-) ---
     ("Er bekommt einen Brief.", "bekommt", "bekommen", ["bekommt"], "오추론방지"),
     ("Sie versteht das Problem.", "versteht", "verstehen", ["versteht"], "오추론방지"),
     ("Er erkennt seinen Fehler.", "erkennt", "erkennen", ["erkennt"], "오추론방지"),
     ("Sie beginnt mit der Arbeit.", "beginnt", "beginnen", ["beginnt"], "오추론방지"),
-    ("Er vergisst den Termin.", "vergisst", "vergessen", ["vergisst"], "오추론방지"),
+    ("Er vergisst ständig den Zahnarzttermin und muss immer wieder neu buchen.", "vergisst", "vergessen", ["vergisst"], "오추론방지"),
 
     # --- sich가 있지만 재귀동사가 아닌 경우 ---
-    ("Das Kind wäscht sich.", "wäscht", "sich waschen", ["wäscht", "sich"], "재귀동사"),  # 이건 맞는 재귀동사
-    ("Er gibt sich Mühe.", "gibt", "sich Mühe geben", ["gibt", "sich", "Mühe"], "오추론방지"),  # 관용구
+    ("Das Kind wäscht sich nach dem Spielen im Garten die Hände.", "wäscht", "sich waschen", ["wäscht", "sich"], "재귀동사"),  # 이건 맞는 재귀동사
+    ("Er gibt sich Mühe, die komplizierten Matheaufgaben zu lösen.", "gibt", "sich Mühe geben", ["gibt", "sich", "Mühe"], "오추론방지"),  # 관용구
 
     # --- 복합 함정: 문장에 분리접두사처럼 보이는 단어가 있지만 다른 용도 ---
     ("Er steht vor dem Haus.", "steht", "stehen", ["steht"], "오추론방지"),  # vor는 전치사
@@ -205,7 +205,7 @@ TEST_CASES_DE = [
     ("Das liegt an seinem schlanken Programmiercode, der die Überprüfung vereinfacht.", "vereinfacht", "vereinfachen", ["vereinfacht"], "일반동사"),
     ("Immer mehr Unternehmen setzen auf diese Methode, um das digitale Leben sicherer zu gestalten.", "gestalten", "gestalten", ["gestalten"], "일반동사"),
     ("Für Unternehmen bedeutet das eine deutliche Verbesserung des Schutzes.", "bedeutet", "bedeuten", ["bedeutet"], "일반동사"),
-    ("Um zu prüfen, ob die neuen Modelle im Alltag bestehen können.", "bestehen", "bestehen", ["bestehen"], "일반동사"),
+    ("Der Student muss die schwierige Abschlussprüfung bestehen, um sein Diplom zu erhalten.", "bestehen", "bestehen", ["bestehen"], "일반동사"),
     ("Die Behörden wollen solche Vorfälle in Zukunft verhindern.", "verhindern", "verhindern", ["verhindern"], "일반동사"),
     ("Max Verstappen hat Geschichte geschrieben.", "geschrieben", "schreiben", ["geschrieben"], "일반동사"),
     ("Die richtige Auswahl kann darüber entscheiden, wie gut Ihre Daten geschützt sind.", "entscheiden", "entscheiden", ["entscheiden"], "일반동사"),
@@ -233,7 +233,7 @@ TEST_CASES_DE = [
     ("Die Katze schläft auf dem Sofa.", "Katze", "Katze", ["Katze"], "명사"),
     ("Das Kind spielt draußen.", "Kind", "Kind", ["Kind"], "명사"),
     ("Der Lehrer erklärt die Aufgabe.", "Lehrer", "Lehrer", ["Lehrer"], "명사"),
-    ("Sie liest ein Buch über die Geschichte.", "Buch", "Buch", ["Buch"], "명사"),
+    ("Sie liest ein Buch über die Geschichte des Römischen Reiches.", "Buch", "Buch", ["Buch"], "명사"),
     ("Er kauft einen neuen Wagen.", "Wagen", "Wagen", ["Wagen"], "명사"),
     # 관사가 먼 위치에 있는 경우
     ("In der kleinen Stadt gibt es eine alte Kirche.", "Kirche", "Kirche", ["Kirche"], "명사"),
@@ -242,12 +242,24 @@ TEST_CASES_DE = [
     ("Die Kinder spielen im Park.", "Kinder", "Kind", ["Kinder"], "명사"),
     ("Er hat die Bücher auf den Tisch gelegt.", "Bücher", "Buch", ["Bücher"], "명사"),
 
+    # --- 성별에 따라 뜻이 다른 동형 명사 (다중 entry 발생) ---
+    ("Der See ist im Winter zugefroren.", "See", "See", ["See"], "명사"),  # m = lake
+    ("Die See war heute besonders ruhig.", "See", "See", ["See"], "명사"),  # f = sea
+    ("Der Leiter des Unternehmens hielt eine Rede.", "Leiter", "Leiter", ["Leiter"], "명사"),  # m = leader
+    ("Er stieg die Leiter hinauf.", "Leiter", "Leiter", ["Leiter"], "명사"),  # f = ladder
+    ("Das Steuer des Autos war schwergängig.", "Steuer", "Steuer", ["Steuer"], "명사"),  # n = steering wheel
+    ("Die Steuer auf Benzin wird erhöht.", "Steuer", "Steuer", ["Steuer"], "명사"),  # f = tax
+    ("Der erste Band der Reihe ist vergriffen.", "Band", "Band", ["Band"], "명사"),  # m = volume
+    ("Das Band zwischen ihnen ist stark.", "Band", "Band", ["Band"], "명사"),  # n = bond/ribbon
+    ("Er hat das Tor zum 2:0 geschossen.", "Tor", "Tor", ["Tor"], "명사"),  # n = goal/gate
+    ("Das Schild an der Tür war kaputt.", "Schild", "Schild", ["Schild"], "명사"),  # n = sign
+
     # ═══════════════════════════════════════════════════════════════════════════
     # 6. 형용사 (Adjectives)
     # ═══════════════════════════════════════════════════════════════════════════
     ("Doch damit Elektroautos praktisch genutzt werden können, braucht es eine gute zugängliche Infrastruktur.", "zugängliche", "zugänglich", ["zugängliche"], "형용사"),
     ("Passkeys sind eine Alternative für herkömmliche Passwörter.", "herkömmliche", "herkömmlich", ["herkömmliche"], "형용사"),
-    ("Die Anmeldung erfolgt mit einem besonderen Sicherheitscode.", "besonderen", "besonders", ["besonderen"], "형용사"),
+    ("Die Anmeldung erfolgt mit einem besonderen Sicherheitscode.", "besonderen", "besondere", ["besonderen"], "형용사"),
     ("Für den Test haben die Techniker eine standardisierte Testbeladung verwendet.", "standardisierte", "standardisiert", ["standardisierte"], "형용사"),
     ("Der berühmte Formel-1-Fahrer hat ein wichtiges Autorennen gewonnen.", "berühmte", "berühmt", ["berühmte"], "형용사"),
     ("Das zeigt, dass er ein kluger Mann ist.", "kluger", "klug", ["kluger"], "형용사"),
@@ -255,6 +267,18 @@ TEST_CASES_DE = [
     ("Sie wissen, dass er ein intelligenter Fahrer ist.", "intelligenter", "intelligent", ["intelligenter"], "형용사"),
     ("Das ist ein großes Haus.", "großes", "groß", ["großes"], "형용사"),
     ("Sie trägt ein rotes Kleid.", "rotes", "rot", ["rotes"], "형용사"),
+
+    # --- 분사형 형용사 (API에서 verb + adjective 다중 entry 발생) ---
+    ("Experten sind gespannt darauf, wie sich diese Entwicklung auswirken wird.", "gespannt", "gespannt", ["gespannt"], "형용사"),
+    ("Die Konkurrenz zwischen verschiedenen KI-Modellen wird immer härter.", "verschiedenen", "verschieden", ["verschiedenen"], "형용사"),
+    ("Viele befürchten, dass solche Systeme bestimmte Arbeitsplätze bedrohen könnten.", "bestimmte", "bestimmt", ["bestimmte"], "형용사"),
+    ("Er ist ein bekannter Schauspieler in Deutschland.", "bekannter", "bekannt", ["bekannter"], "형용사"),
+    ("Das war eine überraschende Wendung in der Geschichte.", "überraschende", "überraschend", ["überraschende"], "형용사"),
+    ("Sie hat eine bedeutende Rolle in dem Film gespielt.", "bedeutende", "bedeutend", ["bedeutende"], "형용사"),
+    ("Das Ergebnis war sehr enttäuschend für alle Beteiligten.", "enttäuschend", "enttäuschend", ["enttäuschend"], "형용사"),
+    ("Er hat einen entscheidenden Beitrag zum Projekt geleistet.", "entscheidenden", "entscheidend", ["entscheidenden"], "형용사"),
+    ("Die vergangenen Wochen waren sehr stressig.", "vergangenen", "vergangen", ["vergangenen"], "형용사"),
+    ("Das ist ein ausgezeichnetes Restaurant.", "ausgezeichnetes", "ausgezeichnet", ["ausgezeichnetes"], "형용사"),
 
     # ═══════════════════════════════════════════════════════════════════════════
     # 7. 부사 (Adverbs)
@@ -267,6 +291,14 @@ TEST_CASES_DE = [
     ("Er kommt heute.", "heute", "heute", ["heute"], "부사"),
     ("Sie singt sehr schön.", "schön", "schön", ["schön"], "부사"),
     ("Er läuft schnell.", "schnell", "schnell", ["schnell"], "부사"),
+
+    # --- 품사 겸용 부사 (adjective/adverb 다중 entry 가능) ---
+    ("Er hat das gerade erst erfahren.", "gerade", "gerade", ["gerade"], "부사"),
+    ("Sie spricht besonders gut Englisch.", "besonders", "besonders", ["besonders"], "부사"),
+    ("Er hat recht gut gespielt.", "recht", "recht", ["recht"], "부사"),
+    ("Laut einer Studie ist das gefährlich.", "Laut", "laut", ["Laut"], "부사"),
+    ("Sie hat ziemlich lange gewartet.", "ziemlich", "ziemlich", ["ziemlich"], "부사"),
+    ("Er hat das völlig falsch verstanden.", "völlig", "völlig", ["völlig"], "부사"),
 
     # ═══════════════════════════════════════════════════════════════════════════
     # 8. 전치사 (Prepositions)
@@ -413,6 +445,13 @@ TEST_CASES_EN = [
     ("The new model is faster and more efficient than its predecessor.", "faster", "fast", ["faster"], "adjective"),
     ("She received the highest score on the exam in the entire class.", "highest", "high", ["highest"], "adjective"),
 
+    # --- 동형이의어 형용사 (noun/verb와 동일 형태, 다중 entry 발생) ---
+    ("The room was light and airy with large windows.", "light", "light", ["light"], "adjective"),
+    ("She felt close to her grandmother despite the distance.", "close", "close", ["close"], "adjective"),
+    ("He has a pretty good understanding of the topic.", "pretty", "pretty", ["pretty"], "adjective"),
+    ("That was a fair decision by the referee.", "fair", "fair", ["fair"], "adjective"),
+    ("The sound of the bell was very clear.", "clear", "clear", ["clear"], "adjective"),
+
     # ═══════════════════════════════════════════════════════════════════════════
     # 9. 부사 (Adverbs)
     # ═══════════════════════════════════════════════════════════════════════════
@@ -423,8 +462,26 @@ TEST_CASES_EN = [
     ("The train moved slowly through the mountainous region.", "slowly", "slowly", ["slowly"], "adverb"),
     ("She always arrives early for important meetings.", "early", "early", ["early"], "adverb"),
 
+    # --- 품사 겸용 부사 (adjective와 동일 형태, 다중 entry 발생) ---
+    ("She ran fast to catch the bus.", "fast", "fast", ["fast"], "adverb"),
+    ("He worked hard all day long.", "hard", "hard", ["hard"], "adverb"),
+    ("Turn left at the traffic light and the hospital is on your right.", "left", "left", ["left"], "adverb"),
+    ("She sang pretty well for her first performance.", "pretty", "pretty", ["pretty"], "adverb"),
+    ("He still lives in the same house.", "still", "still", ["still"], "adverb"),
+    ("She just arrived a few minutes ago.", "just", "just", ["just"], "adverb"),
+
     # ═══════════════════════════════════════════════════════════════════════════
-    # 10. 전치사 & 접속사 (Prepositions & Conjunctions)
+    # 10. 동형이의어 명사 (verb/adjective와 동일 형태, 다중 entry 발생)
+    # ═══════════════════════════════════════════════════════════════════════════
+    ("The morning run helped him clear his mind.", "run", "run", ["run"], "noun"),
+    ("She turned on the light in the hallway.", "light", "light", ["light"], "noun"),
+    ("He took a left at the intersection.", "left", "left", ["left"], "noun"),
+    ("The play was a huge success on Broadway.", "play", "play", ["play"], "noun"),
+    ("The match ended in a draw after extra time.", "match", "match", ["match"], "noun"),
+    ("He made a fair point during the debate.", "point", "point", ["point"], "noun"),
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 11. 전치사 & 접속사 (Prepositions & Conjunctions)
     # ═══════════════════════════════════════════════════════════════════════════
     ("The book you were looking for is on the table in the living room.", "on", "on", ["on"], "preposition"),
     ("She sat between her two best friends during the ceremony.", "between", "between", ["between"], "preposition"),
