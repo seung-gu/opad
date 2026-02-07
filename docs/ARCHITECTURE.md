@@ -1620,6 +1620,81 @@ if (containerRef.current.getAttribute('data-processed') === 'true') {
 - Simplifies component update logic
 - Ensures consistent behavior across content changes
 
+#### Sentence Extraction via DOM Offset Matching (`src/web/components/MarkdownViewer.tsx`)
+
+**Purpose**: Accurately extract the sentence containing a clicked word for dictionary lookup context, even when the same word appears in multiple sentences.
+
+**Problem with Previous Approach**:
+The previous `extractSentence` implementation normalized whitespace up front, then used `String.includes()` to find the first sentence containing the clicked word. This was inaccurate when the same word appeared in multiple sentences -- the function always returned the first occurrence regardless of which instance the user actually clicked.
+
+**Current Approach -- DOM Offset-Based Matching**:
+
+1. **`getTextOffset(parent, target)`**: A helper function that calculates the character offset of a target node (the clicked word span) within a parent element's `textContent`. Uses `TreeWalker` with `NodeFilter.SHOW_TEXT` to iterate through all text nodes in DOM order, accumulating character lengths until the target node is found.
+
+2. **`extractSentence(wordSpan)`**: Uses the computed offset to match against sentence-splitter's range metadata:
+   - Retrieves raw `textContent` from the parent element (no whitespace normalization, to preserve accurate character offsets)
+   - Calls `getTextOffset()` to determine where the clicked span sits in the text
+   - Passes the raw text to `sentence-splitter`'s `split()` function, which returns sentence nodes with `range: [start, end]` metadata
+   - Finds the sentence whose range contains the span offset (`spanOffset >= range[0] && spanOffset < range[1]`)
+   - Applies whitespace normalization (`replace(/\s+/g, ' ').trim()`) only at return-time on the matched sentence
+
+**Fallback Chain**:
+```
+DOM offset + sentence-splitter range matching
+    |
+    v (if getTextOffset returns -1)
+includes-based first-match (original behavior)
+    |
+    v (if sentence-splitter throws)
+Simple regex split on punctuation
+```
+
+**Implementation** (`src/web/components/MarkdownViewer.tsx:256-319`):
+```typescript
+/** Calculate the character offset of a target node within a parent's textContent. */
+const getTextOffset = (parent: Node, target: Node): number => {
+  let offset = 0
+  const walker = document.createTreeWalker(parent, NodeFilter.SHOW_TEXT)
+  let node: Text | null
+  while ((node = walker.nextNode() as Text | null)) {
+    if (target.contains(node)) {
+      return offset
+    }
+    offset += (node.textContent || '').length
+  }
+  return -1
+}
+
+const extractSentence = (wordSpan: HTMLElement): string => {
+  // ...parent resolution...
+  const text = parent.textContent || ''  // Raw text, no normalization
+  const spanOffset = getTextOffset(parent, wordSpan)
+
+  const result = split(text)
+  const sentences = result.filter(node => node.type === 'Sentence')
+
+  if (spanOffset >= 0) {
+    const found = sentences.find(node =>
+      spanOffset >= node.range[0] && spanOffset < node.range[1]
+    )
+    if (found) {
+      return found.raw.replace(/\s+/g, ' ').trim()  // Normalize only at return
+    }
+  }
+  // ...fallback logic...
+}
+```
+
+**Key Design Decisions**:
+- **No early whitespace normalization**: Raw `textContent` is used for offset calculation and sentence-splitter input so that character positions remain aligned between `getTextOffset` and the splitter's range metadata
+- **Whitespace normalization at return-time only**: The matched sentence's `raw` value is normalized before being returned, ensuring clean output for the dictionary API
+- **Graceful degradation**: If `getTextOffset` returns `-1` (target node not found in parent), the function falls back to the original `includes`-based matching with a console warning
+
+**Benefits**:
+- Correctly identifies the sentence for duplicate words (e.g., "die" appearing in multiple German sentences)
+- Preserves offset accuracy by deferring whitespace normalization
+- Maintains backward compatibility through the fallback chain
+
 ### Bug Fixes
 
 #### 1. Conjugations Type Conversion

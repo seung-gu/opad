@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.2] - 2026-02-07
+
+### Fixed
+- Sentence extraction for duplicate words in same paragraph now uses DOM offset-based matching with TreeWalker and sentence-splitter range info instead of fragile includes-based first-match (issue #87)
+- Added fallback warning log for sentence extraction when DOM offset calculation fails
+- Vocabulary button no longer appears for `<code>` and `<pre>` blocks (code review improvement)
 
 ## [0.11.1] - 2026-02-06
 
