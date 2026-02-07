@@ -252,43 +252,69 @@ export default function MarkdownViewer({
     }
   }, [vocabularies])
 
+  /** Calculate the character offset of a target node within a parent's textContent. */
+  const getTextOffset = (parent: Node, target: Node): number => {
+    let offset = 0
+    const walker = document.createTreeWalker(parent, NodeFilter.SHOW_TEXT)
+    let node: Text | null
+    while ((node = walker.nextNode() as Text | null)) {
+      if (target.contains(node)) {
+        return offset
+      }
+      offset += (node.textContent || '').length
+    }
+    return -1
+  }
+
   // Extract sentence containing the clicked word
   const extractSentence = (wordSpan: HTMLElement): string => {
     // If parent.innerText equals word, it's likely an inline element, go up one more level
     let parent = wordSpan.parentElement
     const word = wordSpan.textContent || ''
-    
+
     if (parent && parent.innerText === word) {
       parent = parent.parentElement
     }
-    
+
     if (!parent) {
       return containerRef.current?.textContent || ''
     }
-    
-    const text = (parent.textContent || '').replace(/\s+/g, ' ').trim()
-    
-    try {
-      // Use sentence-splitter to split text into sentences
-      const result = split(text)
-      const sentences = result
-        .filter(node => node.type === 'Sentence')
-        .map(node => node.raw.trim())
-        .filter(s => s)
-      
-      // Find sentence containing the clicked word (use includes for Korean/Unicode support)
-      const found = sentences.find(s =>
-        s.toLowerCase().includes(word.toLowerCase())
-      )
+    // Use raw textContent (no whitespace normalization) to preserve offsets
+    const text = parent.textContent || ''
 
-      return found || text
+    // Calculate the character offset of the clicked span within the parent
+    const spanOffset = getTextOffset(parent, wordSpan)
+
+    try {
+      // Use sentence-splitter to split text into sentences with range info
+      const result = split(text)
+      const sentences = result.filter(node => node.type === 'Sentence')
+
+      // Find the sentence whose range contains the span's offset
+      if (spanOffset >= 0) {
+        const found = sentences.find(node =>
+          spanOffset >= node.range[0] && spanOffset < node.range[1]
+        )
+        if (found) {
+          return found.raw.replace(/\s+/g, ' ').trim()
+        }
+      }
+
+      // Fallback: first sentence containing the word (includes-based, may be inaccurate for duplicate words)
+      if (spanOffset === -1) {
+        console.warn('[extractSentence] getTextOffset returned -1, falling back to includes-based matching')
+      }
+      const fallback = sentences.find(node =>
+        node.raw.toLowerCase().includes(word.toLowerCase())
+      )
+      return fallback ? fallback.raw.replace(/\s+/g, ' ').trim() : text.replace(/\s+/g, ' ').trim()
     } catch (error) {
       // Fallback to simple split if sentence-splitter fails
       console.warn('sentence-splitter failed, using fallback:', error)
-      // Use non-greedy pattern to avoid ReDoS
-      const sentences = text.split(/([.!?]\s*)/).filter(s => s.trim())
+      const normalized = text.replace(/\s+/g, ' ').trim()
+      const sentences = normalized.split(/([.!?]\s*)/).filter(s => s.trim())
       const found = sentences.find(s => s.toLowerCase().includes(word.toLowerCase()))
-      return found ? found.trim() : text
+      return found ? found.trim() : normalized
     }
   }
 
