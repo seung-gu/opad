@@ -1695,6 +1695,67 @@ const extractSentence = (wordSpan: HTMLElement): string => {
 - Preserves offset accuracy by deferring whitespace normalization
 - Maintains backward compatibility through the fallback chain
 
+#### Dictionary Lookup Caching with Sentence Context (`src/web/components/MarkdownViewer.tsx`)
+
+**Purpose**: Cache dictionary lookup results so that the same word in the same sentence context returns the cached lemma and definition without making duplicate API calls. Sentence context is included in cache keys to correctly handle context-dependent words (e.g., German "sich" mapping to different lemmas in different sentences).
+
+**Cache Refs**:
+
+| Ref | Key Format | Value | Purpose |
+|-----|-----------|-------|---------|
+| `lemmaCacheRef` | `language:word:sentence` | JSON string of `{lemma, definition, related_words, ...}` | Full LLM response cache keyed by language, word, and sentence context |
+| `wordToLemmaRef` | `word:sentence` | `lemma` string | Quick word-to-lemma mapping for finding same-lemma variants within a sentence |
+
+**Key Format Examples**:
+```
+lemmaCacheRef:  "German:hängt:diese große spanne hängt von mehreren faktoren ab." -> '{"lemma":"abhängen","definition":"..."}'
+wordToLemmaRef: "hängt:diese große spanne hängt von mehreren faktoren ab." -> "abhängen"
+```
+
+**Why Sentence Context in Cache Keys**:
+The same word can have different meanings (and different lemmas) depending on the sentence. For example, German "sich" could map to "sich befinden" (to be located) in one sentence and "sich freuen" (to be happy) in another. Using word-only keys (`language:word`) would incorrectly return the cached result from the first lookup for all subsequent lookups of the same word, regardless of context. The sentence-context key format (`language:word:sentence`) ensures each unique word+sentence combination gets its own cache entry.
+
+**Helper Functions**:
+
+- **`getWordMeaning(word, sentence)`**: Retrieves the cached definition and display lemma for a word within a specific sentence context. Checks `wordToLemmaRef` first (fast path), then `lemmaCacheRef`, then falls back to `wordDefinitions` state by word key.
+
+- **`getRelatedWords(word, sentence)`**: Retrieves cached related words (e.g., separable verb particles) for a word within a specific sentence context from `lemmaCacheRef`.
+
+**`handleWordClick` Cache Lookup Flow**:
+```
+handleWordClick(spanId, word)
+    |
+    v
+extractSentence(spanElement)         <-- Called BEFORE any cache checks
+    |
+    v
+Build sentenceCacheKey = "language:word:sentence"
+    |
+    v
+Check lemmaCacheRef[sentenceCacheKey]
+    |-- hit + definition exists --> return (no API call)
+    |
+    v
+Check wordToLemmaRef["word:sentence"]
+    |-- hit + definition exists --> return (no API call)
+    |
+    v
+Check wordDefinitions[word]          <-- Fallback for old cache format
+    |-- hit --> return (no API call)
+    |
+    v
+Check loadingWordsRef (prevent duplicate fetches)
+    |
+    v
+getWordDefinitionFromLLM(word, sentence)
+    |
+    v
+Store results:
+  - wordToLemmaRef["word:sentence"] = lemma
+  - wordToLemmaRef["relatedWord:sentence"] = lemma (for each related word)
+  - lemmaCacheRef["language:word:sentence"] = JSON({lemma, definition, ...})
+```
+
 ### Bug Fixes
 
 #### 1. Conjugations Type Conversion
@@ -1763,6 +1824,13 @@ The `formatOperationName()` helper prioritizes `agent_name` over the raw operati
 User clicks word in MarkdownViewer
     |
     v
+extractSentence(spanElement)       <-- Sentence extracted early
+    |
+    v
+Cache check (lemmaCacheRef, wordToLemmaRef) using sentence-context key
+    |-- cache hit --> show cached definition (no API call, no token usage update)
+    |
+    v (cache miss)
 Dictionary API call (POST /dictionary/search)
     |
     v

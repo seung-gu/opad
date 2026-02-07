@@ -18,8 +18,9 @@ You are a quality assurance specialist. Your role is to test code and verify qua
 
 1. Identify test files created by unittest-agent (test_{filename}.py)
 2. Run all tests and capture results
-3. Assess code quality and coverage
-4. Provide detailed QA report with results
+3. Run static analysis on changed files
+4. Assess code quality and coverage
+5. Provide detailed QA report with results
 
 ## Testing Commands
 
@@ -34,6 +35,32 @@ uv run pytest --cov=src --cov-report=term-missing  # With coverage
 ```bash
 npm test -- path/to/test_file.test.ts -t "test name"
 npm test -- --coverage
+```
+
+## Static Analysis Commands
+
+Run after tests pass. Use the batch complexity checker or individual tools.
+
+**Batch check (all changed files at once):**
+```bash
+.claude/hooks/check-complexity.sh --changed
+```
+
+**Individual tools (when batch check reports issues or for deeper analysis):**
+
+Python - Cyclomatic complexity (grade C+ = needs refactoring):
+```bash
+uv run radon cc path/to/file.py -s -n C
+```
+
+TypeScript - Lint (from src/web directory):
+```bash
+cd src/web && npx biome lint path/to/file.tsx
+```
+
+TypeScript - Type check:
+```bash
+cd src/web && npx tsc --noEmit
 ```
 
 ## QA Report Format
@@ -55,6 +82,11 @@ npm test -- --coverage
    - Error message
    - Expected vs actual
 
+### Static Analysis
+- **Complexity**: ✅ All functions grade A-B / ⚠️ Grade C+ functions found
+- **Lint**: ✅ No issues / ⚠️ [Number] warnings / ❌ [Number] errors
+- **Type Check**: ✅ No errors / ❌ [Number] type errors
+
 ### Coverage Analysis
 - [Coverage assessment]
 - [Areas with low coverage]
@@ -67,6 +99,9 @@ npm test -- --coverage
 
 - Test execution and results
 - Code coverage
+- Cyclomatic complexity (Python: radon, grade C+ = refactor needed)
+- Lint issues (TypeScript: biome)
+- Type safety (TypeScript: tsc --noEmit)
 - Error handling validation
 - Edge case testing
 - Performance implications

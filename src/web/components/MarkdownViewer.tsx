@@ -36,6 +36,10 @@ function escapeHtml(text: string): string {
   return div.innerHTML
 }
 
+// Cache key helpers (module-level pure functions, no component state dependency)
+const wordSentenceKey = (w: string, s: string) => `${w.toLowerCase()}:${s.toLowerCase()}`
+const lemmaCacheKey = (lang: string, w: string, s: string) => `${lang}:${w.toLowerCase()}:${s.toLowerCase()}`
+
 interface MarkdownViewerProps {
   content: string
   language?: string // Target language for dictionary API lookups
@@ -62,58 +66,53 @@ export default function MarkdownViewer({
   const [loadingWords, setLoadingWords] = useState<Set<string>>(new Set())
   const containerRef = useRef<HTMLDivElement>(null)
   const spanIdCounterRef = useRef<number>(0) // Counter for generating unique span IDs
-  const lemmaCacheRef = useRef<Map<string, string>>(new Map()) // Cache word lemmas from LLM: "language:word" -> JSON string of {lemma, definition, related_words}
-  const wordToLemmaRef = useRef<Map<string, string>>(new Map()) // Word -> Lemma mapping: "word" -> "lemma" (for finding same lemma variants)
+  const lemmaCacheRef = useRef<Map<string, string>>(new Map()) // Cache word lemmas from LLM: "language:word:sentence" -> JSON string of {lemma, definition, related_words}
+  const wordToLemmaRef = useRef<Map<string, string>>(new Map()) // Word -> Lemma mapping: "word:sentence" -> "lemma" (for finding same lemma variants)
   const loadingWordsRef = useRef<Set<string>>(new Set()) // Synchronous loading state tracking
 
   // Helper: Get word meaning and lemma from cache
-  const getWordMeaning = useCallback((word: string): { meaning: string | null, displayLemma: string } => {
+  const getWordMeaning = useCallback((word: string, sentence: string): { meaning: string | null, displayLemma: string } => {
     let meaning: string | null = null
     let displayLemma: string = word
 
-    if (wordToLemmaRef.current.has(word.toLowerCase())) {
-      const lemma = wordToLemmaRef.current.get(word.toLowerCase())
-      if (lemma) {
-        displayLemma = lemma
-        meaning = wordDefinitions[lemma] || null
-      }
+    const lemma = wordToLemmaRef.current.get(wordSentenceKey(word, sentence))
+    if (lemma) {
+      displayLemma = lemma
+      meaning = wordDefinitions[lemma] || null
     }
 
     if (!meaning) {
-      const wordCacheKey = language ? `${language}:${word.toLowerCase()}` : null
-      if (wordCacheKey && lemmaCacheRef.current.has(wordCacheKey)) {
-        const cached = lemmaCacheRef.current.get(wordCacheKey)
-        if (cached) {
-          try {
-            const { lemma } = JSON.parse(cached)
-            displayLemma = lemma
-            meaning = wordDefinitions[lemma] || null
-          } catch {
-            console.warn('[Dictionary] Failed to parse cached value')
-          }
+      const cacheKey = language ? lemmaCacheKey(language, word, sentence) : null
+      const cached = cacheKey ? lemmaCacheRef.current.get(cacheKey) : undefined
+      if (cached) {
+        try {
+          const { lemma: cachedLemma } = JSON.parse(cached)
+          displayLemma = cachedLemma
+          meaning = wordDefinitions[cachedLemma] || null
+        } catch {
+          console.warn('[Dictionary] Failed to parse cached value')
         }
       }
     }
 
+    // Fallback: check error entry stored as word:sentence key (normalized)
     if (!meaning) {
-      meaning = wordDefinitions[word] || null
+      meaning = wordDefinitions[wordSentenceKey(word, sentence)] || null
     }
 
     return { meaning, displayLemma }
   }, [language, wordDefinitions])
 
   // Helper: Get related words from cache
-  const getRelatedWords = useCallback((word: string): string[] | undefined => {
-    const wordCacheKey = language ? `${language}:${word.toLowerCase()}` : null
-    if (wordCacheKey && lemmaCacheRef.current.has(wordCacheKey)) {
-      const cached = lemmaCacheRef.current.get(wordCacheKey)
-      if (cached) {
-        try {
-          const { related_words } = JSON.parse(cached)
-          return related_words
-        } catch {
-          // Ignore parse error
-        }
+  const getRelatedWords = useCallback((word: string, sentence: string): string[] | undefined => {
+    const cacheKey = language ? lemmaCacheKey(language, word, sentence) : null
+    const cached = cacheKey ? lemmaCacheRef.current.get(cacheKey) : undefined
+    if (cached) {
+      try {
+        const { related_words } = JSON.parse(cached)
+        return related_words
+      } catch {
+        // Ignore parse error
       }
     }
     return undefined
@@ -279,11 +278,24 @@ export default function MarkdownViewer({
     if (!parent) {
       return containerRef.current?.textContent || ''
     }
-    // Use raw textContent (no whitespace normalization) to preserve offsets
-    const text = parent.textContent || ''
 
-    // Calculate the character offset of the clicked span within the parent
-    const spanOffset = getTextOffset(parent, wordSpan)
+    // Temporarily remove definition popups to get clean textContent
+    // (definitions inserted by previous clicks contaminate parent.textContent)
+    const defs = Array.from(parent.querySelectorAll('.word-definition'))
+    const defInfo = defs.map(d => ({ el: d, next: d.nextSibling }))
+    defs.forEach(d => d.remove())
+
+    let text = ''
+    let spanOffset = -1
+    try {
+      text = parent.textContent || ''
+      spanOffset = getTextOffset(parent, wordSpan)
+    } finally {
+      // Restore in reverse order so earlier nextSibling references remain valid
+      for (let i = defInfo.length - 1; i >= 0; i--) {
+        parent!.insertBefore(defInfo[i].el, defInfo[i].next)
+      }
+    }
 
     try {
       // Use sentence-splitter to split text into sentences with range info
@@ -334,19 +346,16 @@ export default function MarkdownViewer({
       return null
     }
 
-    // First check word-only cache (same word = same definition, regardless of sentence)
-    const wordCacheKey = `${language}:${word.toLowerCase()}`
-    if (lemmaCacheRef.current.has(wordCacheKey)) {
-      const cached = lemmaCacheRef.current.get(wordCacheKey)
-      if (cached) {
-        try {
-          const { lemma, definition, related_words, pos, gender, phonetics, conjugations, level, examples } = JSON.parse(cached)
-          // Debug: console.log('[Dictionary] Using word-only cache for:', word)
-          return { lemma, definition, related_words, pos, gender, phonetics, conjugations, level, examples }
-        } catch {
-          console.warn('[Dictionary] Failed to parse cached value, clearing cache')
-          lemmaCacheRef.current.delete(wordCacheKey)
-        }
+    // First check sentence-context cache (same word + sentence = same definition)
+    const sentenceCacheKey = lemmaCacheKey(language, word, sentence)
+    const cached = lemmaCacheRef.current.get(sentenceCacheKey)
+    if (cached) {
+      try {
+        const { lemma, definition, related_words, pos, gender, phonetics, conjugations, level, examples } = JSON.parse(cached)
+        return { lemma, definition, related_words, pos, gender, phonetics, conjugations, level, examples }
+      } catch {
+        console.warn('[Dictionary] Failed to parse cached value, clearing cache')
+        lemmaCacheRef.current.delete(sentenceCacheKey)
       }
     }
 
@@ -388,11 +397,10 @@ export default function MarkdownViewer({
       const examples = data.examples || undefined
 
       if (definition) {
-        // Cache: store word-only cache (same word = same definition, regardless of sentence)
-        const wordCacheKey = `${language}:${word.toLowerCase()}`
+        // Cache: store sentence-context cache (same word + sentence = same definition)
         const cacheValue = JSON.stringify({ lemma, definition, related_words, pos, gender, phonetics, conjugations, level, examples })
 
-        lemmaCacheRef.current.set(wordCacheKey, cacheValue)
+        lemmaCacheRef.current.set(sentenceCacheKey, cacheValue)
 
         // Refresh token usage after successful dictionary search
         onTokenUsageUpdate?.()
@@ -425,94 +433,74 @@ export default function MarkdownViewer({
     if (!isOpening) {
       return
     }
-    
-    // First, try to find lemma from cache for this specific word
-    const wordCacheKey = `${language}:${word.toLowerCase()}`
-    if (lemmaCacheRef.current.has(wordCacheKey)) {
-      const cached = lemmaCacheRef.current.get(wordCacheKey)
-      if (cached) {
-        try {
-          const { lemma } = JSON.parse(cached)
-          // Check if we already have definition for this lemma
-          if (wordDefinitions[lemma]) {
-            // Debug: console.log('[Dictionary] Using cached definition for lemma:', lemma, 'from word:', word)
-            return
-          }
-        } catch {
-          console.warn('[Dictionary] Failed to parse cached value, clearing cache')
-          lemmaCacheRef.current.delete(wordCacheKey)
-        }
-      }
-    }
-    
-    // Try to find lemma from wordToLemmaRef (if this word was mapped before)
-    if (wordToLemmaRef.current.has(word.toLowerCase())) {
-      const lemma = wordToLemmaRef.current.get(word.toLowerCase())
-      if (lemma && wordDefinitions[lemma]) {
-        // Debug: console.log('[Dictionary] Using cached definition for lemma:', lemma, 'from word mapping:', word)
-        return
-      }
-    }
-    
-    // If already cached by word (fallback for old cache format)
-    if (wordDefinitions[word]) {
-      // Debug: console.log('[Dictionary] Using cached definition for:', word, wordDefinitions[word])
-      return
-    }
-    
-    // If already loading, don't fetch again (check ref for synchronous check)
-    if (loadingWordsRef.current.has(word)) {
-      // Debug: console.log('[Dictionary] Already loading:', word)
-      return
-    }
-    
-    // Debug: console.log('[Dictionary] Fetching definition for:', word, 'Current cache:', Object.keys(wordDefinitions))
-    
-    // Mark as loading immediately (synchronous)
-    loadingWordsRef.current.add(word)
-    setLoadingWords(prev => new Set(prev).add(word))
-    
-    // Find the span element to extract sentence
+
+    // Extract sentence context early (needed for cache key lookups)
     const spanElement = containerRef.current?.querySelector(`[data-span-id="${spanId}"]`) as HTMLElement
     const sentence = spanElement ? extractSentence(spanElement) : ''
-    
-    // Debug: console.log('[Dictionary] Extracted sentence:', sentence)
-    
+
+    // First, try to find lemma from cache for this specific word + sentence
+    const sentenceCacheKey = language ? lemmaCacheKey(language, word, sentence) : null
+    const cachedEntry = sentenceCacheKey ? lemmaCacheRef.current.get(sentenceCacheKey) : undefined
+    if (cachedEntry) {
+      try {
+        const { lemma } = JSON.parse(cachedEntry)
+        if (wordDefinitions[lemma]) {
+          return
+        }
+      } catch {
+        console.warn('[Dictionary] Failed to parse cached value, clearing cache')
+        if (sentenceCacheKey) lemmaCacheRef.current.delete(sentenceCacheKey)
+      }
+    }
+
+    // Try to find lemma from wordToLemmaRef (if this word was mapped before)
+    const mappedLemma = wordToLemmaRef.current.get(wordSentenceKey(word, sentence))
+    if (mappedLemma && wordDefinitions[mappedLemma]) {
+      return
+    }
+
+    // If already loading this word in this sentence, don't fetch again
+    const loadingKey = wordSentenceKey(word, sentence)
+    if (loadingWordsRef.current.has(loadingKey)) {
+      return
+    }
+
+    // Mark as loading immediately (synchronous)
+    loadingWordsRef.current.add(loadingKey)
+    setLoadingWords(prev => new Set(prev).add(loadingKey))
+
     // Get definition and lemma from LLM using sentence context
     const result = await getWordDefinitionFromLLM(word, sentence)
 
-    loadingWordsRef.current.delete(word)
+    loadingWordsRef.current.delete(loadingKey)
     setLoadingWords(prev => {
       const next = new Set(prev)
-      next.delete(word)
+      next.delete(loadingKey)
       return next
     })
-    
+
     if (result) {
       // Store definition using LEMMA as key (so different word forms with same lemma share the same definition)
       const lemma = result.lemma || word
       setWordDefinitions(prev => ({
         ...prev,
-        [lemma]: result.definition  // Use lemma as key, not word
+        [lemma]: result.definition
       }))
-      
-      // Store word -> lemma mapping (so we can find same lemma variants later)
-      // Preserve lemma capitalization (important for German nouns: Hund, not hund)
-      wordToLemmaRef.current.set(word.toLowerCase(), lemma)
-      
-      // Note: lemmaCacheRef is already set in getWordDefinitionFromLLM, no need to set again here
-      
+
+      // Store word -> lemma mapping (preserve lemma capitalization for German nouns)
+      wordToLemmaRef.current.set(wordSentenceKey(word, sentence), lemma)
+
       // Store related_words mapping for all related words
       if (result.related_words && result.related_words.length > 0) {
         result.related_words.forEach(relatedWord => {
-          wordToLemmaRef.current.set(relatedWord.toLowerCase(), lemma)
+          wordToLemmaRef.current.set(wordSentenceKey(relatedWord, sentence), lemma)
         })
       }
     } else {
-      // Store error using word as key (since we don't have lemma)
+      // Store error using normalized word:sentence key to avoid cross-sentence contamination
       setWordDefinitions(prev => ({
         ...prev,
-        [word]: 'Definition not found'
+        [wordSentenceKey(word, sentence)]: 'Definition not found'
       }))
     }
   }, [language, openSpanIds, wordDefinitions, loadingWords])
@@ -725,11 +713,9 @@ export default function MarkdownViewer({
       
       const word = span.getAttribute(DATA_ATTR.WORD)
       if (!word) return
-      
-      const { meaning, displayLemma } = getWordMeaning(word)
-      const isLoading = loadingWords.has(word) || loadingWordsRef.current.has(word)
-      
-      // Remove existing definition if it exists
+
+      // Remove existing definition FIRST (before extractSentence, to avoid
+      // definition text contaminating parent.textContent and corrupting cache keys)
       const existingDef = span.nextElementSibling
       if (existingDef && existingDef.classList.contains('word-definition')) {
         const afterDef = existingDef.nextSibling
@@ -738,13 +724,18 @@ export default function MarkdownViewer({
           span.parentNode?.insertBefore(afterDef, span.nextSibling)
         }
       }
-      
+
+      const sentence = extractSentence(span)
+      const { meaning, displayLemma } = getWordMeaning(word, sentence)
+      const loadKey = wordSentenceKey(word, sentence)
+      const isLoading = loadingWords.has(loadKey) || loadingWordsRef.current.has(loadKey)
+
       // Only show if loading or has meaning
       if (isLoading || meaning) {
         const afterWord = span.nextSibling
         const defSpan = document.createElement('span')
         defSpan.className = 'word-definition'
-        
+
         if (isLoading && !meaning) {
           // Use DOM methods instead of innerHTML to prevent XSS
           const strong = document.createElement('strong')
@@ -756,11 +747,10 @@ export default function MarkdownViewer({
           defSpan.appendChild(em)
         } else if (meaning) {
           const isInVocabulary = vocabularies.some(v => v.lemma.toLowerCase() === displayLemma.toLowerCase())
-          const sentence = extractSentence(span)
-          const relatedWords = getRelatedWords(word)
+          const relatedWords = getRelatedWords(word, sentence)
 
           // Get additional fields from cache
-          const wordCacheKey = language ? `${language}:${word.toLowerCase()}` : null
+          const cacheKey = language ? lemmaCacheKey(language, word, sentence) : null
           let pos: string | undefined
           let gender: string | undefined
           let phonetics: string | undefined
@@ -768,20 +758,18 @@ export default function MarkdownViewer({
           let level: string | undefined
           let examples: string[] | undefined
 
-          if (wordCacheKey && lemmaCacheRef.current.has(wordCacheKey)) {
-            const cached = lemmaCacheRef.current.get(wordCacheKey)
-            if (cached) {
-              try {
-                const parsedCache = JSON.parse(cached)
-                pos = parsedCache.pos
-                gender = parsedCache.gender
-                phonetics = parsedCache.phonetics
-                conjugations = parsedCache.conjugations
-                level = parsedCache.level
-                examples = parsedCache.examples
-              } catch {
-                // Ignore parse error
-              }
+          const cachedData = cacheKey ? lemmaCacheRef.current.get(cacheKey) : undefined
+          if (cachedData) {
+            try {
+              const parsedCache = JSON.parse(cachedData)
+              pos = parsedCache.pos
+              gender = parsedCache.gender
+              phonetics = parsedCache.phonetics
+              conjugations = parsedCache.conjugations
+              level = parsedCache.level
+              examples = parsedCache.examples
+            } catch {
+              // Ignore parse error
             }
           }
 
