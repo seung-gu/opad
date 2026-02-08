@@ -1,9 +1,6 @@
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
-from crewai_tools import SerperDevTool
-from crewai.memory import ShortTermMemory, LongTermMemory, EntityMemory
-from crewai.memory.storage.rag_storage import RAGStorage
-from crewai.memory.storage.ltm_sqlite_storage import LTMSQLiteStorage
+from crewai_tools import SerperDevTool, ScrapeWebsiteTool
 
 from crew.models import NewsArticleList, SelectedArticle, ReviewedArticle
 from crew.guardrails import repair_json_output
@@ -32,13 +29,12 @@ class ReadingMaterialCreator():
     def article_finder(self) -> Agent:
         return Agent(
             config=self.agents_config['article_finder'],
-            tools=[SerperDevTool()],
-            memory=True
+            tools=[SerperDevTool(search_type="news"), ScrapeWebsiteTool()]
         )
 
     @agent
     def article_picker(self) -> Agent:
-        return Agent(config=self.agents_config['article_picker'])
+        return Agent(config=self.agents_config['article_picker'], memory=False)
 
     @agent
     def article_rewriter(self) -> Agent:
@@ -81,46 +77,9 @@ class ReadingMaterialCreator():
     @crew
     def crew(self) -> Crew:
         """ Creates the Reading Material Creator Crew """
-        
-        short_term_memory = ShortTermMemory(
-            storage=RAGStorage(
-                embedder_config={
-                    "provider": "openai",
-                    "config": {
-                        "model": "text-embedding-3-small"
-                    }
-                },
-                type="short_term",
-                path="./memory/"
-            )
-        )
-        
-        long_term_memory = LongTermMemory(
-            storage=LTMSQLiteStorage(
-                db_path="./memory/long_term_memory_storage.db"
-            )
-        )
-        
-        entity_memory = EntityMemory(
-            storage=RAGStorage(
-                embedder_config={
-                    "provider": "openai",
-                    "config": {
-                        "model": "text-embedding-3-small"
-                    }
-                },
-                type="entity",
-                path="./memory/"
-            )
-        )
-        
         return Crew(
             agents=self.agents,
             tasks=self.tasks,
-            process=Process.sequential,  # sequential process: find articles -> pick best -> adapt for learners
+            process=Process.sequential,
             verbose=True,
-            memory=True,
-            short_term_memory=short_term_memory,
-            long_term_memory=long_term_memory,
-            entity_memory=entity_memory
         )

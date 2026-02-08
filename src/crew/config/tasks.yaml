@@ -1,8 +1,10 @@
 find_news_articles:
   description: >
-    Search for 2-3 recent news articles about {topic} in {language}.
-    The articles should be approximately {length} words in length and cover current, relevant news on the specified topic.
-    Return the full text of 2-3 most suitable news articles you find, ensuring each article includes complete source information.
+    Search for 3-5 recent news articles about {topic} in {language}.
+    Focus on topic relevance and language — do not filter by length or difficulty at this stage.
+    For each article found, use the scraping tool to fetch the FULL article text from its URL.
+    Do NOT use search snippets as article content — always scrape the actual page.
+    Skip video pages, podcasts, image galleries, and other multimedia-only content — only include articles with substantial text (at least 200 words of body text).
     Return the result as valid JSON format with proper string quotes for all keys and values.
   expected_output: >
     Return a valid JSON object with this exact structure:
@@ -24,13 +26,16 @@ find_news_articles:
 
 pick_best_article:
   description: >
-    Evaluate the 2-3 news articles found by the paragraph finder and select the single best article that:
-    - Most closely matches the {topic} requirement
-    - Is most appropriate for {level} level learners in {language}
-    - Has a length closest to {length} words
-    - Provides the best educational value for language learning
-    - Is the most recent article
-    
+    You MUST select ONLY from the articles provided by the finder. Do NOT search for, invent, or use any article not in the provided list.
+    From those articles, rank all candidates by these criteria (in priority order):
+    1. Topic: {topic}
+    2. Difficulty: {level} level (CEFR) in {language}
+    3. Length: approximately {length} words
+
+    Select the ONE article that is the closest overall match.
+    Prefer articles focused on a single topic. Avoid roundup/compilation articles that cover multiple unrelated topics (e.g. "good news of the week").
+    Only return null if no candidate is even remotely related to the topic. Length and level mismatches are acceptable — the rewriter will adjust those.
+
     Before selecting, check the source URL to confirm the article exists there.
     If an author name is provided, verify it matches the actual author on the source page. If the author doesn't match or cannot be found on the page, do not include an author name or select a different article.
     Only select articles that can be verified through the source URL.
@@ -64,6 +69,8 @@ adapt_news_article:
     Ensure the final text is approximately {length} words.
     Make the content engaging and educational, suitable for language learning reading materials.
     Preserve the main facts, context, and important details from the original article.
+    NEVER fabricate or invent information not present in the original article. Only use facts from the provided content.
+    If the original article is short, keep the rewrite short — do NOT pad it with made-up content to reach the target length.
 
     **Vocabulary Reinforcement:**
     The learner has previously studied these words: {vocabulary_list}
@@ -100,11 +107,12 @@ review_article_quality:
     Target level: {level}
 
     Check and fix:
-    1. Unnatural or awkward expressions → rewrite naturally
+    1. Grammar errors → correct them
     2. Sentences that don't flow well → improve flow
-    3. Word choices that don't fit the context → replace with appropriate words
-    4. Grammar errors → correct them
-    5. Vocabulary too difficult for {level} → simplify to match level
+    3. Vocabulary too difficult for {level} → simplify to match level
+
+    NEVER change direct quotes from people in the original article. Preserve the original wording of quoted speech exactly as written.
+    Only fix clear errors — do NOT rephrase stylistic choices made by the original author.
 
     Preserve all source information (source name, URL, date, author) at the beginning.
     Preserve the original markdown structure and formatting.
