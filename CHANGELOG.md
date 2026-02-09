@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.6] - 2026-02-09
+
+### Fixed
+- Vocabulary words not highlighted for Korean (and other languages) when `related_words` is empty/null in MarkdownViewer.tsx
+- article_picker selecting articles from CrewAI memory instead of finder's results (removed all memory: ShortTermMemory, LongTermMemory, EntityMemory)
+- article_picker hallucinating articles not in finder's output — added "MUST select ONLY from provided list" constraint
+- article_finder returning old articles — changed SerperDevTool to search_type="news"
+- article_finder returning snippets instead of full text — added ScrapeWebsiteTool for full article scraping
+- article_reviewer changing direct quotes and author's stylistic choices
+
+### Changed
+- article_finder: 3-5 → 5-7 articles, topic+language only (removed length/difficulty filtering)
+- article_picker: criteria now priority-ordered (topic > level > length), prefers single-topic articles over roundups
+- article_picker: only returns none if topic is completely unrelated (length/level mismatches acceptable)
+- article_rewriter: NEVER fabricate information, keep rewrite short if original is short
+- article_reviewer: only fix grammar, flow, level-appropriateness; preserve quotes and author style
+- Stale docstring in test_dictionary_service.py updated
+
+### Removed
+- CrewAI memory system (ShortTermMemory, LongTermMemory, EntityMemory) and ./memory/ directory
+
 ## [0.11.5] - 2026-02-08
 
 ### Fixed
