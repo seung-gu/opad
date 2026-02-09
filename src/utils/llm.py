@@ -51,6 +51,32 @@ class TokenUsageStats:
         }
 
 
+def accumulate_stats(
+    *stats_list: TokenUsageStats | None,
+) -> TokenUsageStats | None:
+    """Accumulate multiple TokenUsageStats into one.
+
+    Args:
+        *stats_list: Variable number of TokenUsageStats (None values are ignored).
+
+    Returns:
+        Combined stats, single stats if only one valid, or None if all None.
+    """
+    valid = [s for s in stats_list if s is not None]
+    if not valid:
+        return None
+    if len(valid) == 1:
+        return valid[0]
+    return TokenUsageStats(
+        model=valid[0].model,
+        prompt_tokens=sum(s.prompt_tokens for s in valid),
+        completion_tokens=sum(s.completion_tokens for s in valid),
+        total_tokens=sum(s.total_tokens for s in valid),
+        estimated_cost=sum(s.estimated_cost for s in valid),
+        provider=valid[0].provider,
+    )
+
+
 def parse_json_from_content(content: str) -> dict | None:
     """Parse JSON from LLM response content.
 

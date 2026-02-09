@@ -18,7 +18,8 @@ load_dotenv()
 
 from utils.mongodb import get_mongodb_client
 from utils.llm import call_llm_with_tracking, parse_json_from_content
-from utils.prompts import build_reduced_word_definition_prompt, build_word_definition_prompt
+from utils.lemma_extraction import _build_reduced_prompt as build_reduced_word_definition_prompt
+from utils.prompts import build_word_definition_prompt
 from utils.dictionary_api import fetch_from_free_dictionary_api
 
 
