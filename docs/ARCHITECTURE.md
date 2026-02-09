@@ -80,7 +80,7 @@ sequenceDiagram
 | **API** | **MongoDB** | (via utils.mongodb) | 중복 체크, Article metadata 저장/조회, Vocabulary 저장/조회, Token usage 저장/조회 |
 | **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
 | **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.job_queue` 사용) |
-| **API** | **LLM** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 (lemma, definition, related_words) + Token tracking |
+| **API** | **LLM** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 (lemma extraction + entry/sense selection) + Token tracking |
 | **API** | **API** | Internal | Token usage endpoints (`/usage/me`, `/usage/articles/{id}`) |
 | **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
 | **Worker** | **Redis** | `SET` | Job 상태 업데이트 (공통 모듈 `api.job_queue` 사용) |
@@ -343,38 +343,36 @@ def get_article_token_usage(article_id: str) -> list[dict]:
 
 ```python
 @router.post("/search", response_model=SearchResponse)
-async def search_word(request: SearchRequest, current_user: User = Depends(get_current_user_required)):
-    # Build prompt
-    prompt = build_word_definition_prompt(
-        language=request.language,
+async def search_word(
+    request: SearchRequest,
+    current_user: User = Depends(get_current_user_required),
+    service: DictionaryService = Depends(get_dictionary_service)
+):
+    # Convert API request to service request
+    lookup_request = LookupRequest(
+        word=request.word,
         sentence=request.sentence,
-        word=request.word
+        language=request.language,
+        article_id=request.article_id
     )
 
-    # Call LLM with tracking
-    content, stats = await call_llm_with_tracking(
-        messages=[{"role": "user", "content": prompt}],
-        model="gpt-4.1-mini",
-        max_tokens=200
-    )
+    # Perform lookup via DictionaryService (hybrid LLM + API approach)
+    result = await service.lookup(lookup_request)
 
-    # Log token usage
-    logger.info("Token usage for dictionary search", extra=stats.to_dict())
+    # Track token usage (accumulated from reduced prompt + entry/sense selection)
+    stats = service.last_token_stats
+    if stats:
+        save_token_usage(
+            user_id=current_user.id,
+            operation="dictionary_search",
+            model=stats.model,
+            prompt_tokens=stats.prompt_tokens,
+            completion_tokens=stats.completion_tokens,
+            estimated_cost=stats.estimated_cost,
+            metadata={"query": request.word, "language": request.language}
+        )
 
-    # Save to database (Phase 2)
-    save_token_usage(
-        user_id=current_user.id,
-        operation="dictionary_search",
-        model=stats.model,
-        prompt_tokens=stats.prompt_tokens,
-        completion_tokens=stats.completion_tokens,
-        estimated_cost=stats.estimated_cost,
-        metadata={"query": request.word, "language": request.language}
-    )
-
-    # Parse and return response
-    result = parse_json_from_content(content)
-    return SearchResponse(**result)
+    return SearchResponse(**result.__dict__)
 ```
 
 #### Token Usage API Endpoints (`src/api/routes/usage.py`)
@@ -443,9 +441,12 @@ sequenceDiagram
     Note over User,LLM: Dictionary Search with Token Tracking
     User->>WebUI: Click word
     WebUI->>API: POST /dictionary/search
-    API->>LLM: Call LLM API (via utils/llm.py)
-    LLM-->>API: Response + usage stats
-    API->>MongoDB: save_token_usage()
+    API->>LLM: Step 1: Reduced prompt (lemma extraction)
+    LLM-->>API: {lemma, related_words, level} + stats
+    API->>API: Step 2: Free Dictionary API (all entries)
+    API->>LLM: Step 3: Entry+sense selection (X.Y.Z)
+    LLM-->>API: Selected entry.sense.subsense + stats
+    API->>MongoDB: save_token_usage() (accumulated stats)
     API-->>WebUI: Definition response
 
     Note over User,MongoDB: Article Generation with Token Tracking
@@ -629,8 +630,8 @@ The system now supports vocabulary-aware article generation, where CrewAI adjust
 ### Vocabulary Features
 
 #### 1. Dictionary API - Word Definition
-- **POST /dictionary/search**: Get word definition and lemma using OpenAI API
-- **Returns**: lemma, definition, and related_words (for complex structures like separable verbs)
+- **POST /dictionary/search**: Get word definition and lemma using hybrid LLM + Free Dictionary API (entry+sense+subsense selection via X.Y.Z format)
+- **Returns**: lemma, definition, related_words, pos, gender, phonetics, conjugations, level, examples
 - **Auth**: Required (JWT) to prevent API abuse
 
 #### 2. Vocabulary Storage
@@ -805,12 +806,16 @@ The CrewAI pipeline uses four specialized agents for article generation. Each ag
 
 **Agents** (`src/crew/config/agents.yaml`):
 
-| Agent | Role | LLM Model |
-|-------|------|-----------|
-| `article_finder` | Searches for recent news articles matching topic, language, and difficulty | `openai/gpt-4.1-mini` |
-| `article_picker` | Evaluates and selects the best article from candidates | `openai/gpt-4.1` |
-| `article_rewriter` | Adapts the article to target CEFR level with vocabulary reinforcement | `anthropic/claude-sonnet-4-20250514` |
-| `article_reviewer` | Reviews for natural language quality and level appropriateness | `anthropic/claude-sonnet-4-20250514` |
+| Agent | Role | Tools | LLM Model |
+|-------|------|-------|-----------|
+| `article_finder` | Searches for recent news articles and scrapes full article text | `SerperDevTool(search_type="news")`, `ScrapeWebsiteTool` | `openai/gpt-4.1-mini` |
+| `article_picker` | Evaluates and selects the best article using priority-based ranking (topic > level > length); constrained to finder's output only | None (`memory=False`) | `openai/gpt-4.1` |
+| `article_rewriter` | Adapts the article to target CEFR level with vocabulary reinforcement and anti-fabrication rules | None | `anthropic/claude-sonnet-4-20250514` |
+| `article_reviewer` | Reviews for natural language quality; preserves direct quotes and author style | None | `anthropic/claude-sonnet-4-20250514` |
+
+**Crew Configuration** (`crew.py`):
+- **Process**: Sequential (tasks run in order)
+- **Memory**: Disabled -- no `ShortTermMemory`, `LongTermMemory`, or `EntityMemory` is used. The `article_picker` agent also has `memory=False` explicitly set to prevent it from referencing previously seen articles across runs.
 
 ### Task Pipeline
 
@@ -832,13 +837,14 @@ graph LR
 
 #### 1. find_news_articles
 - **Agent**: `article_finder`
-- **Description**: Searches for 2-3 recent news articles matching the topic in the target language
-- **Output**: `NewsArticleList` (JSON with articles array)
+- **Tools**: `SerperDevTool(search_type="news")` for news-specific search, `ScrapeWebsiteTool` for full article text extraction
+- **Description**: Searches for 3-5 recent news articles matching the topic in the target language. Uses the scraping tool to fetch the **full article text** from each URL (search snippets are not accepted as article content). Skips video pages, podcasts, image galleries, and non-text content. Only includes articles with at least 200 words of body text.
+- **Output**: `NewsArticleList` (JSON with articles array including full `content` field)
 - **Guardrail**: `repair_json_output` for JSON validation
 
 #### 2. pick_best_article
 - **Agent**: `article_picker`
-- **Description**: Evaluates candidates and selects the best article based on topic relevance, difficulty level, length, and educational value
+- **Description**: Selects the best article **only from the finder's output** (never invents or searches for additional articles). Ranks candidates using priority-based criteria: (1) topic relevance, (2) CEFR difficulty level, (3) approximate word length. Prefers single-topic articles over roundups/compilations. Verifies article existence at source URL and validates author names against the source page before selection.
 - **Context**: `find_news_articles`
 - **Output**: `SelectedArticle` (JSON with article and selection_rationale)
 - **Guardrail**: `repair_json_output` for JSON validation
@@ -849,14 +855,21 @@ graph LR
 - **Context**: `pick_best_article`
 - **Features**:
   - Vocabulary reinforcement using user's learned words
-  - Source attribution (name, URL, date, author)
+  - Source attribution (name, URL, date, author if verified)
   - Markdown formatting without word highlighting
+  - **Anti-fabrication**: Never fabricates information not present in the original article. If the original is short, keeps the rewrite short rather than padding with invented content.
 - **Output**: Markdown text
 
 #### 4. review_article_quality
 - **Agent**: `article_reviewer`
 - **Description**: Reviews the adapted article for natural language quality and level appropriateness
 - **Context**: `adapt_news_article`
+- **Features**:
+  - Corrects grammar errors and improves sentence flow
+  - Simplifies vocabulary that is too difficult for the target CEFR level
+  - **Preserves direct quotes** from people in the original article exactly as written
+  - **Preserves author style**: only fixes clear errors, does not rephrase stylistic choices
+  - Preserves all source information and markdown structure
 - **Output**: `ReviewedArticle` (JSON with article_content and replaced_sentences)
 - **Guardrail**: `repair_json_output` for JSON validation
 
@@ -1097,21 +1110,22 @@ graph TB
         Request[POST /dictionary/search] --> LLM[Step 1: LLM Reduced Prompt<br/>gpt-4.1-mini, max_tokens=200]
 
         LLM --> |lemma| API[Step 2: Free Dictionary API]
-        API --> |senses > 1| SenseSelect[Step 3: LLM Sense Selection<br/>gpt-4.1-mini, max_tokens=10]
-        API --> Merge[Step 4: Merge Results]
-        SenseSelect --> Merge
+        API --> |all entries| EntrySelect[Step 3: LLM Entry+Sense Selection<br/>X.Y.Z format, gpt-4.1-mini, max_tokens=10]
+        EntrySelect --> Metadata[Step 3b: Extract Metadata<br/>from selected entry]
+        Metadata --> Merge[Step 4: Merge Results]
 
         Merge --> Response[SearchResponse]
 
         LLM -.-> |LLM failure| Fallback[Full LLM Fallback<br/>gpt-4.1-mini, max_tokens=2000]
-        API -.-> |404 / timeout / no senses| Fallback
+        API -.-> |404 / timeout / no entries| Fallback
         Fallback --> Response
     end
 
     style Request fill:#2196F3
     style LLM fill:#10a37f
     style API fill:#ff9500
-    style SenseSelect fill:#10a37f
+    style EntrySelect fill:#10a37f
+    style Metadata fill:#9c27b0
     style Merge fill:#9c27b0
     style Response fill:#13aa52
     style Fallback fill:#dc382d
@@ -1134,17 +1148,18 @@ sequenceDiagram
 
     Note over API,FreeDict: Step 2: Lookup using lemma
     API->>FreeDict: GET /api/v1/entries/{lang}/{lemma}
-    FreeDict-->>API: {all_senses, pos, phonetics, forms, gender}
+    FreeDict-->>API: {all_entries}
 
-    alt API returns senses
-        alt senses > 1
-            Note over API,LLM: Step 3: Select best sense via LLM
-            API->>LLM: Sense selection prompt (max_tokens=10)
-            LLM-->>API: Selected sense number
+    alt API returns entries
+        alt multiple entries/senses/subsenses
+            Note over API,LLM: Step 3: Select best entry+sense+subsense via LLM
+            API->>LLM: X.Y.Z selection prompt (max_tokens=10)
+            LLM-->>API: Selected X.Y.Z (entry.sense.subsense)
         end
+        Note over API: Step 3b: Extract metadata from selected entry
         Note over API: Step 4: Merge LLM + API results
         API-->>Client: SearchResponse (source: hybrid)
-    else API failure (404, timeout, no senses)
+    else API failure (404, timeout, no entries)
         Note over API,LLM: Fallback: Full LLM prompt
         API->>LLM: Full prompt (max_tokens=2000)
         LLM-->>API: {lemma, definition, pos, gender, conjugations, level}
@@ -1157,8 +1172,9 @@ sequenceDiagram
 | Component | Responsibility | Output Fields |
 |-----------|----------------|---------------|
 | **LLM (Reduced Prompt)** | Context-aware lemma extraction, CEFR level classification (max_tokens=200) | `lemma`, `related_words`, `level` |
-| **Free Dictionary API** | Standard dictionary data, pronunciation, senses | `senses`, `pos`, `gender`, `phonetics`, `forms` |
-| **LLM (Sense Selection)** | Selects best sense from API senses based on sentence context (max_tokens=10) | `definition`, `examples` (from selected sense) |
+| **Free Dictionary API** | Returns all dictionary entries with senses and subsenses | `all_entries` (containing `pos`, `senses`, `phonetics`, `forms` per entry) |
+| **LLM (Entry+Sense Selection)** | Selects best entry+sense+subsense using X.Y.Z format based on sentence context (max_tokens=10) | `definition`, `examples` (from selected sense/subsense) |
+| **Metadata Extraction** | Extracts POS, phonetics, forms, gender from the selected entry (not always entries[0]) | `pos`, `phonetics`, `forms`, `gender` |
 | **Merge Function** | Combines results, converts `forms` to `conjugations` format, accumulates token stats | All fields |
 | **Full LLM Fallback** | Complete definition when hybrid fails (max_tokens=2000) | All fields except `phonetics` and `examples` |
 
@@ -1189,7 +1205,7 @@ The fallback to full LLM (gpt-4.1-mini) occurs in these scenarios:
 3. **Word not found**: Free Dictionary API returns 404
 4. **API timeout**: Request exceeds 5-second timeout
 5. **API error**: HTTP error or network failure
-6. **Missing senses**: API response lacks senses (definition/examples selection requires senses)
+6. **Missing entries**: API response lacks entries (entry/sense/subsense selection requires entries)
 
 **Fallback Flow**:
 ```
@@ -1248,7 +1264,7 @@ if request.language != "English":
 
 Token usage is tracked for all dictionary searches:
 
-- **Hybrid success**: Reduced prompt tokens (~200 max) + sense selection tokens (~10 max) accumulated (gpt-4.1-mini)
+- **Hybrid success**: Reduced prompt tokens (~200 max) + entry+sense selection tokens (~10 max) accumulated (gpt-4.1-mini)
 - **Fallback**: Full prompt tokens counted (~2000 max, gpt-4.1-mini)
 - **Source metadata**: Indicates `"hybrid"` or `"llm"` for cost analysis
 
@@ -1304,7 +1320,7 @@ Token usage is tracked for all dictionary searches:
 **Note**: `phonetics` is `null` for German (only available for English).
 
 **특징:**
-- **하이브리드 조회**: LLM + Free Dictionary API 결합으로 정확도와 비용 최적화
+- **하이브리드 조회**: LLM + Free Dictionary API 결합으로 정확도와 비용 최적화 (X.Y.Z entry+sense+subsense 선택)
 - **분리동사 처리**: 독일어 등에서 동사가 분리된 경우 전체 lemma 반환 (예: `hängt ... ab` → `abhängen`)
 - **복합어 처리**: 단어가 복합어의 일부인 경우 전체 형태 반환
 - **related_words**: 문장에서 같은 lemma에 속하는 모든 단어들을 배열로 반환 (예: 분리 동사의 경우 모든 부분 포함)
@@ -1883,9 +1899,9 @@ const fetchTokenUsage = useCallback(async (isRefresh = false) => {
 - Article별로 그룹화하여 관리
 
 **Vocabulary 표시:**
-- 저장된 단어는 초록색으로 하이라이트
-- `related_words`에 포함된 단어들도 함께 초록색 표시
-- 예: "hängt" 저장 시 "ab"도 자동으로 초록색 표시
+- 저장된 단어(`span_id`로 식별)는 항상 초록색으로 하이라이트 (`related_words` 존재 여부와 무관). 클릭한 단어의 하이라이트는 `related_words` 검색보다 먼저 실행되어, 한국어 등 `related_words`가 없는 언어에서도 정상 동작함.
+- `related_words`가 존재하는 경우, 해당 단어들도 함께 초록색 표시 (분리 동사 등 복합 표현 지원)
+- 예: "hängt" 저장 시 "ab"도 자동으로 초록색 표시 (`related_words: ["hängt", "ab"]`)
 
 ---
 

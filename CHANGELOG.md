@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.6] - 2026-02-09
+
+### Fixed
+- Vocabulary words not highlighted for Korean (and other languages) when `related_words` is empty/null in MarkdownViewer.tsx
+- article_picker selecting articles from CrewAI memory instead of finder's results (removed all memory: ShortTermMemory, LongTermMemory, EntityMemory)
+- article_picker hallucinating articles not in finder's output — added "MUST select ONLY from provided list" constraint
+- article_finder returning old articles — changed SerperDevTool to search_type="news"
+- article_finder returning snippets instead of full text — added ScrapeWebsiteTool for full article scraping
+- article_reviewer changing direct quotes and author's stylistic choices
+
+### Changed
+- article_finder: 3-5 → 5-7 articles, topic+language only (removed length/difficulty filtering)
+- article_picker: criteria now priority-ordered (topic > level > length), prefers single-topic articles over roundups
+- article_picker: only returns none if topic is completely unrelated (length/level mismatches acceptable)
+- article_rewriter: NEVER fabricate information, keep rewrite short if original is short
+- article_reviewer: only fix grammar, flow, level-appropriateness; preserve quotes and author style
+- Stale docstring in test_dictionary_service.py updated
+
+### Removed
+- CrewAI memory system (ShortTermMemory, LongTermMemory, EntityMemory) and ./memory/ directory
+
+## [0.11.5] - 2026-02-08
+
+### Fixed
+- Vocabulary words now correctly get highlighted (green color) for Korean and other languages when `related_words` is empty or null. The guard clause in `MarkdownViewer.tsx` now ensures the clicked word itself is always highlighted regardless of `related_words` availability
+- Stale docstring in test_dictionary_service.py referencing old method name `_select_best_sense` (now `_select_best_entry_sense`)
+
+## [0.11.4] - 2026-02-07
+
+### Added
+- `extract_entry_metadata()` public function in dictionary_api.py for extracting POS, phonetics, forms, and gender from any Free Dictionary API entry
+- `_build_entry_sense_prompt`, `_parse_entry_sense_response`, `_get_definition_from_selection` static helper functions in dictionary_service.py for LLM-based entry selection
+
+### Changed
+- `_get_language_code` renamed to `get_language_code` in dictionary_api.py (now public)
+- `_select_best_sense` replaced with `_select_best_entry_sense` to use full entry/sense/subsense hierarchy instead of entry[0] default
+- Dictionary API entry selection now uses LLM-based X.Y.Z format (entry.sense.subsense) achieving 96.2% accuracy vs previous entry[0] approach
+- Reduced cyclomatic complexity from C(17) to B(9) for entry selection logic through improved code organization
+
+### Fixed
+- Dictionary API now correctly selects appropriate entry, sense, and subsense using intelligent LLM selection instead of always defaulting to entries[0] (issue #92)
+
+### Removed
+- Dead code: `_parse_api_response()` function (inlined into calling functions)
+- `all_senses` field replaced by `all_entries` for clearer API representation
+
 ## [0.11.3] - 2026-02-07
 
 ### Fixed

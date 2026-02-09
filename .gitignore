@@ -15,3 +15,6 @@ output/
 htmlcov/
 *.cover
 .pytest_cache/
+
+# Logs and databases
+*.log

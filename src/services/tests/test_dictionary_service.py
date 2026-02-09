@@ -1,7 +1,7 @@
 """Tests for DictionaryService with focus on new/changed logic.
 
 Tests cover:
-1. _select_best_sense: Uses call_llm_with_tracking, returns tuple, regex parsing
+1. _select_best_entry_sense: Uses call_llm_with_tracking, returns tuple, regex parsing
 2. _fallback_full_llm: Returns DEFAULT_DEFINITION on JSON parse failure
 3. Prompt functions: build_reduced_word_definition_prompt dispatch
 4. Token stats accumulation in hybrid lookup
@@ -28,299 +28,255 @@ from utils.prompts import (
 )
 
 
-class TestSelectBestSense(unittest.IsolatedAsyncioTestCase):
-    """Test _select_best_sense method with new LLM tracking and regex parsing."""
+class TestSelectBestEntrySense(unittest.IsolatedAsyncioTestCase):
+    """Test _select_best_entry_sense method with X.Y.Z format parsing."""
 
     def setUp(self):
         """Set up test fixtures."""
         self.service = DictionaryService()
 
-    async def test_single_sense_returns_without_llm_call(self):
-        """Test single sense returns first sense without LLM call."""
-        senses = [{"definition": "only sense"}]
+    async def test_single_entry_single_sense_skips_llm(self):
+        """Test single entry with single sense returns defaults without LLM."""
+        entries = [{"partOfSpeech": "noun", "senses": [{"definition": "only sense"}]}]
 
-        result, stats = await self.service._select_best_sense(
-            "Test sentence", senses
+        ei, si, ssi, stats = await self.service._select_best_entry_sense(
+            "Test sentence", "word", entries
         )
 
-        self.assertEqual(result, senses[0])
+        self.assertEqual((ei, si, ssi), (0, 0, -1))
         self.assertIsNone(stats)
 
-    async def test_empty_senses_returns_default_definition(self):
-        """Test empty senses list returns default definition."""
-        senses = []
-
-        result, stats = await self.service._select_best_sense(
-            "Test sentence", senses
+    async def test_empty_entries_returns_defaults(self):
+        """Test empty entries list returns defaults."""
+        ei, si, ssi, stats = await self.service._select_best_entry_sense(
+            "Test sentence", "word", []
         )
 
-        self.assertEqual(result, {"definition": DEFAULT_DEFINITION})
+        self.assertEqual((ei, si, ssi), (0, 0, -1))
         self.assertIsNone(stats)
 
     @patch('services.dictionary_service.call_llm_with_tracking')
-    async def test_multiple_senses_calls_llm_and_returns_stats(self, mock_llm):
-        """Test multiple senses triggers LLM call and returns token stats."""
-        senses = [
-            {"definition": "first sense"},
-            {"definition": "second sense"},
-            {"definition": "third sense"},
+    async def test_xy_parsing_sense_level(self, mock_llm):
+        """Test X.Y parsing selects correct entry and sense."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "sense 0"},
+                {"definition": "sense 1"},
+            ]},
+            {"partOfSpeech": "verb", "senses": [
+                {"definition": "verb sense 0"},
+            ]},
         ]
         stats = TokenUsageStats(
-            model="test-model",
-            prompt_tokens=50,
-            completion_tokens=10,
-            total_tokens=60,
-            estimated_cost=0.001,
+            model="test", prompt_tokens=50, completion_tokens=5,
+            total_tokens=55, estimated_cost=0.001,
         )
-        mock_llm.return_value = ("1", stats)
+        mock_llm.return_value = ("0.1", stats)
 
-        result, returned_stats = await self.service._select_best_sense(
-            "Test sentence", senses
+        ei, si, ssi, returned_stats = await self.service._select_best_entry_sense(
+            "Sentence", "word", entries
         )
 
-        self.assertEqual(result, senses[0])
+        self.assertEqual((ei, si, ssi), (0, 1, -1))
         self.assertEqual(returned_stats, stats)
         mock_llm.assert_called_once()
 
     @patch('services.dictionary_service.call_llm_with_tracking')
-    async def test_regex_parsing_plain_digit(self, mock_llm):
-        """Test regex parsing handles plain digit '1'."""
-        senses = [
-            {"definition": "first"},
-            {"definition": "second"},
+    async def test_xyz_parsing_subsense_level(self, mock_llm):
+        """Test X.Y.Z parsing selects correct subsense."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {
+                    "definition": "main sense",
+                    "subsenses": [
+                        {"definition": "subsense 0"},
+                        {"definition": "subsense 1"},
+                    ]
+                },
+            ]},
+        ]
+        stats = TokenUsageStats(
+            model="test", prompt_tokens=50, completion_tokens=5,
+            total_tokens=55, estimated_cost=0.001,
+        )
+        mock_llm.return_value = ("0.0.1", stats)
+
+        ei, si, ssi, _ = await self.service._select_best_entry_sense(
+            "Sentence", "word", entries
+        )
+
+        self.assertEqual((ei, si, ssi), (0, 0, 1))
+
+    @patch('services.dictionary_service.call_llm_with_tracking')
+    async def test_clamping_out_of_bounds_entry(self, mock_llm):
+        """Test out-of-bounds entry index is clamped."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [{"definition": "only"}]},
         ]
         stats = TokenUsageStats(
             model="test", prompt_tokens=1, completion_tokens=1,
-            total_tokens=2, estimated_cost=0.0
+            total_tokens=2, estimated_cost=0.0,
         )
-        mock_llm.return_value = ("1", stats)
+        # Entry index 5 should clamp to 0 (only 1 entry)
+        mock_llm.return_value = ("5.0", stats)
 
-        result, _ = await self.service._select_best_sense(
-            "Sentence", senses
+        ei, si, ssi, _ = await self.service._select_best_entry_sense(
+            "Sentence", "word", entries
         )
 
-        self.assertEqual(result, senses[0])
+        self.assertEqual(ei, 0)
 
     @patch('services.dictionary_service.call_llm_with_tracking')
-    async def test_regex_parsing_digit_with_dot(self, mock_llm):
-        """Test regex parsing handles '1.' format."""
-        senses = [
-            {"definition": "first"},
-            {"definition": "second"},
+    async def test_clamping_out_of_bounds_sense(self, mock_llm):
+        """Test out-of-bounds sense index is clamped."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "sense 0"},
+                {"definition": "sense 1"},
+            ]},
         ]
         stats = TokenUsageStats(
             model="test", prompt_tokens=1, completion_tokens=1,
-            total_tokens=2, estimated_cost=0.0
+            total_tokens=2, estimated_cost=0.0,
         )
-        mock_llm.return_value = ("1.", stats)
+        mock_llm.return_value = ("0.99", stats)
 
-        result, _ = await self.service._select_best_sense(
-            "Sentence", senses
+        ei, si, ssi, _ = await self.service._select_best_entry_sense(
+            "Sentence", "word", entries
         )
 
-        self.assertEqual(result, senses[0])
+        self.assertEqual(si, 1)  # clamped to max index
 
     @patch('services.dictionary_service.call_llm_with_tracking')
-    async def test_regex_parsing_answer_prefix(self, mock_llm):
-        """Test regex parsing handles 'Answer: 1' format."""
-        senses = [
-            {"definition": "first"},
-            {"definition": "second"},
-            {"definition": "third"},
+    async def test_clamping_out_of_bounds_subsense(self, mock_llm):
+        """Test out-of-bounds subsense index is clamped."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {
+                    "definition": "main",
+                    "subsenses": [{"definition": "sub 0"}]
+                },
+            ]},
         ]
         stats = TokenUsageStats(
             model="test", prompt_tokens=1, completion_tokens=1,
-            total_tokens=2, estimated_cost=0.0
+            total_tokens=2, estimated_cost=0.0,
         )
-        mock_llm.return_value = ("Answer: 2", stats)
+        mock_llm.return_value = ("0.0.5", stats)
 
-        result, _ = await self.service._select_best_sense(
-            "Sentence", senses
+        ei, si, ssi, _ = await self.service._select_best_entry_sense(
+            "Sentence", "word", entries
         )
 
-        self.assertEqual(result, senses[1])
+        self.assertEqual(ssi, 0)  # clamped to max index
 
     @patch('services.dictionary_service.call_llm_with_tracking')
-    async def test_regex_parsing_no_match_returns_first(self, mock_llm):
-        """Test regex parsing when no digit found returns first sense."""
-        senses = [
-            {"definition": "first"},
-            {"definition": "second"},
+    async def test_prompt_contains_all_entries_no_truncation(self, mock_llm):
+        """Test prompt includes all entries/senses without truncation."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": f"noun sense {i}"} for i in range(8)
+            ]},
+            {"partOfSpeech": "verb", "senses": [
+                {"definition": f"verb sense {i}"} for i in range(4)
+            ]},
         ]
         stats = TokenUsageStats(
             model="test", prompt_tokens=1, completion_tokens=1,
-            total_tokens=2, estimated_cost=0.0
+            total_tokens=2, estimated_cost=0.0,
         )
-        mock_llm.return_value = ("No valid response", stats)
+        mock_llm.return_value = ("0.0", stats)
 
-        result, _ = await self.service._select_best_sense(
-            "Sentence", senses
-        )
+        await self.service._select_best_entry_sense("Sentence", "word", entries)
 
-        self.assertEqual(result, senses[0])
+        prompt_text = mock_llm.call_args.kwargs['messages'][0]['content']
+        # All 12 senses should be present (no [:6] truncation)
+        self.assertIn("0.7", prompt_text)  # 8th noun sense
+        self.assertIn("1.3", prompt_text)  # 4th verb sense
+        self.assertIn("entries[0]", prompt_text)
+        self.assertIn("entries[1]", prompt_text)
 
     @patch('services.dictionary_service.call_llm_with_tracking')
-    async def test_regex_parsing_out_of_bounds_returns_first(self, mock_llm):
-        """Test regex parsing when digit is out of bounds returns first."""
-        senses = [
-            {"definition": "first"},
-            {"definition": "second"},
-        ]
-        stats = TokenUsageStats(
-            model="test", prompt_tokens=1, completion_tokens=1,
-            total_tokens=2, estimated_cost=0.0
-        )
-        mock_llm.return_value = ("99", stats)
-
-        result, _ = await self.service._select_best_sense(
-            "Sentence", senses
-        )
-
-        self.assertEqual(result, senses[0])
-
-    @patch('services.dictionary_service.call_llm_with_tracking')
-    async def test_regex_parsing_zero_index(self, mock_llm):
-        """Test regex parsing with 0 returns first sense (0-indexed internally)."""
-        senses = [
-            {"definition": "first"},
-            {"definition": "second"},
-        ]
-        stats = TokenUsageStats(
-            model="test", prompt_tokens=1, completion_tokens=1,
-            total_tokens=2, estimated_cost=0.0
-        )
-        mock_llm.return_value = ("0", stats)
-
-        result, _ = await self.service._select_best_sense(
-            "Sentence", senses
-        )
-
-        # 0 - 1 = -1, which is out of bounds, should return first
-        self.assertEqual(result, senses[0])
-
-    @patch('services.dictionary_service.call_llm_with_tracking')
-    async def test_max_tokens_parameter(self, mock_llm):
-        """Test _select_best_sense passes max_tokens=10 to LLM."""
-        senses = [
-            {"definition": "first"},
-            {"definition": "second"},
-        ]
-        mock_llm.return_value = (
-            "1",
-            TokenUsageStats(
-                model="test", prompt_tokens=1, completion_tokens=1,
-                total_tokens=2, estimated_cost=0.0
-            )
-        )
-
-        await self.service._select_best_sense("Sentence", senses)
-
-        # Verify call_llm_with_tracking was called with max_tokens=10
-        mock_llm.assert_called_once()
-        call_kwargs = mock_llm.call_args[1]
-        self.assertEqual(call_kwargs['max_tokens'], 10)
-
-    @patch('services.dictionary_service.call_llm_with_tracking')
-    async def test_temperature_zero_parameter(self, mock_llm):
-        """Test _select_best_sense passes temperature=0."""
-        senses = [
-            {"definition": "first"},
-            {"definition": "second"},
-        ]
-        mock_llm.return_value = (
-            "1",
-            TokenUsageStats(
-                model="test", prompt_tokens=1, completion_tokens=1,
-                total_tokens=2, estimated_cost=0.0
-            )
-        )
-
-        await self.service._select_best_sense("Sentence", senses)
-
-        call_kwargs = mock_llm.call_args[1]
-        self.assertEqual(call_kwargs['temperature'], 0)
-
-    @patch('services.dictionary_service.call_llm_with_tracking')
-    async def test_timeout_parameter(self, mock_llm):
-        """Test _select_best_sense passes timeout=15."""
-        senses = [
-            {"definition": "first"},
-            {"definition": "second"},
-        ]
-        mock_llm.return_value = (
-            "1",
-            TokenUsageStats(
-                model="test", prompt_tokens=1, completion_tokens=1,
-                total_tokens=2, estimated_cost=0.0
-            )
-        )
-
-        await self.service._select_best_sense("Sentence", senses)
-
-        call_kwargs = mock_llm.call_args[1]
-        self.assertEqual(call_kwargs['timeout'], 15)
-
-    @patch('services.dictionary_service.call_llm_with_tracking')
-    async def test_exception_during_llm_call_returns_first_sense(self, mock_llm):
-        """Test exception during LLM call gracefully returns first sense."""
-        senses = [
-            {"definition": "first"},
-            {"definition": "second"},
+    async def test_exception_returns_defaults(self, mock_llm):
+        """Test exception during LLM call returns safe defaults."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "first"},
+                {"definition": "second"},
+            ]},
         ]
         mock_llm.side_effect = Exception("LLM error")
 
-        result, stats = await self.service._select_best_sense(
-            "Sentence", senses
+        ei, si, ssi, stats = await self.service._select_best_entry_sense(
+            "Sentence", "word", entries
         )
 
-        self.assertEqual(result, senses[0])
+        self.assertEqual((ei, si, ssi), (0, 0, -1))
         self.assertIsNone(stats)
 
     @patch('services.dictionary_service.call_llm_with_tracking')
-    async def test_limits_to_six_senses(self, mock_llm):
-        """Test that only 6 senses are sent to LLM."""
-        senses = [
-            {"definition": f"sense {i+1}"}
-            for i in range(10)
+    async def test_no_xy_match_returns_defaults(self, mock_llm):
+        """Test LLM response without X.Y format returns defaults."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "first"},
+                {"definition": "second"},
+            ]},
         ]
-        mock_llm.return_value = (
-            "2",
-            TokenUsageStats(
-                model="test", prompt_tokens=1, completion_tokens=1,
-                total_tokens=2, estimated_cost=0.0
-            )
+        stats = TokenUsageStats(
+            model="test", prompt_tokens=1, completion_tokens=1,
+            total_tokens=2, estimated_cost=0.0,
+        )
+        mock_llm.return_value = ("No valid response", stats)
+
+        ei, si, ssi, _ = await self.service._select_best_entry_sense(
+            "Sentence", "word", entries
         )
 
-        await self.service._select_best_sense("Sentence", senses)
-
-        # Verify only 6 senses in prompt
-        messages = mock_llm.call_args.kwargs['messages']
-        prompt_text = messages[0]['content']
-        # Count number of "1.", "2.", etc. in prompt
-        sense_count = len(re.findall(r'^\d+\.', prompt_text, re.MULTILINE))
-        self.assertEqual(sense_count, 6)
+        self.assertEqual((ei, si, ssi), (0, 0, -1))
 
     @patch('services.dictionary_service.call_llm_with_tracking')
-    async def test_selected_sense_from_multiple_options(self, mock_llm):
-        """Test selecting correct sense from multiple options."""
-        senses = [
-            {"definition": "sense 1"},
-            {"definition": "sense 2"},
-            {"definition": "sense 3"},
+    async def test_selects_second_entry(self, mock_llm):
+        """Test selecting entry from second entry (verb)."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [{"definition": "a thing"}]},
+            {"partOfSpeech": "verb", "senses": [{"definition": "to do something"}]},
+        ]
+        stats = TokenUsageStats(
+            model="test", prompt_tokens=1, completion_tokens=1,
+            total_tokens=2, estimated_cost=0.0,
+        )
+        mock_llm.return_value = ("1.0", stats)
+
+        ei, si, ssi, _ = await self.service._select_best_entry_sense(
+            "Sentence", "word", entries
+        )
+
+        self.assertEqual((ei, si, ssi), (1, 0, -1))
+
+    @patch('services.dictionary_service.call_llm_with_tracking')
+    async def test_max_tokens_parameter(self, mock_llm):
+        """Test passes max_tokens=10 to LLM."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "first"},
+                {"definition": "second"},
+            ]},
         ]
         mock_llm.return_value = (
-            "3",
+            "0.0",
             TokenUsageStats(
                 model="test", prompt_tokens=1, completion_tokens=1,
                 total_tokens=2, estimated_cost=0.0
             )
         )
 
-        result, _ = await self.service._select_best_sense(
-            "Sentence", senses
-        )
+        await self.service._select_best_entry_sense("Sentence", "word", entries)
 
-        self.assertEqual(result, senses[2])
+        call_kwargs = mock_llm.call_args[1]
+        self.assertEqual(call_kwargs['max_tokens'], 10)
+        self.assertEqual(call_kwargs['temperature'], 0)
+        self.assertEqual(call_kwargs['timeout'], 15)
 
 
 class TestFallbackFullLLM(unittest.IsolatedAsyncioTestCase):
@@ -517,20 +473,21 @@ class TestPerformHybridLookupTokenStats(unittest.IsolatedAsyncioTestCase):
             reduced_stats
         )
 
-        # Mock API response with multiple senses
+        # Mock API response with multiple entries
         dict_result = DictionaryAPIResult(
-            pos="noun",
-            all_senses=[
-                {"definition": "sense 1"},
-                {"definition": "sense 2"},
+            all_entries=[
+                {"partOfSpeech": "noun", "senses": [
+                    {"definition": "sense 1"},
+                    {"definition": "sense 2"},
+                ]}
             ]
         )
         mock_api.return_value = dict_result
 
-        # Mock sense selection LLM call
+        # Mock entry+sense selection
         with patch.object(
-            self.service, '_select_best_sense',
-            return_value=({"definition": "sense 1"}, sense_stats)
+            self.service, '_select_best_entry_sense',
+            return_value=(0, 0, -1, sense_stats)
         ):
             request = LookupRequest(
                 word="test",
@@ -563,15 +520,16 @@ class TestPerformHybridLookupTokenStats(unittest.IsolatedAsyncioTestCase):
         )
 
         dict_result = DictionaryAPIResult(
-            pos="noun",
-            all_senses=[{"definition": "only sense"}]  # Single sense
+            all_entries=[
+                {"partOfSpeech": "noun", "senses": [{"definition": "only sense"}]}
+            ]
         )
         mock_api.return_value = dict_result
 
-        # Single sense returns None for stats
+        # Single entry+sense returns None for stats
         with patch.object(
-            self.service, '_select_best_sense',
-            return_value=({"definition": "only sense"}, None)
+            self.service, '_select_best_entry_sense',
+            return_value=(0, 0, -1, None)
         ):
             request = LookupRequest(
                 word="test",
@@ -614,17 +572,18 @@ class TestPerformHybridLookupTokenStats(unittest.IsolatedAsyncioTestCase):
         )
 
         dict_result = DictionaryAPIResult(
-            pos="noun",
-            all_senses=[
-                {"definition": "sense 1"},
-                {"definition": "sense 2"},
+            all_entries=[
+                {"partOfSpeech": "noun", "senses": [
+                    {"definition": "sense 1"},
+                    {"definition": "sense 2"},
+                ]}
             ]
         )
         mock_api.return_value = dict_result
 
         with patch.object(
-            self.service, '_select_best_sense',
-            return_value=({"definition": "sense 1"}, sense_stats)
+            self.service, '_select_best_entry_sense',
+            return_value=(0, 0, -1, sense_stats)
         ):
             request = LookupRequest(
                 word="test",
@@ -848,54 +807,826 @@ class TestCallLLMReducedIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertIn("singt", prompt)
 
 
-class TestRegexSearchPatternInSelectBestSense(unittest.IsolatedAsyncioTestCase):
-    """Test the specific regex pattern r'\\d+' used in _select_best_sense."""
+class TestRegexSearchPatternInSelectBestEntrySense(unittest.IsolatedAsyncioTestCase):
+    """Test the X.Y.Z regex pattern used in _select_best_entry_sense."""
 
     def setUp(self):
         """Set up test fixtures."""
         self.service = DictionaryService()
-        self.pattern = r"\d+"
+        self.pattern = r"(\d+)\.(\d+)(?:\.(\d+))?"
 
-    def test_regex_pattern_matches_simple_digit(self):
-        """Test regex pattern matches simple digits."""
-        text = "1"
-        match = re.search(self.pattern, text)
+    def test_regex_matches_xy_format(self):
+        """Test regex matches X.Y format."""
+        match = re.search(self.pattern, "0.1")
         self.assertIsNotNone(match)
-        self.assertEqual(match.group(), "1")
+        self.assertEqual(match.group(1), "0")
+        self.assertEqual(match.group(2), "1")
+        self.assertIsNone(match.group(3))
 
-    def test_regex_pattern_matches_multidigit(self):
-        """Test regex pattern matches multi-digit numbers."""
-        text = "123"
-        match = re.search(self.pattern, text)
+    def test_regex_matches_xyz_format(self):
+        """Test regex matches X.Y.Z format."""
+        match = re.search(self.pattern, "1.2.3")
         self.assertIsNotNone(match)
-        self.assertEqual(match.group(), "123")
+        self.assertEqual(match.group(1), "1")
+        self.assertEqual(match.group(2), "2")
+        self.assertEqual(match.group(3), "3")
 
-    def test_regex_pattern_finds_first_digit(self):
-        """Test regex pattern finds first occurrence."""
-        text = "Answer: 2 or 3"
-        match = re.search(self.pattern, text)
+    def test_regex_finds_first_match_in_text(self):
+        """Test regex finds first X.Y in surrounding text."""
+        match = re.search(self.pattern, "Answer: 0.2")
         self.assertIsNotNone(match)
-        self.assertEqual(match.group(), "2")
+        self.assertEqual(match.group(1), "0")
+        self.assertEqual(match.group(2), "2")
 
-    def test_regex_pattern_handles_text_before_digit(self):
-        """Test regex pattern handles text before digit."""
-        text = "The answer is 5"
-        match = re.search(self.pattern, text)
-        self.assertIsNotNone(match)
-        self.assertEqual(match.group(), "5")
-
-    def test_regex_pattern_handles_text_after_digit(self):
-        """Test regex pattern handles text after digit."""
-        text = "3."
-        match = re.search(self.pattern, text)
-        self.assertIsNotNone(match)
-        self.assertEqual(match.group(), "3")
-
-    def test_regex_pattern_no_match(self):
-        """Test regex pattern returns None when no digit."""
-        text = "no digits here"
-        match = re.search(self.pattern, text)
+    def test_regex_no_match_plain_digit(self):
+        """Test regex does not match plain digit without dot."""
+        match = re.search(self.pattern, "5")
         self.assertIsNone(match)
+
+    def test_regex_no_match_no_digits(self):
+        """Test regex returns None when no digits."""
+        match = re.search(self.pattern, "no digits here")
+        self.assertIsNone(match)
+
+    def test_regex_multidigit_indices(self):
+        """Test regex handles multi-digit indices."""
+        match = re.search(self.pattern, "10.15")
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(1), "10")
+        self.assertEqual(match.group(2), "15")
+
+
+class TestGetDefinitionFromSelection(unittest.TestCase):
+    """Test _get_definition_from_selection static method with edge cases."""
+
+    def test_valid_sense_index_returns_definition_and_sense(self):
+        """Test valid sense index returns definition and sense dict."""
+        entry = {
+            "senses": [
+                {"definition": "First sense definition"},
+                {"definition": "Second sense definition"},
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(entry, 0, -1)
+
+        self.assertEqual(definition, "First sense definition")
+        self.assertIsNotNone(sense)
+        self.assertEqual(sense.get("definition"), "First sense definition")
+
+    def test_valid_second_sense_index(self):
+        """Test valid second sense index returns correct sense."""
+        entry = {
+            "senses": [
+                {"definition": "First sense definition"},
+                {"definition": "Second sense definition"},
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(entry, 1, -1)
+
+        self.assertEqual(definition, "Second sense definition")
+        self.assertEqual(sense.get("definition"), "Second sense definition")
+
+    def test_subsense_selection_returns_subsense_definition(self):
+        """Test subsense selection (subsense_idx >= 0) returns subsense definition."""
+        entry = {
+            "senses": [
+                {
+                    "definition": "Main sense definition",
+                    "subsenses": [
+                        {"definition": "Subsense 0 definition"},
+                        {"definition": "Subsense 1 definition"},
+                    ]
+                }
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 0, 0
+        )
+
+        self.assertEqual(definition, "Subsense 0 definition")
+        # Returned sense should be the parent sense
+        self.assertEqual(sense.get("definition"), "Main sense definition")
+
+    def test_valid_second_subsense_selection(self):
+        """Test selecting second subsense returns correct definition."""
+        entry = {
+            "senses": [
+                {
+                    "definition": "Main sense definition",
+                    "subsenses": [
+                        {"definition": "Subsense 0 definition"},
+                        {"definition": "Subsense 1 definition"},
+                    ]
+                }
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 0, 1
+        )
+
+        self.assertEqual(definition, "Subsense 1 definition")
+        self.assertEqual(sense.get("definition"), "Main sense definition")
+
+    def test_out_of_bounds_sense_idx_returns_empty_and_none(self):
+        """Test out-of-bounds sense_idx returns ('', None)."""
+        entry = {
+            "senses": [
+                {"definition": "First sense definition"},
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 5, -1
+        )
+
+        self.assertEqual(definition, "")
+        self.assertIsNone(sense)
+
+    def test_out_of_bounds_sense_idx_multiple_senses(self):
+        """Test out-of-bounds sense_idx with multiple senses."""
+        entry = {
+            "senses": [
+                {"definition": "Sense 0"},
+                {"definition": "Sense 1"},
+                {"definition": "Sense 2"},
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 10, -1
+        )
+
+        self.assertEqual(definition, "")
+        self.assertIsNone(sense)
+
+    def test_out_of_bounds_subsense_idx_falls_back_to_sense_definition(self):
+        """Test out-of-bounds subsense_idx falls back to sense definition."""
+        entry = {
+            "senses": [
+                {
+                    "definition": "Main sense definition",
+                    "subsenses": [
+                        {"definition": "Subsense 0 definition"},
+                    ]
+                }
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 0, 99
+        )
+
+        # Should fall back to sense-level definition
+        self.assertEqual(definition, "Main sense definition")
+        self.assertEqual(sense.get("definition"), "Main sense definition")
+
+    def test_subsense_idx_minus_one_returns_sense_definition(self):
+        """Test subsense_idx = -1 returns sense-level definition."""
+        entry = {
+            "senses": [
+                {
+                    "definition": "Main sense definition",
+                    "subsenses": [
+                        {"definition": "Subsense 0 definition"},
+                    ]
+                }
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 0, -1
+        )
+
+        self.assertEqual(definition, "Main sense definition")
+        self.assertEqual(sense.get("definition"), "Main sense definition")
+
+    def test_entry_with_empty_senses_list(self):
+        """Test entry with empty senses list returns empty and None."""
+        entry = {"senses": []}
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 0, -1
+        )
+
+        self.assertEqual(definition, "")
+        self.assertIsNone(sense)
+
+    def test_entry_with_no_senses_key(self):
+        """Test entry without senses key returns empty and None."""
+        entry = {}
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 0, -1
+        )
+
+        self.assertEqual(definition, "")
+        self.assertIsNone(sense)
+
+    def test_sense_without_definition_field(self):
+        """Test sense without definition field returns empty string."""
+        entry = {
+            "senses": [
+                {"example": "some example"}  # No definition field
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 0, -1
+        )
+
+        self.assertEqual(definition, "")
+        self.assertIsNotNone(sense)
+
+    def test_subsense_without_definition_field(self):
+        """Test subsense without definition field returns empty string."""
+        entry = {
+            "senses": [
+                {
+                    "definition": "Main sense definition",
+                    "subsenses": [
+                        {"example": "subsense example"}  # No definition
+                    ]
+                }
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 0, 0
+        )
+
+        self.assertEqual(definition, "")
+        # Returned sense should still be the parent sense
+        self.assertEqual(sense.get("definition"), "Main sense definition")
+
+    def test_sense_with_empty_subsenses_list(self):
+        """Test sense with empty subsenses list falls back to sense definition."""
+        entry = {
+            "senses": [
+                {
+                    "definition": "Main sense definition",
+                    "subsenses": []  # Empty
+                }
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 0, 0
+        )
+
+        # Should fall back to sense-level definition when subsense index invalid
+        self.assertEqual(definition, "Main sense definition")
+        self.assertEqual(sense.get("definition"), "Main sense definition")
+
+    def test_sense_without_subsenses_field(self):
+        """Test sense without subsenses field falls back to sense definition."""
+        entry = {
+            "senses": [
+                {"definition": "Main sense definition"}  # No subsenses field
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 0, 0
+        )
+
+        self.assertEqual(definition, "Main sense definition")
+        self.assertEqual(sense.get("definition"), "Main sense definition")
+
+    def test_multiple_senses_with_varying_subsenses(self):
+        """Test selecting from entry with varying subsense counts."""
+        entry = {
+            "senses": [
+                {
+                    "definition": "Sense 0",
+                    "subsenses": [
+                        {"definition": "Sub 0.0"},
+                        {"definition": "Sub 0.1"},
+                    ]
+                },
+                {
+                    "definition": "Sense 1",
+                    "subsenses": [
+                        {"definition": "Sub 1.0"},
+                    ]
+                },
+                {
+                    "definition": "Sense 2"
+                    # No subsenses
+                }
+            ]
+        }
+
+        # Select sense 1, subsense 0
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 1, 0
+        )
+        self.assertEqual(definition, "Sub 1.0")
+
+        # Select sense 2 with subsense (should fall back to sense)
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 2, 0
+        )
+        self.assertEqual(definition, "Sense 2")
+
+    def test_complex_sense_structure_with_additional_fields(self):
+        """Test sense dict with complex structure including other fields."""
+        entry = {
+            "senses": [
+                {
+                    "definition": "Main definition",
+                    "examples": ["Example 1", "Example 2"],
+                    "synonyms": ["word1", "word2"],
+                    "antonyms": ["opposite"],
+                    "subsenses": [
+                        {
+                            "definition": "Sub definition",
+                            "examples": ["Sub example"],
+                        }
+                    ]
+                }
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 0, 0
+        )
+
+        self.assertEqual(definition, "Sub definition")
+        self.assertIn("examples", sense)
+        self.assertIn("synonyms", sense)
+        self.assertIn("antonyms", sense)
+
+    def test_zero_index_sense_zero_index_subsense(self):
+        """Test accessing first sense with first subsense."""
+        entry = {
+            "senses": [
+                {
+                    "definition": "First main",
+                    "subsenses": [
+                        {"definition": "First sub"}
+                    ]
+                }
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 0, 0
+        )
+
+        self.assertEqual(definition, "First sub")
+        self.assertEqual(sense["definition"], "First main")
+
+    def test_large_sense_and_subsense_indices(self):
+        """Test behavior with large out-of-bounds indices."""
+        entry = {
+            "senses": [
+                {"definition": "Only sense"}
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 1000, 1000
+        )
+
+        self.assertEqual(definition, "")
+        self.assertIsNone(sense)
+
+    def test_negative_subsense_index_with_valid_sense(self):
+        """Test negative subsense_idx with valid sense returns sense definition."""
+        entry = {
+            "senses": [
+                {
+                    "definition": "Sense definition",
+                    "subsenses": [
+                        {"definition": "Subsense definition"}
+                    ]
+                }
+            ]
+        }
+
+        definition, sense = DictionaryService._get_definition_from_selection(
+            entry, 0, -2
+        )
+
+        # Negative subsense_idx not in [0, len(subsenses)) should fall back
+        self.assertEqual(definition, "Sense definition")
+
+
+class TestParseEntrySenseResponse(unittest.TestCase):
+    """Test _parse_entry_sense_response static method with edge cases."""
+
+    def test_xy_format_parsing(self):
+        """Test X.Y format parsing returns correct indices."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "sense 0"},
+                {"definition": "sense 1"},
+            ]},
+            {"partOfSpeech": "verb", "senses": [
+                {"definition": "verb sense"},
+            ]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response("0.1", entries)
+
+        self.assertEqual((ei, si, ssi), (0, 1, -1))
+
+    def test_xyz_format_parsing(self):
+        """Test X.Y.Z format parsing returns correct indices."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {
+                    "definition": "sense 0",
+                    "subsenses": [
+                        {"definition": "sub 0"},
+                        {"definition": "sub 1"},
+                    ]
+                }
+            ]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response("0.0.1", entries)
+
+        self.assertEqual((ei, si, ssi), (0, 0, 1))
+
+    def test_no_match_returns_defaults(self):
+        """Test no regex match returns (0, 0, -1)."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [{"definition": "sense"}]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "No valid response", entries
+        )
+
+        self.assertEqual((ei, si, ssi), (0, 0, -1))
+
+    def test_partial_match_no_format_returns_defaults(self):
+        """Test content without X.Y format returns defaults."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [{"definition": "sense"}]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "Definition number 5 is best", entries
+        )
+
+        self.assertEqual((ei, si, ssi), (0, 0, -1))
+
+    def test_out_of_bounds_entry_clamping(self):
+        """Test out-of-bounds entry index is clamped to max."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [{"definition": "sense 0"}]},
+            {"partOfSpeech": "verb", "senses": [{"definition": "verb sense"}]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response("5.0", entries)
+
+        # Entry 5 should clamp to 1 (max index for 2 entries)
+        self.assertEqual(ei, 1)
+        self.assertEqual(si, 0)
+        self.assertEqual(ssi, -1)
+
+    def test_out_of_bounds_sense_clamping(self):
+        """Test out-of-bounds sense index is clamped to max."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "sense 0"},
+                {"definition": "sense 1"},
+                {"definition": "sense 2"},
+            ]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response("0.10", entries)
+
+        # Sense 10 should clamp to 2 (max index for 3 senses)
+        self.assertEqual(ei, 0)
+        self.assertEqual(si, 2)
+        self.assertEqual(ssi, -1)
+
+    def test_out_of_bounds_subsense_clamping(self):
+        """Test out-of-bounds subsense index is clamped to max."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {
+                    "definition": "sense 0",
+                    "subsenses": [
+                        {"definition": "sub 0"},
+                        {"definition": "sub 1"},
+                    ]
+                }
+            ]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "0.0.10", entries
+        )
+
+        # Subsense 10 should clamp to 1 (max index for 2 subsenses)
+        self.assertEqual(ei, 0)
+        self.assertEqual(si, 0)
+        self.assertEqual(ssi, 1)
+
+    def test_entry_with_empty_senses_list(self):
+        """Test entry with empty senses list handles gracefully."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": []}
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response("0.0", entries)
+
+        # Should handle gracefully with defaults
+        self.assertEqual(ei, 0)
+        self.assertEqual(si, 0)
+        self.assertEqual(ssi, -1)
+
+    def test_sense_without_subsenses_field(self):
+        """Test sense without subsenses field returns -1 for subsense_idx."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "sense 0"}  # No subsenses field
+            ]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "0.0.1", entries
+        )
+
+        # Should return -1 when subsenses don't exist
+        self.assertEqual(ei, 0)
+        self.assertEqual(si, 0)
+        self.assertEqual(ssi, -1)
+
+    def test_sense_with_empty_subsenses_list(self):
+        """Test sense with empty subsenses list returns -1."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "sense 0", "subsenses": []}
+            ]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "0.0.1", entries
+        )
+
+        # Empty subsenses should return -1
+        self.assertEqual(ei, 0)
+        self.assertEqual(si, 0)
+        self.assertEqual(ssi, -1)
+
+    def test_xy_without_subsense_part(self):
+        """Test X.Y format without Z part returns -1 for subsense."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {
+                    "definition": "sense 0",
+                    "subsenses": [{"definition": "sub 0"}]
+                }
+            ]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response("0.0", entries)
+
+        # Without Z part, subsense should be -1
+        self.assertEqual(ei, 0)
+        self.assertEqual(si, 0)
+        self.assertEqual(ssi, -1)
+
+    def test_text_with_embedded_xy_format(self):
+        """Test regex finds X.Y format embedded in surrounding text."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "sense 0"},
+                {"definition": "sense 1"},
+            ]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "Answer is 0.1, the best match", entries
+        )
+
+        # Should find 0.1 in the text
+        self.assertEqual((ei, si, ssi), (0, 1, -1))
+
+    def test_multiple_xy_formats_uses_first_match(self):
+        """Test multiple X.Y formats uses first match."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "sense 0"},
+                {"definition": "sense 1"},
+            ]},
+            {"partOfSpeech": "verb", "senses": [
+                {"definition": "verb sense 0"},
+            ]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "0.1 or maybe 1.0", entries
+        )
+
+        # Should use first match (0.1)
+        self.assertEqual((ei, si, ssi), (0, 1, -1))
+
+    def test_zero_zero_subsense_is_valid(self):
+        """Test 0.0.0 parsing returns (0, 0, 0)."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {
+                    "definition": "sense 0",
+                    "subsenses": [
+                        {"definition": "sub 0"},
+                    ]
+                }
+            ]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "0.0.0", entries
+        )
+
+        self.assertEqual((ei, si, ssi), (0, 0, 0))
+
+    def test_multidigit_indices(self):
+        """Test parsing multi-digit indices."""
+        # Create multiple entries with multi-digit sense/subsense counts
+        entries = [
+            {
+                "partOfSpeech": f"pos{i}",
+                "senses": [
+                    {
+                        "definition": f"sense {j}",
+                        "subsenses": [
+                            {"definition": f"sub {k}"}
+                            for k in range(12)
+                        ]
+                    }
+                    for j in range(12)
+                ]
+            }
+            for i in range(11)
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "10.11.15", entries
+        )
+
+        # Entry 10 exists, sense 11 exists, subsense 15 clamped to 11 (max index for 12 subsenses)
+        self.assertEqual(ei, 10)
+        self.assertEqual(si, 11)
+        self.assertEqual(ssi, 11)  # clamped from 15 to max index 11
+
+    def test_leading_zeros_in_indices(self):
+        """Test parsing indices with leading zeros."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "sense 0"},
+                {"definition": "sense 1"},
+            ]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "00.01", entries
+        )
+
+        # Leading zeros should be parsed as 0 and 1
+        self.assertEqual((ei, si, ssi), (0, 1, -1))
+
+    def test_negative_entry_index_not_matched(self):
+        """Test negative entry index is not matched by regex."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "sense 0"},
+            ]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "-1.0", entries
+        )
+
+        # Negative index should not be matched
+        self.assertEqual((ei, si, ssi), (0, 0, -1))
+
+    def test_single_entry_single_sense_no_subsenses(self):
+        """Test single entry with single sense and no subsenses."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "the only sense"}
+            ]},
+        ]
+
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "0.0", entries
+        )
+
+        self.assertEqual((ei, si, ssi), (0, 0, -1))
+
+    def test_complex_entries_multiple_parts_of_speech(self):
+        """Test complex entries with multiple parts of speech."""
+        entries = [
+            {
+                "partOfSpeech": "noun",
+                "senses": [
+                    {
+                        "definition": "noun sense 0",
+                        "subsenses": [
+                            {"definition": "noun sub 0.0"},
+                            {"definition": "noun sub 0.1"},
+                        ]
+                    },
+                    {"definition": "noun sense 1"},
+                ]
+            },
+            {
+                "partOfSpeech": "verb",
+                "senses": [
+                    {
+                        "definition": "verb sense 0",
+                        "subsenses": [{"definition": "verb sub 0.0"}]
+                    },
+                ]
+            },
+            {
+                "partOfSpeech": "adjective",
+                "senses": [
+                    {"definition": "adj sense 0"},
+                ]
+            },
+        ]
+
+        # Test selecting from verb entry
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "1.0.0", entries
+        )
+        self.assertEqual((ei, si, ssi), (1, 0, 0))
+
+        # Test selecting from adjective entry
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "2.0", entries
+        )
+        self.assertEqual((ei, si, ssi), (2, 0, -1))
+
+    def test_entry_index_clamping_boundary(self):
+        """Test entry index clamping at exact boundary."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [{"definition": "sense 0"}]},
+            {"partOfSpeech": "verb", "senses": [{"definition": "sense 0"}]},
+        ]
+
+        # Entry 2 should clamp to 1 (last valid index)
+        ei, si, ssi = DictionaryService._parse_entry_sense_response("2.0", entries)
+        self.assertEqual(ei, 1)
+
+        # Entry 1 should be valid
+        ei, si, ssi = DictionaryService._parse_entry_sense_response("1.0", entries)
+        self.assertEqual(ei, 1)
+
+    def test_sense_index_clamping_boundary(self):
+        """Test sense index clamping at exact boundary."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {"definition": "sense 0"},
+                {"definition": "sense 1"},
+                {"definition": "sense 2"},
+            ]},
+        ]
+
+        # Sense 3 should clamp to 2 (last valid index)
+        ei, si, ssi = DictionaryService._parse_entry_sense_response("0.3", entries)
+        self.assertEqual(si, 2)
+
+        # Sense 2 should be valid
+        ei, si, ssi = DictionaryService._parse_entry_sense_response("0.2", entries)
+        self.assertEqual(si, 2)
+
+    def test_subsense_index_clamping_boundary(self):
+        """Test subsense index clamping at exact boundary."""
+        entries = [
+            {"partOfSpeech": "noun", "senses": [
+                {
+                    "definition": "sense 0",
+                    "subsenses": [
+                        {"definition": "sub 0"},
+                        {"definition": "sub 1"},
+                    ]
+                }
+            ]},
+        ]
+
+        # Subsense 2 should clamp to 1 (last valid index)
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "0.0.2", entries
+        )
+        self.assertEqual(ssi, 1)
+
+        # Subsense 1 should be valid
+        ei, si, ssi = DictionaryService._parse_entry_sense_response(
+            "0.0.1", entries
+        )
+        self.assertEqual(ssi, 1)
 
 
 class TestEdgeCasesAndIntegration(unittest.IsolatedAsyncioTestCase):
