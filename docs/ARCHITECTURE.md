@@ -806,12 +806,16 @@ The CrewAI pipeline uses four specialized agents for article generation. Each ag
 
 **Agents** (`src/crew/config/agents.yaml`):
 
-| Agent | Role | LLM Model |
-|-------|------|-----------|
-| `article_finder` | Searches for recent news articles matching topic, language, and difficulty | `openai/gpt-4.1-mini` |
-| `article_picker` | Evaluates and selects the best article from candidates | `openai/gpt-4.1` |
-| `article_rewriter` | Adapts the article to target CEFR level with vocabulary reinforcement | `anthropic/claude-sonnet-4-20250514` |
-| `article_reviewer` | Reviews for natural language quality and level appropriateness | `anthropic/claude-sonnet-4-20250514` |
+| Agent | Role | Tools | LLM Model |
+|-------|------|-------|-----------|
+| `article_finder` | Searches for recent news articles and scrapes full article text | `SerperDevTool(search_type="news")`, `ScrapeWebsiteTool` | `openai/gpt-4.1-mini` |
+| `article_picker` | Evaluates and selects the best article using priority-based ranking (topic > level > length); constrained to finder's output only | None (`memory=False`) | `openai/gpt-4.1` |
+| `article_rewriter` | Adapts the article to target CEFR level with vocabulary reinforcement and anti-fabrication rules | None | `anthropic/claude-sonnet-4-20250514` |
+| `article_reviewer` | Reviews for natural language quality; preserves direct quotes and author style | None | `anthropic/claude-sonnet-4-20250514` |
+
+**Crew Configuration** (`crew.py`):
+- **Process**: Sequential (tasks run in order)
+- **Memory**: Disabled -- no `ShortTermMemory`, `LongTermMemory`, or `EntityMemory` is used. The `article_picker` agent also has `memory=False` explicitly set to prevent it from referencing previously seen articles across runs.
 
 ### Task Pipeline
 
@@ -833,13 +837,14 @@ graph LR
 
 #### 1. find_news_articles
 - **Agent**: `article_finder`
-- **Description**: Searches for 2-3 recent news articles matching the topic in the target language
-- **Output**: `NewsArticleList` (JSON with articles array)
+- **Tools**: `SerperDevTool(search_type="news")` for news-specific search, `ScrapeWebsiteTool` for full article text extraction
+- **Description**: Searches for 3-5 recent news articles matching the topic in the target language. Uses the scraping tool to fetch the **full article text** from each URL (search snippets are not accepted as article content). Skips video pages, podcasts, image galleries, and non-text content. Only includes articles with at least 200 words of body text.
+- **Output**: `NewsArticleList` (JSON with articles array including full `content` field)
 - **Guardrail**: `repair_json_output` for JSON validation
 
 #### 2. pick_best_article
 - **Agent**: `article_picker`
-- **Description**: Evaluates candidates and selects the best article based on topic relevance, difficulty level, length, and educational value
+- **Description**: Selects the best article **only from the finder's output** (never invents or searches for additional articles). Ranks candidates using priority-based criteria: (1) topic relevance, (2) CEFR difficulty level, (3) approximate word length. Prefers single-topic articles over roundups/compilations. Verifies article existence at source URL and validates author names against the source page before selection.
 - **Context**: `find_news_articles`
 - **Output**: `SelectedArticle` (JSON with article and selection_rationale)
 - **Guardrail**: `repair_json_output` for JSON validation
@@ -850,14 +855,21 @@ graph LR
 - **Context**: `pick_best_article`
 - **Features**:
   - Vocabulary reinforcement using user's learned words
-  - Source attribution (name, URL, date, author)
+  - Source attribution (name, URL, date, author if verified)
   - Markdown formatting without word highlighting
+  - **Anti-fabrication**: Never fabricates information not present in the original article. If the original is short, keeps the rewrite short rather than padding with invented content.
 - **Output**: Markdown text
 
 #### 4. review_article_quality
 - **Agent**: `article_reviewer`
 - **Description**: Reviews the adapted article for natural language quality and level appropriateness
 - **Context**: `adapt_news_article`
+- **Features**:
+  - Corrects grammar errors and improves sentence flow
+  - Simplifies vocabulary that is too difficult for the target CEFR level
+  - **Preserves direct quotes** from people in the original article exactly as written
+  - **Preserves author style**: only fixes clear errors, does not rephrase stylistic choices
+  - Preserves all source information and markdown structure
 - **Output**: `ReviewedArticle` (JSON with article_content and replaced_sentences)
 - **Guardrail**: `repair_json_output` for JSON validation
 
@@ -1887,7 +1899,7 @@ const fetchTokenUsage = useCallback(async (isRefresh = false) => {
 - Article별로 그룹화하여 관리
 
 **Vocabulary 표시:**
-- 저장된 단어(`span_id`로 식별)는 항상 초록색으로 하이라이트 (`related_words` 존재 여부와 무관)
+- 저장된 단어(`span_id`로 식별)는 항상 초록색으로 하이라이트 (`related_words` 존재 여부와 무관). 클릭한 단어의 하이라이트는 `related_words` 검색보다 먼저 실행되어, 한국어 등 `related_words`가 없는 언어에서도 정상 동작함.
 - `related_words`가 존재하는 경우, 해당 단어들도 함께 초록색 표시 (분리 동사 등 복합 표현 지원)
 - 예: "hängt" 저장 시 "ab"도 자동으로 초록색 표시 (`related_words: ["hängt", "ab"]`)
 
