@@ -88,6 +88,7 @@ class TestGetLanguageCode(unittest.TestCase):
 class TestStripReflexivePronoun(unittest.TestCase):
     """Test reflexive pronoun stripping for API lookup."""
 
+    # German
     def test_strip_sich_german(self):
         """Test stripping 'sich' from German reflexive verbs."""
         self.assertEqual(_strip_reflexive_pronoun("sich gewöhnen", "de"), "gewöhnen")
@@ -108,6 +109,58 @@ class TestStripReflexivePronoun(unittest.TestCase):
         """Test other reflexive pronouns are stripped."""
         self.assertEqual(_strip_reflexive_pronoun("mich erinnern", "de"), "erinnern")
         self.assertEqual(_strip_reflexive_pronoun("dich setzen", "de"), "setzen")
+
+    def test_german_uns_euch(self):
+        """Test German uns/euch reflexive pronouns."""
+        self.assertEqual(_strip_reflexive_pronoun("uns treffen", "de"), "treffen")
+        self.assertEqual(_strip_reflexive_pronoun("euch beeilen", "de"), "beeilen")
+
+    def test_german_non_reflexive_noun(self):
+        """Test German non-reflexive words stay unchanged."""
+        self.assertEqual(_strip_reflexive_pronoun("Haus", "de"), "Haus")
+
+    # French
+    def test_french_strip_se(self):
+        """Test stripping 'se' from French reflexive verbs."""
+        self.assertEqual(_strip_reflexive_pronoun("se lever", "fr"), "lever")
+        self.assertEqual(_strip_reflexive_pronoun("Se coucher", "fr"), "coucher")
+
+    def test_french_strip_s_apostrophe(self):
+        """Test stripping s' from French reflexive verbs."""
+        self.assertEqual(_strip_reflexive_pronoun("s'asseoir", "fr"), "asseoir")
+        self.assertEqual(_strip_reflexive_pronoun("S'habiller", "fr"), "habiller")
+
+    def test_french_no_reflexive(self):
+        """Test French non-reflexive verbs stay unchanged."""
+        self.assertEqual(_strip_reflexive_pronoun("manger", "fr"), "manger")
+
+    # Spanish
+    def test_spanish_strip_arse(self):
+        """Test stripping -arse suffix from Spanish reflexive verbs."""
+        self.assertEqual(_strip_reflexive_pronoun("levantarse", "es"), "levantar")
+        self.assertEqual(_strip_reflexive_pronoun("bañarse", "es"), "bañar")
+
+    def test_spanish_strip_erse(self):
+        """Test stripping -erse suffix from Spanish reflexive verbs."""
+        self.assertEqual(_strip_reflexive_pronoun("ponerse", "es"), "poner")
+        self.assertEqual(_strip_reflexive_pronoun("moverse", "es"), "mover")
+
+    def test_spanish_strip_irse(self):
+        """Test stripping -irse suffix from Spanish reflexive verbs."""
+        self.assertEqual(_strip_reflexive_pronoun("dormirse", "es"), "dormir")
+        self.assertEqual(_strip_reflexive_pronoun("vestirse", "es"), "vestir")
+
+    def test_spanish_no_reflexive(self):
+        """Test Spanish non-reflexive words stay unchanged."""
+        self.assertEqual(_strip_reflexive_pronoun("comer", "es"), "comer")
+        self.assertEqual(_strip_reflexive_pronoun("ese", "es"), "ese")
+        self.assertEqual(_strip_reflexive_pronoun("base", "es"), "base")
+
+    # Unsupported language
+    def test_unsupported_language_unchanged(self):
+        """Test unsupported languages return word unchanged."""
+        self.assertEqual(_strip_reflexive_pronoun("test word", "ja"), "test word")
+        self.assertEqual(_strip_reflexive_pronoun("sich freuen", "unknown"), "sich freuen")
 
 
 class TestExtractGenderFromPos(unittest.TestCase):
@@ -175,11 +228,15 @@ class TestExtractGenderFromPos(unittest.TestCase):
         """Test French gender extraction from POS."""
         self.assertEqual(_extract_gender_from_pos("masculine noun", "fr"), "le")
         self.assertEqual(_extract_gender_from_pos("feminine noun", "fr"), "la")
+        self.assertEqual(_extract_gender_from_pos("masculin", "fr"), "le")
+        self.assertEqual(_extract_gender_from_pos("féminin", "fr"), "la")
 
     def test_spanish_gender_extraction(self):
         """Test Spanish gender extraction from POS."""
         self.assertEqual(_extract_gender_from_pos("masculine noun", "es"), "el")
         self.assertEqual(_extract_gender_from_pos("feminine noun", "es"), "la")
+        self.assertEqual(_extract_gender_from_pos("masculino", "es"), "el")
+        self.assertEqual(_extract_gender_from_pos("femenino", "es"), "la")
 
     def test_non_noun_german_returns_none(self):
         """Test non-noun parts of speech return None."""
@@ -260,6 +317,10 @@ class TestExtractGenderFromSenses(unittest.TestCase):
         self.assertEqual(_extract_gender_from_senses(entry, "fr"), "le")
         entry["senses"][0]["tags"] = ["feminine"]
         self.assertEqual(_extract_gender_from_senses(entry, "fr"), "la")
+        entry["senses"][0]["tags"] = ["masculin"]
+        self.assertEqual(_extract_gender_from_senses(entry, "fr"), "le")
+        entry["senses"][0]["tags"] = ["féminin"]
+        self.assertEqual(_extract_gender_from_senses(entry, "fr"), "la")
 
     def test_spanish_gender_from_senses(self):
         """Test Spanish gender extraction from senses tags."""
@@ -270,6 +331,10 @@ class TestExtractGenderFromSenses(unittest.TestCase):
         }
         self.assertEqual(_extract_gender_from_senses(entry, "es"), "el")
         entry["senses"][0]["tags"] = ["feminine"]
+        self.assertEqual(_extract_gender_from_senses(entry, "es"), "la")
+        entry["senses"][0]["tags"] = ["masculino"]
+        self.assertEqual(_extract_gender_from_senses(entry, "es"), "el")
+        entry["senses"][0]["tags"] = ["femenino"]
         self.assertEqual(_extract_gender_from_senses(entry, "es"), "la")
 
     def test_no_senses_returns_none(self):
@@ -576,10 +641,20 @@ class TestExtractEntryMetadata(unittest.TestCase):
         }
         meta = extract_entry_metadata(entry, "de")
         self.assertEqual(meta["pos"], "noun")
-        self.assertEqual(meta["phonetics"], "/hʊnt/")
+        self.assertIsNone(meta["phonetics"])  # German doesn't support phonetics
         self.assertEqual(meta["forms"], {"genitive": "Hundes", "plural": "Hunde"})
         self.assertEqual(meta["gender"], "der")
         self.assertEqual(len(meta["senses"]), 1)
+
+    def test_extracts_phonetics_for_english(self):
+        """Test that phonetics are extracted for English (supports_phonetics=True)."""
+        entry = {
+            "partOfSpeech": "noun",
+            "pronunciations": [{"type": "ipa", "text": "/dɒɡ/"}],
+            "senses": [{"definition": "a domesticated animal"}],
+        }
+        meta = extract_entry_metadata(entry, "en")
+        self.assertEqual(meta["phonetics"], "/dɒɡ/")
 
     def test_extracts_verb_metadata(self):
         """Test extracting verb metadata without gender."""
@@ -613,6 +688,46 @@ class TestExtractEntryMetadata(unittest.TestCase):
         }
         meta = extract_entry_metadata(entry, "de")
         self.assertEqual(meta["gender"], "der")
+
+    def test_no_phonetics_for_german(self):
+        """Test that phonetics are not extracted for German."""
+        entry = {
+            "partOfSpeech": "noun",
+            "pronunciations": [{"type": "ipa", "text": "/hʊnt/"}],
+            "senses": [{"definition": "dog"}],
+        }
+        meta = extract_entry_metadata(entry, "de")
+        self.assertIsNone(meta["phonetics"])
+
+    def test_no_phonetics_for_french(self):
+        """Test that phonetics are not extracted for French."""
+        entry = {
+            "partOfSpeech": "noun",
+            "pronunciations": [{"type": "ipa", "text": "/ʃjɛ̃/"}],
+            "senses": [{"definition": "dog"}],
+        }
+        meta = extract_entry_metadata(entry, "fr")
+        self.assertIsNone(meta["phonetics"])
+
+    def test_no_phonetics_for_spanish(self):
+        """Test that phonetics are not extracted for Spanish."""
+        entry = {
+            "partOfSpeech": "noun",
+            "pronunciations": [{"type": "ipa", "text": "/ˈpe.ro/"}],
+            "senses": [{"definition": "dog"}],
+        }
+        meta = extract_entry_metadata(entry, "es")
+        self.assertIsNone(meta["phonetics"])
+
+    def test_no_phonetics_for_unsupported(self):
+        """Test that phonetics are not extracted for unsupported languages."""
+        entry = {
+            "partOfSpeech": "noun",
+            "pronunciations": [{"type": "ipa", "text": "/test/"}],
+            "senses": [{"definition": "test"}],
+        }
+        meta = extract_entry_metadata(entry, "ja")
+        self.assertIsNone(meta["phonetics"])
 
 
 class TestFetchFromFreeDictionaryApi(unittest.IsolatedAsyncioTestCase):
