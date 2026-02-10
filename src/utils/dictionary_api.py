@@ -21,7 +21,9 @@ from tenacity import (
     retry_if_exception_type,
 )
 
-from utils.language_handlers import get_language_handler
+from utils.language_metadata import (
+    GENDER_MAP, REFLEXIVE_PREFIXES, REFLEXIVE_SUFFIXES, PHONETICS_SUPPORTED,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +102,11 @@ def _extract_gender_from_pos(pos: str, language_code: str) -> str | None:
     """
     if not pos:
         return None
-    handler = get_language_handler(language_code)
-    return handler.extract_gender_from_pos(pos)
+    pos_lower = pos.lower()
+    for keyword, article in GENDER_MAP.get(language_code, {}).items():
+        if keyword in pos_lower:
+            return article
+    return None
 
 
 def _extract_gender_from_senses(entry: dict[str, Any], language_code: str) -> str | None:
@@ -122,8 +127,12 @@ def _extract_gender_from_senses(entry: dict[str, Any], language_code: str) -> st
     if not tags:
         return None
 
-    handler = get_language_handler(language_code)
-    return handler.extract_gender_from_tags(tags)
+    gender_map = GENDER_MAP.get(language_code, {})
+    for tag in tags:
+        article = gender_map.get(tag.lower())
+        if article:
+            return article
+    return None
 
 
 def _extract_phonetics(entry: dict[str, Any]) -> str | None:
@@ -284,7 +293,7 @@ def extract_entry_metadata(entry: dict[str, Any], language_code: str) -> dict[st
         Dict with keys: pos, phonetics, forms, gender, senses.
     """
     pos = entry.get("partOfSpeech")
-    phonetics = _extract_phonetics(entry)
+    phonetics = _extract_phonetics(entry) if language_code in PHONETICS_SUPPORTED else None
     forms = _extract_forms(entry)
     senses = entry.get("senses", [])
 
@@ -311,8 +320,14 @@ def _strip_reflexive_pronoun(word: str, language_code: str) -> str:
     Returns:
         Word without reflexive pronoun prefix.
     """
-    handler = get_language_handler(language_code)
-    return handler.strip_reflexive_pronoun(word)
+    word_lower = word.lower()
+    for prefix in REFLEXIVE_PREFIXES.get(language_code, []):
+        if word_lower.startswith(prefix):
+            return word[len(prefix):]
+    for suffix in REFLEXIVE_SUFFIXES.get(language_code, []):
+        if word_lower.endswith(suffix):
+            return word[:-2]
+    return word
 
 
 @retry(

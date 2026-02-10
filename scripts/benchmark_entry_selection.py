@@ -39,7 +39,7 @@ from utils.dictionary_api import (
     API_TIMEOUT_SECONDS,
     LANGUAGE_CODE_MAP,
 )
-from utils.language_handlers import get_language_handler
+from utils.dictionary_api import _strip_reflexive_pronoun
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -120,8 +120,7 @@ async def fetch_api_entries(lemma: str, language: str) -> dict[str, Any] | None:
     if not language_code:
         return None
 
-    handler = get_language_handler(language_code)
-    lookup_word = handler.strip_reflexive_pronoun(lemma)
+    lookup_word = _strip_reflexive_pronoun(lemma, language_code)
     cache_key = f"{language_code}:{lookup_word}"
 
     if cache_key in _api_cache:

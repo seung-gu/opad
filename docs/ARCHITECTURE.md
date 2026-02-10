@@ -6,35 +6,38 @@
 
 ```mermaid
 graph TB
-    Web[Web<br/>Next.js] -->|HTTP| API[API<br/>FastAPI]
+    Web[Web<br/>Next.js] -->|HTTP/Proxy| API[API<br/>FastAPI]
     API -->|RPUSH| Redis[(Redis<br/>Queue + Status)]
     Redis -->|BLPOP| Worker[Worker<br/>Python]
     Worker -->|Execute| CrewAI[CrewAI]
     Worker -->|Save| MongoDB[(MongoDB<br/>Article + Vocabulary)]
-    
+
     API -.->|SET/GET| Redis
     Worker -.->|SET| Redis
-    
-    API -.->|utils/llm.py<br/>utils/prompts.py| OpenAI
-    
-    Web -->|HTTP<br/>Proxy| API
+
+    API -.->|Dictionary Lookup| LLM[LLM Provider]
+    CrewAI -.->|Article Generation| LLM
+
     API -->|Save/Query| MongoDB
-    
+
     style Web fill:#2196F3
     style API fill:#2196F3
     style Worker fill:#2196F3
     style CrewAI fill:#10a37f
     style Redis fill:#dc382d
     style MongoDB fill:#13aa52
-    style OpenAI fill:#10a37f
-    
+    style LLM fill:#10a37f
+
     linkStyle 0 stroke:#4a90e2,stroke-width:2px,color:#4a90e2
     linkStyle 1 stroke:#4a90e2,stroke-width:2px,color:#4a90e2
     linkStyle 2 stroke:#4a90e2,stroke-width:2px,color:#4a90e2
+    linkStyle 3 stroke:#10a37f,stroke-width:2px,color:#10a37f
+    linkStyle 4 stroke:#13aa52,stroke-width:2px,color:#13aa52
     linkStyle 5 stroke:#ff9500,stroke-width:2px,color:#ff9500
-    linkStyle 6 stroke:#13aa52,stroke-width:2px,color:#13aa52
+    linkStyle 6 stroke:#ff9500,stroke-width:2px,color:#ff9500
     linkStyle 7 stroke:#9c27b0,stroke-width:2px,color:#9c27b0
     linkStyle 8 stroke:#9c27b0,stroke-width:2px,color:#9c27b0
+    linkStyle 9 stroke:#13aa52,stroke-width:2px,color:#13aa52
 ```
 
 ### Article Generation 흐름
@@ -67,7 +70,8 @@ sequenceDiagram
 **특징:**
 - **실시간 응답**: 사용자가 단어를 클릭하면 즉시 정의 반환 (비동기 큐 사용 안 함)
 - **프록시 패턴**: Next.js API route가 FastAPI로 요청을 프록시
-- **공통 유틸 사용**: `utils/llm.py`와 `utils/prompts.py`로 재사용 가능한 구조
+- **공통 유틸 사용**: `utils/lemma_extraction.py`, `utils/sense_selection.py`, `utils/llm.py`로 재사용 가능한 구조
+- **Stanza NLP**: 독일어 lemma 추출에 Stanza NLP 사용 (로컬 처리, ~51ms), 기타 언어는 LLM 사용
 - **에러 처리**: `get_llm_error_response()`로 일관된 에러 응답
 
 ### 서비스 간 통신
@@ -80,7 +84,8 @@ sequenceDiagram
 | **API** | **MongoDB** | (via utils.mongodb) | 중복 체크, Article metadata 저장/조회, Vocabulary 저장/조회, Token usage 저장/조회 |
 | **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
 | **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.job_queue` 사용) |
-| **API** | **LLM** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 (lemma extraction + entry/sense selection) + Token tracking |
+| **API** | **Stanza NLP** | Local (via utils.lemma_extraction) | German lemma extraction (로컬 NLP, ~51ms) |
+| **API** | **LLM** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 (non-German lemma extraction + CEFR estimation + entry/sense selection) + Token tracking |
 | **API** | **API** | Internal | Token usage endpoints (`/usage/me`, `/usage/articles/{id}`) |
 | **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
 | **Worker** | **Redis** | `SET` | Job 상태 업데이트 (공통 모듈 `api.job_queue` 사용) |
@@ -233,6 +238,7 @@ Provider-agnostic LLM API calls using LiteLLM with automatic token tracking.
 
 **Functions**:
 - `call_llm_with_tracking()`: Makes LLM API calls and returns content + token statistics
+- `accumulate_stats()`: Combines multiple `TokenUsageStats` into one (sums tokens and costs)
 - `parse_json_from_content()`: Parses JSON from LLM responses (handles markdown code blocks)
 - `get_llm_error_response()`: Converts LLM exceptions to HTTP status codes
 
@@ -441,10 +447,18 @@ sequenceDiagram
     Note over User,LLM: Dictionary Search with Token Tracking
     User->>WebUI: Click word
     WebUI->>API: POST /dictionary/search
-    API->>LLM: Step 1: Reduced prompt (lemma extraction)
-    LLM-->>API: {lemma, related_words, level} + stats
+
+    alt German language
+        API->>API: Step 1a: Stanza NLP (lemma + related_words, ~51ms)
+        API->>LLM: Step 1b: CEFR estimation (max_tokens=10)
+        LLM-->>API: {level} + stats
+    else Other languages
+        API->>LLM: Step 1: LLM reduced prompt (max_tokens=200)
+        LLM-->>API: {lemma, related_words, level} + stats
+    end
+
     API->>API: Step 2: Free Dictionary API (all entries)
-    API->>LLM: Step 3: Entry+sense selection (X.Y.Z)
+    API->>LLM: Step 3: Sense selection (X.Y.Z, max_tokens=10)
     LLM-->>API: Selected entry.sense.subsense + stats
     API->>MongoDB: save_token_usage() (accumulated stats)
     API-->>WebUI: Definition response
@@ -990,11 +1004,18 @@ opad/
 │   │       ├── agents.yaml  # 에이전트 정의 (article_finder, article_picker, article_rewriter, article_reviewer)
 │   │       └── tasks.yaml   # 태스크 정의 (find_news_articles, pick_best_article, adapt_news_article, review_article_quality)
 │   │
+│   ├── services/         # 서비스 계층
+│   │   └── dictionary_service.py  # Dictionary lookup orchestrator (hybrid pipeline)
+│   │
 │   └── utils/            # 공통 유틸리티 (공유)
 │       ├── mongodb.py    # MongoDB 연결 및 작업
 │       ├── logging.py    # Structured logging 설정
 │       ├── llm.py        # OpenAI API 공통 함수
-│       ├── prompts.py    # LLM 프롬프트 템플릿
+│       ├── prompts.py    # Full LLM fallback 프롬프트만 포함
+│       ├── lemma_extraction.py  # Step 1: Lemma extraction (Stanza for German, LLM for others)
+│       ├── sense_selection.py   # Step 3: Sense selection from dictionary entries via LLM
+│       ├── dictionary_api.py    # Free Dictionary API wrapper (uses language_metadata for gender/reflexive/phonetics data)
+│       ├── language_metadata.py # Pure data constants (GENDER_MAP, REFLEXIVE_PREFIXES, REFLEXIVE_SUFFIXES, PHONETICS_SUPPORTED)
 │       └── token_usage.py # Token usage calculation and tracking
 │
 └── Dockerfile.*          # 서비스별 Dockerfile (이슈 #9)
@@ -1040,6 +1061,7 @@ Provider-agnostic LLM API 호출 및 토큰 추적을 위한 공통 함수들 (L
   - 자동 비용 계산 (LiteLLM 내장 가격 데이터베이스 사용)
 - **`TokenUsageStats`**: 토큰 사용량 통계 dataclass
   - 필드: `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `estimated_cost`, `provider`
+- **`accumulate_stats()`**: 여러 `TokenUsageStats`를 하나로 합산 (토큰 수 및 비용 합산)
 - **`parse_json_from_content()`**: LLM 응답에서 JSON 파싱 (다양한 형식 지원)
   - 일반 JSON, 마크다운 코드 블록 (```json), 텍스트 내 JSON 추출 지원
 - **`get_llm_error_response()`**: LLM 관련 예외를 HTTP 상태 코드로 변환
@@ -1067,24 +1089,69 @@ result = parse_json_from_content(content)
 - Anthropic: `"anthropic/claude-4.5-sonnet"`
 - Google: `"gemini/gemini-2.0-flash"`
 
-### 프롬프트 템플릿 (`utils/prompts.py`)
-재사용 가능한 LLM 프롬프트 빌더 함수들:
+### Dictionary Lookup Pipeline Modules
 
-- **`build_reduced_word_definition_prompt()`**: 하이브리드 조회용 축소 프롬프트 생성 (lemma, related_words, level만 추출)
-  - 내부적으로 언어별 함수 사용: `build_reduced_prompt_de()` (독일어), `build_reduced_prompt_en()` (영어)
-  - 기타 언어는 범용 프롬프트 사용
-- **`build_word_definition_prompt()`**: Full LLM 폴백용 프롬프트 생성 (모든 필드 추출)
+The dictionary lookup uses a 3-step pipeline, split across dedicated modules:
+
+#### Step 1: Lemma Extraction (`utils/lemma_extraction.py`)
+Extracts lemma + related_words + CEFR level from a word in context.
+
+- **`extract_lemma()`**: Main entry point. German uses Stanza NLP (local, ~51ms); other languages use LLM reduced prompt (~800ms).
+- **`preload_stanza()`**: Eagerly loads the Stanza German pipeline at API startup (~349MB).
+- **Stanza path (German)**: Dependency parsing for lemma + related_words, then a tiny LLM call for CEFR level estimation (max_tokens=10).
+- **LLM path (other languages)**: Language-specific reduced prompts (`_build_reduced_prompt_en`, `_build_reduced_prompt_de` fallback, `_build_reduced_prompt_generic`).
 
 **사용 예시:**
 ```python
-from utils.prompts import build_reduced_word_definition_prompt, build_word_definition_prompt
+from utils.lemma_extraction import extract_lemma
 
-# Hybrid approach: reduced prompt (lemma + level only)
-reduced_prompt = build_reduced_word_definition_prompt(
-    language="German",
+# German: Stanza NLP + CEFR LLM call
+result, stats = await extract_lemma(
+    word="hängt",
     sentence="Diese große Spanne hängt von mehreren Faktoren ab.",
-    word="hängt"
+    language="German",
 )
+# result = {"lemma": "abhängen", "related_words": ["hängt", "ab"], "level": "B1"}
+
+# English: LLM reduced prompt
+result, stats = await extract_lemma(
+    word="gave",
+    sentence="She gave up smoking.",
+    language="English",
+)
+# result = {"lemma": "give up", "related_words": ["gave", "up"], "level": "B1"}
+```
+
+#### Step 2: Sense Selection (`utils/sense_selection.py`)
+Selects the best entry/sense/subsense from Free Dictionary API entries using LLM.
+
+- **`select_best_sense()`**: Given dictionary entries, selects the best sense matching the word usage in context.
+- **Trivial skip**: If only 1 entry with 1 sense and no subsenses, skips LLM call entirely.
+- **X.Y.Z format**: LLM responds with entry.sense.subsense index (max_tokens=10).
+- **`SenseResult`**: Dataclass with `entry_idx`, `sense_idx`, `subsense_idx`, `definition`, `examples`, `stats`.
+
+**사용 예시:**
+```python
+from utils.sense_selection import select_best_sense
+
+sense = await select_best_sense(
+    sentence="I saw the dog in the park.",
+    word="saw",
+    entries=api_entries,  # from Free Dictionary API
+)
+# sense.entry_idx = 0, sense.definition = "past tense of see"
+```
+
+#### Full LLM Fallback (`utils/prompts.py`)
+Only contains the full LLM fallback prompt (used when hybrid pipeline fails).
+
+- **`build_word_definition_prompt()`**: Full LLM fallback prompt generating all fields (lemma, definition, pos, gender, conjugations, level).
+- Reduced prompts (lemma extraction) have moved to `utils/lemma_extraction.py`.
+- Sense selection prompts have moved to `utils/sense_selection.py`.
+
+**사용 예시:**
+```python
+from utils.prompts import build_word_definition_prompt
 
 # Full LLM fallback: all fields
 full_prompt = build_word_definition_prompt(
@@ -1094,37 +1161,73 @@ full_prompt = build_word_definition_prompt(
 )
 ```
 
+#### Language Metadata (`utils/language_metadata.py`)
+Pure data module containing language-specific constants used by `dictionary_api.py`. No logic -- only data definitions.
+
+- **`GENDER_MAP`**: Maps gender keywords to grammatical articles per language (e.g., `"masculine"` -> `"der"` for German, `"le"` for French, `"el"` for Spanish).
+- **`REFLEXIVE_PREFIXES`**: Reflexive pronoun prefixes to strip before API lookup (e.g., `"sich "` for German, `"se "` / `"s'"` for French).
+- **`REFLEXIVE_SUFFIXES`**: Reflexive verb suffix patterns (e.g., Spanish `"arse"`, `"erse"`, `"irse"` -> strip last 2 chars).
+- **`PHONETICS_SUPPORTED`**: Set of language codes that support IPA phonetics from Free Dictionary API (currently only `"en"`).
+
+**사용 예시:**
+```python
+from utils.language_metadata import (
+    GENDER_MAP, REFLEXIVE_PREFIXES, REFLEXIVE_SUFFIXES, PHONETICS_SUPPORTED,
+)
+
+# Gender lookup
+GENDER_MAP["de"]["masculine"]  # "der"
+GENDER_MAP["fr"]["feminine"]   # "la"
+
+# Reflexive prefix check
+REFLEXIVE_PREFIXES["de"]  # ["sich ", "mich ", "dich ", "uns ", "euch "]
+
+# Phonetics support check
+"en" in PHONETICS_SUPPORTED  # True
+"de" in PHONETICS_SUPPORTED  # False
+```
+
 ---
 
 ## 📡 Dictionary API
 
 ### Hybrid Dictionary Lookup Architecture
 
-The dictionary search uses a hybrid approach combining LLM capabilities with the Free Dictionary API for optimal results.
+The dictionary search uses a 3-step pipeline combining Stanza NLP (German), LLM capabilities, and the Free Dictionary API. The pipeline is split across dedicated modules: `utils/lemma_extraction.py` (Step 1), `utils/sense_selection.py` (Step 3), and `services/dictionary_service.py` (orchestrator).
 
 #### Overview
 
 ```mermaid
 graph TB
-    subgraph "Hybrid Dictionary Lookup"
-        Request[POST /dictionary/search] --> LLM[Step 1: LLM Reduced Prompt<br/>gpt-4.1-mini, max_tokens=200]
+    subgraph "Hybrid Dictionary Lookup Pipeline"
+        Request[POST /dictionary/search] --> LangCheck{German?}
 
-        LLM --> |lemma| API[Step 2: Free Dictionary API]
-        API --> |all entries| EntrySelect[Step 3: LLM Entry+Sense Selection<br/>X.Y.Z format, gpt-4.1-mini, max_tokens=10]
-        EntrySelect --> Metadata[Step 3b: Extract Metadata<br/>from selected entry]
+        LangCheck -->|Yes| Stanza[Step 1a: Stanza NLP<br/>lemma + related_words<br/>~51ms local]
+        Stanza --> CEFR[Step 1b: LLM CEFR<br/>gpt-4.1-mini, max_tokens=10]
+        CEFR --> DictAPI[Step 2: Free Dictionary API]
+
+        LangCheck -->|No| LLM[Step 1: LLM Reduced Prompt<br/>gpt-4.1-mini, max_tokens=200]
+        LLM --> DictAPI
+
+        DictAPI --> |all entries| SenseSelect[Step 3: LLM Sense Selection<br/>X.Y.Z format, max_tokens=10]
+        SenseSelect --> Metadata[Step 3b: Extract Metadata<br/>from selected entry]
         Metadata --> Merge[Step 4: Merge Results]
 
         Merge --> Response[SearchResponse]
 
+        Stanza -.-> |Stanza failure| LLM
         LLM -.-> |LLM failure| Fallback[Full LLM Fallback<br/>gpt-4.1-mini, max_tokens=2000]
-        API -.-> |404 / timeout / no entries| Fallback
+        DictAPI -.-> |404 / timeout / no entries| Fallback
         Fallback --> Response
     end
 
     style Request fill:#2196F3
+    style LangCheck fill:#e3f2fd
+    style Stanza fill:#9c27b0
+    style CEFR fill:#10a37f
     style LLM fill:#10a37f
-    style API fill:#ff9500
-    style EntrySelect fill:#10a37f
+    style DictAPI fill:#ff9500
+    style SenseSelect fill:#10a37f
     style Metadata fill:#9c27b0
     style Merge fill:#9c27b0
     style Response fill:#13aa52
@@ -1136,45 +1239,68 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant Client
-    participant API as FastAPI<br/>(/dictionary/search)
+    participant Service as DictionaryService<br/>(orchestrator)
+    participant Stanza as Stanza NLP<br/>(German only)
     participant LLM as LLM<br/>(gpt-4.1-mini)
     participant FreeDict as Free Dictionary API
 
-    Client->>API: POST {word, sentence, language}
+    Client->>Service: POST {word, sentence, language}
 
-    Note over API,LLM: Step 1: Get lemma from LLM
-    API->>LLM: Reduced prompt (max_tokens=200)
-    LLM-->>API: {lemma, related_words, level}
+    alt German language
+        Note over Service,Stanza: Step 1a: Stanza lemma extraction (~51ms)
+        Service->>Stanza: pipeline(sentence)
+        Stanza-->>Service: {lemma, related_words}
+        Note over Service,LLM: Step 1b: CEFR estimation
+        Service->>LLM: CEFR prompt (max_tokens=10)
+        LLM-->>Service: {level}
+    else Other languages
+        Note over Service,LLM: Step 1: LLM reduced prompt
+        Service->>LLM: Reduced prompt (max_tokens=200)
+        LLM-->>Service: {lemma, related_words, level}
+    end
 
-    Note over API,FreeDict: Step 2: Lookup using lemma
-    API->>FreeDict: GET /api/v1/entries/{lang}/{lemma}
-    FreeDict-->>API: {all_entries}
+    Note over Service,FreeDict: Step 2: Lookup using lemma
+    Service->>FreeDict: GET /api/v1/entries/{lang}/{lemma}
+    FreeDict-->>Service: {all_entries}
 
     alt API returns entries
         alt multiple entries/senses/subsenses
-            Note over API,LLM: Step 3: Select best entry+sense+subsense via LLM
-            API->>LLM: X.Y.Z selection prompt (max_tokens=10)
-            LLM-->>API: Selected X.Y.Z (entry.sense.subsense)
+            Note over Service,LLM: Step 3: Select best sense via LLM
+            Service->>LLM: X.Y.Z selection prompt (max_tokens=10)
+            LLM-->>Service: Selected X.Y.Z (entry.sense.subsense)
         end
-        Note over API: Step 3b: Extract metadata from selected entry
-        Note over API: Step 4: Merge LLM + API results
-        API-->>Client: SearchResponse (source: hybrid)
+        Note over Service: Step 3b: Extract metadata from selected entry
+        Note over Service: Step 4: Merge results
+        Service-->>Client: SearchResponse (source: hybrid)
     else API failure (404, timeout, no entries)
-        Note over API,LLM: Fallback: Full LLM prompt
-        API->>LLM: Full prompt (max_tokens=2000)
-        LLM-->>API: {lemma, definition, pos, gender, conjugations, level}
-        API-->>Client: SearchResponse (source: llm)
+        Note over Service,LLM: Fallback: Full LLM prompt
+        Service->>LLM: Full prompt (max_tokens=2000)
+        LLM-->>Service: {lemma, definition, pos, gender, conjugations, level}
+        Service-->>Client: SearchResponse (source: llm)
     end
 ```
+
+#### Pipeline Modules
+
+| Module | File | Responsibility | Output |
+|--------|------|----------------|--------|
+| **Lemma Extraction** | `utils/lemma_extraction.py` | Step 1: Extract lemma + related_words + CEFR level. German uses Stanza NLP (~51ms), others use LLM reduced prompt (~800ms) | `{"lemma", "related_words", "level"}` + `TokenUsageStats` |
+| **Sense Selection** | `utils/sense_selection.py` | Step 3: Select best entry/sense/subsense from dictionary entries via LLM (X.Y.Z format, max_tokens=10) | `SenseResult(entry_idx, sense_idx, subsense_idx, definition, examples, stats)` |
+| **Dictionary API** | `utils/dictionary_api.py` | Free Dictionary API wrapper; owns gender extraction, reflexive pronoun stripping, phonetics filtering, and form extraction logic (uses `language_metadata.py` for data constants) | `DictionaryAPIResult` |
+| **Language Metadata** | `utils/language_metadata.py` | Pure data constants: `GENDER_MAP`, `REFLEXIVE_PREFIXES`, `REFLEXIVE_SUFFIXES`, `PHONETICS_SUPPORTED` | Data only (no logic) |
+| **Dictionary Service** | `services/dictionary_service.py` | Orchestrator: wires Step 1 -> API -> Step 3, handles fallback | `LookupResult` |
+| **Full LLM Fallback** | `utils/prompts.py` | Fallback prompt when hybrid pipeline fails (max_tokens=2000) | All fields except `phonetics` and `examples` |
 
 #### Components
 
 | Component | Responsibility | Output Fields |
 |-----------|----------------|---------------|
-| **LLM (Reduced Prompt)** | Context-aware lemma extraction, CEFR level classification (max_tokens=200) | `lemma`, `related_words`, `level` |
+| **Stanza NLP (German)** | Local dependency parsing for lemma + related_words (~51ms, ~349MB model) | `lemma`, `related_words` |
+| **LLM (CEFR Estimation)** | Tiny LLM call for CEFR level on Stanza path (max_tokens=10) | `level` |
+| **LLM (Reduced Prompt)** | Context-aware lemma extraction for non-German languages (max_tokens=200) | `lemma`, `related_words`, `level` |
 | **Free Dictionary API** | Returns all dictionary entries with senses and subsenses | `all_entries` (containing `pos`, `senses`, `phonetics`, `forms` per entry) |
-| **LLM (Entry+Sense Selection)** | Selects best entry+sense+subsense using X.Y.Z format based on sentence context (max_tokens=10) | `definition`, `examples` (from selected sense/subsense) |
-| **Metadata Extraction** | Extracts POS, phonetics, forms, gender from the selected entry (not always entries[0]) | `pos`, `phonetics`, `forms`, `gender` |
+| **LLM (Sense Selection)** | Selects best entry+sense+subsense using X.Y.Z format based on sentence context (max_tokens=10) | `definition`, `examples` (from selected sense/subsense) |
+| **Metadata Extraction** | Extracts POS, phonetics, forms, gender from the selected entry (not always entries[0]). Logic lives in `dictionary_api.py`, data constants in `language_metadata.py` | `pos`, `phonetics`, `forms`, `gender` |
 | **Merge Function** | Combines results, converts `forms` to `conjugations` format, accumulates token stats | All fields |
 | **Full LLM Fallback** | Complete definition when hybrid fails (max_tokens=2000) | All fields except `phonetics` and `examples` |
 
@@ -1200,25 +1326,36 @@ The Free Dictionary API supports the following languages:
 
 The fallback to full LLM (gpt-4.1-mini) occurs in these scenarios:
 
-1. **LLM reduced prompt failure**: Failed to parse lemma from reduced prompt
-2. **Language not supported**: Language not in `LANGUAGE_CODE_MAP`
-3. **Word not found**: Free Dictionary API returns 404
-4. **API timeout**: Request exceeds 5-second timeout
-5. **API error**: HTTP error or network failure
-6. **Missing entries**: API response lacks entries (entry/sense/subsense selection requires entries)
+1. **Stanza failure (German)**: Stanza pipeline error or token not found -- falls through to LLM reduced prompt
+2. **LLM reduced prompt failure**: Failed to parse lemma from reduced prompt
+3. **Language not supported**: Language not in `LANGUAGE_CODE_MAP`
+4. **Word not found**: Free Dictionary API returns 404
+5. **API timeout**: Request exceeds 5-second timeout
+6. **API error**: HTTP error or network failure
+7. **Missing entries**: API response lacks entries (sense selection requires entries)
 
-**Fallback Flow**:
+**Fallback Chain**:
 ```
-Hybrid Lookup Failed (LLM or API)
-    |
-    v
-Full LLM Prompt (build_word_definition_prompt, gpt-4.1-mini)
-    |
-    v
-LLM returns all fields: lemma, definition, pos, gender, conjugations, level
-    |
-    v
-SearchResponse (without phonetics and examples)
+German path:
+  Stanza NLP (lemma + related_words)
+      |
+      v (failure)
+  LLM Reduced Prompt (fallback within Step 1)
+      |
+      v (failure)
+  Full LLM Fallback (all fields)
+
+Non-German path:
+  LLM Reduced Prompt (lemma + related_words + level)
+      |
+      v (failure)
+  Full LLM Fallback (all fields)
+
+Both paths after Step 1:
+  Free Dictionary API (Step 2)
+      |
+      v (404 / timeout / no entries)
+  Full LLM Fallback (all fields)
 ```
 
 **Note**: Fallback responses do NOT include `phonetics` or `examples` since these are only available from the Free Dictionary API.
@@ -1264,7 +1401,8 @@ if request.language != "English":
 
 Token usage is tracked for all dictionary searches:
 
-- **Hybrid success**: Reduced prompt tokens (~200 max) + entry+sense selection tokens (~10 max) accumulated (gpt-4.1-mini)
+- **Hybrid success (German)**: CEFR estimation tokens (~10 max) + sense selection tokens (~10 max) accumulated (gpt-4.1-mini). Stanza NLP uses no LLM tokens.
+- **Hybrid success (non-German)**: Reduced prompt tokens (~200 max) + sense selection tokens (~10 max) accumulated (gpt-4.1-mini)
 - **Fallback**: Full prompt tokens counted (~2000 max, gpt-4.1-mini)
 - **Source metadata**: Indicates `"hybrid"` or `"llm"` for cost analysis
 
@@ -1320,17 +1458,18 @@ Token usage is tracked for all dictionary searches:
 **Note**: `phonetics` is `null` for German (only available for English).
 
 **특징:**
-- **하이브리드 조회**: LLM + Free Dictionary API 결합으로 정확도와 비용 최적화 (X.Y.Z entry+sense+subsense 선택)
+- **3-Step Pipeline**: Step 1 (lemma extraction) -> Step 2 (Free Dictionary API) -> Step 3 (sense selection)
+- **Stanza NLP (German)**: 독일어는 Stanza NLP로 로컬 lemma 추출 (~51ms), CEFR만 LLM 호출
+- **LLM Reduced Prompt (non-German)**: 기타 언어는 LLM reduced prompt로 lemma + related_words + level 추출
 - **분리동사 처리**: 독일어 등에서 동사가 분리된 경우 전체 lemma 반환 (예: `hängt ... ab` → `abhängen`)
 - **복합어 처리**: 단어가 복합어의 일부인 경우 전체 형태 반환
 - **related_words**: 문장에서 같은 lemma에 속하는 모든 단어들을 배열로 반환 (예: 분리 동사의 경우 모든 부분 포함)
 - **문법적 메타데이터**: 품사(pos), 성(gender), 동사 활용형(conjugations), CEFR 레벨(level), IPA 발음(phonetics), 예문(examples) 추출
-- **공통 유틸 사용**: `utils/llm.py`의 `call_llm_with_tracking()` 함수 활용
-- **프롬프트 분리**: `utils/prompts.py`의 `build_reduced_word_definition_prompt()` (하이브리드), `build_word_definition_prompt()` (폴백) 사용
+- **모듈 구성**: `utils/lemma_extraction.py` (Step 1), `utils/sense_selection.py` (Step 3), `services/dictionary_service.py` (오케스트레이터), `utils/prompts.py` (폴백만 포함)
 - **보안**: Regex injection 방지를 위한 `re.escape()` 적용
 
 **흐름**: 위 [Hybrid Dictionary Lookup Architecture](#hybrid-dictionary-lookup-architecture) 섹션의 Data Flow 참조.
-Frontend → Next.js API(`/api/dictionary/search`) → FastAPI(`/dictionary/search`) → DictionaryService 순으로 프록시됨.
+Frontend -> Next.js API(`/api/dictionary/search`) -> FastAPI(`/dictionary/search`) -> DictionaryService(orchestrator) -> Step 1(lemma_extraction) -> Step 2(dictionary API) -> Step 3(sense_selection) 순으로 처리됨.
 
 ---
 

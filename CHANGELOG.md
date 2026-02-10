@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-02-09
+
+### Added
+- Stanza NLP integration for German lemma extraction providing 15-20x performance improvement (~51ms vs ~800ms LLM call)
+- Thread-safe Stanza singleton with double-check locking pattern for efficient resource management
+- Stanza pipeline preloading at API startup for instant lemma extraction availability
+- New `SenseResult` dataclass for structured sense selection output with clear return types
+- Comprehensive unit tests for lemma extraction (46 tests) and sense selection (56 tests) with edge case coverage
+
+### Changed
+- Refactored dictionary service pipeline into two distinct steps: Step 1 (lemma extraction) → API → Step 2 (sense selection)
+- Extracted lemma extraction logic into new `src/utils/lemma_extraction.py` module (Strategy Pattern: `LemmaExtractor` ABC with `StanzaLemmaExtractor` for German and `LLMLemmaExtractor` for other languages)
+- Extracted sense selection logic into new `src/utils/sense_selection.py` module for improved separation of concerns
+- Refactored language-specific handlers into pure data module `src/utils/language_metadata.py` containing language constants (GENDER_MAP, REFLEXIVE_PREFIXES, REFLEXIVE_SUFFIXES, PHONETICS_SUPPORTED) with inline logic in `dictionary_api.py` for improved simplicity and maintainability
+- Reduced `dictionary_service.py` from ~534 to ~272 lines by acting as pure orchestrator
+- Reduced `prompts.py` to ~70 lines containing only full LLM fallback prompt
+- Stanza lemma extraction runs in `asyncio.to_thread()` context to prevent blocking event loop
+- Updated `_find_target_token` to return (token, sentence) tuple for correct sentence context in lemma selection
+- CEFR vocabulary level determination moved to second LLM call (sense selection) for German Stanza path
+- Removed `Handler` class pattern from `language_handlers.py` (replaced with simpler metadata-driven approach)
+- Moved `_accumulate_stats` from `dictionary_service.py` to `llm.py` as public `accumulate_stats()` function, co-locating `TokenUsageStats` and its operations
+
+### Dependencies
+- Added `stanza>=1.9.0` for neural NLP pipeline and German lemmatization
+
 ## [0.11.6] - 2026-02-09
 
 ### Fixed

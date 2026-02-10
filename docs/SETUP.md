@@ -42,6 +42,10 @@ MONGODB_DATABASE=opad
 # OpenAI (CrewAI에서 사용)
 OPENAI_API_KEY=your-key
 SERPER_API_KEY=your-key
+
+# Stanza NLP (자동 설정, 환경변수 불필요)
+# German pipeline (~349MB)은 API startup 시 자동 다운로드
+# 모델 캐시 위치: ~/stanza_resources/
 ```
 
 ### Worker 서비스
@@ -109,10 +113,14 @@ pip install -e .
 ```
 
 **참고**: 이 프로젝트는 `uv`를 사용합니다. Python 명령어 실행 시 항상 `uv run`을 사용하세요:
-- ✅ `uv run python -m unittest ...`
-- ✅ `uv run python script.py`
-- ❌ `python3 ...` (사용하지 않음)
-- ❌ `python ...` (사용하지 않음)
+- `uv run python -m unittest ...`
+- `uv run python script.py`
+
+**Stanza NLP 모델 다운로드** (자동):
+- API 서비스 첫 실행 시 Stanza German pipeline (~349MB)이 자동으로 다운로드됩니다.
+- 다운로드는 `src/api/main.py`의 `startup` 이벤트에서 `preload_stanza()`를 통해 실행됩니다.
+- 이후 실행 시에는 캐시된 모델을 사용하므로 추가 다운로드가 필요하지 않습니다.
+- 수동 다운로드: `uv run python -c "import stanza; stanza.download('de')"`
 
 ### 4. API 서비스 실행 (터미널 1)
 ```bash

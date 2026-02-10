@@ -594,7 +594,7 @@ generateResponse.status === 409  ← Response handling!
 
 #### POST /dictionary/search
 
-**Description**: Search for word definition, lemma, and grammatical metadata using hybrid LLM + Free Dictionary API lookup. The hybrid approach uses a two-step LLM process: (1) extract lemma and CEFR level, then (2) select the best entry+sense+subsense from the Free Dictionary API response using X.Y.Z format (entry.sense.subsense). Metadata (POS, phonetics, forms, gender) is extracted from the selected entry rather than always using the first entry.
+**Description**: Search for word definition, lemma, and grammatical metadata using a 3-step hybrid pipeline. Step 1: Lemma extraction -- German uses Stanza NLP (local, ~51ms) with a tiny LLM call for CEFR level; other languages use an LLM reduced prompt. Step 2: Free Dictionary API lookup using the extracted lemma. Step 3: LLM sense selection picks the best entry+sense+subsense from the API response using X.Y.Z format. Falls back to a full LLM prompt when the pipeline fails. Metadata (POS, phonetics, forms, gender) is extracted from the selected entry.
 
 **Auth**: Required (JWT) - Prevents API abuse
 
@@ -1437,6 +1437,47 @@ async def search_word(
         )
 
     return SearchResponse(**result.__dict__)
+```
+
+---
+
+#### accumulate_stats()
+
+**Module**: `utils/llm.py`
+
+**Description**: Combine multiple `TokenUsageStats` instances into a single aggregated result. Co-located with the `TokenUsageStats` dataclass for cohesion. Used by `DictionaryService` to merge token usage from multi-step LLM pipelines (e.g., lemma extraction + sense selection).
+
+**Signature**:
+```python
+def accumulate_stats(
+    *stats_list: TokenUsageStats | None,
+) -> TokenUsageStats | None
+```
+
+**Parameters**:
+- `*stats_list`: Variable number of `TokenUsageStats` objects (or `None`). `None` values are filtered out.
+
+**Returns**:
+- Combined `TokenUsageStats` with summed `prompt_tokens`, `completion_tokens`, `total_tokens`, and `estimated_cost`
+- The single valid stats object if only one non-None input
+- `None` if all inputs are `None`
+
+**Note**: The `model` and `provider` fields are taken from the first valid stats object.
+
+**Example**:
+```python
+from utils.llm import accumulate_stats, TokenUsageStats
+
+stats1 = TokenUsageStats(model="gpt-4.1-mini", prompt_tokens=100,
+    completion_tokens=50, total_tokens=150, estimated_cost=0.001, provider="openai")
+stats2 = TokenUsageStats(model="gpt-4.1-mini", prompt_tokens=200,
+    completion_tokens=80, total_tokens=280, estimated_cost=0.002, provider="openai")
+
+combined = accumulate_stats(stats1, None, stats2)
+# combined.prompt_tokens = 300
+# combined.completion_tokens = 130
+# combined.total_tokens = 430
+# combined.estimated_cost = 0.003
 ```
 
 ---

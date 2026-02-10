@@ -91,6 +91,13 @@ async def startup():
     else:
         logger.warning("Failed to create MongoDB indexes (MongoDB may be unavailable)")
 
+    # Preload Stanza German pipeline (~349MB) to avoid first-request latency
+    try:
+        from utils.lemma_extraction import preload_stanza
+        preload_stanza()
+    except Exception as e:
+        logger.warning("Failed to preload Stanza pipeline: %s", e)
+
 
 @app.get("/")
 async def root():
