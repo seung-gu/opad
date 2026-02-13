@@ -1,6 +1,48 @@
-# 아키텍처 문서: 3-Service 분리
+# Architecture
 
-## 🎯 시스템 아키텍처
+> This document uses the [C4 model](https://c4model.com/) to structure architecture diagrams.
+> C4 defines four zoom levels: **Context** (L1) → **Container** (L2) → **Component** (L3) → **Code** (L4).
+> This document covers **L1** and **L2**. Component-level details (L3) are described in the subsequent sections (e.g., Dictionary Lookup Pipeline, CrewAI Pipeline). L4 is the source code itself.
+
+## System Context Diagram (C4 Level 1)
+
+The Context diagram shows OPAD as a single box and every person or external system it interacts with. Internal details (services, databases) are hidden at this level.
+
+```mermaid
+%%{init: {"flowchart": {"curve": "linear"}} }%%
+graph TB
+    learner(["👤 Language Learner"])
+    admin(["👤 Admin"])
+
+    opad["OPAD"]
+
+    llm["LLM API"]
+    freedict["Free Dictionary API"]
+    serper["Serper API"]
+    news["News Websites"]
+
+    learner -->|reads articles, looks up words| opad
+    admin -->|views token usage| opad
+
+    opad -->|generates articles, extracts lemmas| llm
+    opad -->|looks up definitions, forms| freedict
+    opad -->|searches news| serper
+    opad -->|scrapes articles| news
+```
+
+| Element | Type | Description |
+|---------|------|-------------|
+| **Language Learner** | Person | Reads adapted articles and looks up unknown words |
+| **Admin** | Person | Monitors token usage and system health |
+| **OPAD** | System (ours) | Transforms news → educational reading materials; context-aware dictionary |
+| **LLM API** | External System | OpenAI / Anthropic — article generation, lemma extraction, sense selection |
+| **Free Dictionary API** | External System | Definitions, IPA pronunciation, grammatical forms |
+| **Serper API** | External System | Google News search for article discovery |
+| **News Websites** | External System | Source article content via web scraping |
+
+---
+
+## Container Diagram (C4 Level 2)
 
 ### System Overview
 

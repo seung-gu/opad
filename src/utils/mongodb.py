@@ -6,8 +6,8 @@ import uuid
 import re
 from typing import Optional, TypedDict
 from datetime import datetime, timedelta, timezone
-from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, PyMongoError
+from adapter.mongodb import get_mongodb_client, reset_client
 
 logger = logging.getLogger(__name__)
 
@@ -18,16 +18,12 @@ pymongo_logger.setLevel(logging.WARNING)
 
 # MongoDB connection string from environment
 # Railway MongoDB add-on provides MONGO_URL automatically
-MONGO_URL = os.getenv('MONGO_URL')
 DATABASE_NAME = os.getenv('MONGODB_DATABASE', 'opad')
 COLLECTION_NAME = 'articles'
 VOCABULARY_COLLECTION_NAME = 'vocabularies'
 USERS_COLLECTION_NAME = 'users'
 TOKEN_USAGE_COLLECTION_NAME = 'token_usage'
 
-_client_cache = None
-_connection_attempted = False
-_connection_failed = False
 
 # CEFR levels in order
 CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
@@ -66,81 +62,6 @@ def get_allowed_vocab_levels(target_level: str, max_above: int = 1) -> list[str]
     # Ensure we always include at least up to target level (handle negative max_above safely)
     max_index = max(target_index, min(target_index + max_above, len(CEFR_LEVELS) - 1))
     return CEFR_LEVELS[:max_index + 1]
-
-
-def get_mongodb_client() -> Optional[MongoClient]:
-    """Get MongoDB client with connection caching and reconnection logic.
-    
-    Connection strategy:
-    1. Return cached client if healthy (ping succeeds)
-    2. If cached client fails, attempt reconnection
-    3. If initial connection failed (config issue), don't retry
-    
-    Returns:
-        MongoDB client or None if connection fails
-    """
-    global _client_cache, _connection_attempted, _connection_failed
-    
-    # Fast path: return cached client if healthy
-    if _client_cache:
-        try:
-            _client_cache.admin.command('ping')
-            return _client_cache
-        except Exception:
-            _client_cache = None
-            logger.debug("[MONGODB] Cached client failed ping, attempting reconnection...")
-    
-    # Don't retry if initial connection failed (configuration issue)
-    if _connection_failed:
-        return None
-    
-    # Validate connection string is configured
-    if not MONGO_URL:
-        logger.error("[MONGODB] MONGO_URL not configured.")
-        logger.error("[MONGODB] Railway MongoDB add-on provides MONGO_URL automatically.")
-        _connection_failed = True
-        return None
-    
-    # Attempt connection with optimized settings for Railway
-    try:
-        client = MongoClient(
-            MONGO_URL,
-            serverSelectionTimeoutMS=5000,  # 5s timeout for server selection
-            connectTimeoutMS=5000,  # 5s timeout for initial connection
-            socketTimeoutMS=30000,  # 30s timeout for operations
-            maxPoolSize=10,  # Connection pool size (reasonable for Railway)
-            minPoolSize=0,   # Don't maintain idle connections (saves resources)
-            maxIdleTimeMS=30000,  # Close idle connections after 30s (handles Railway idle timeout)
-            waitQueueTimeoutMS=10000,  # Wait up to 10s for available connection
-            retryWrites=True,  # Retry writes on network errors (auto-reconnect)
-            retryReads=True,   # Retry reads on network errors (auto-reconnect)
-            # Compression: Use zlib (built-in, no extra dependencies)
-            # This reduces network traffic and can help with log costs
-            compressors=['zlib'],
-            zlibCompressionLevel=1  # Fast compression (speed over ratio)
-        )
-        client.admin.command('ping')  # Verify connection works
-        
-        # Track first successful connection
-        is_first_connection = not _connection_attempted
-        _connection_attempted = True
-        
-        # Cache for future calls
-        _client_cache = client
-        
-        # Log only on first connection
-        if is_first_connection:
-            logger.info(f"[MONGODB] Connected successfully to {DATABASE_NAME}")
-        
-        return client
-    except (ConnectionFailure, PyMongoError) as e:
-        # Log only on initial failure
-        if not _connection_attempted:
-            error_msg = str(e)[:200]
-            logger.error(f"[MONGODB] Initial connection failed: {error_msg}")
-            logger.error(f"[MONGODB] Railway provides MONGO_URL automatically from MongoDB add-on")
-            _connection_failed = True
-        return None
 
 
 def save_article(article_id: str, content: str, started_at: Optional[datetime] = None) -> bool:
@@ -764,8 +685,7 @@ def find_duplicate_article(inputs: dict, user_id: Optional[str] = None, hours: i
             "userId": user_id
         })
         # Clear cache to force reconnection on next call
-        global _client_cache
-        _client_cache = None
+        reset_client()
         return None
 
 
@@ -799,8 +719,7 @@ def get_latest_article() -> Optional[dict]:
     except (ConnectionFailure, PyMongoError) as e:
         logger.error("Failed to get latest article", extra={"error": str(e)})
         # Clear cache to force reconnection on next call
-        global _client_cache
-        _client_cache = None
+        reset_client()
         return None
 
 
