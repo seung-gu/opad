@@ -123,7 +123,7 @@ sequenceDiagram
 | **Web** | **API** | HTTP | Article 생성, Job enqueue, Token usage 조회 |
 | **Web** | **Next.js API** | HTTP | Dictionary API 요청 (프록시), Vocabulary CRUD 요청 (프록시), Dictionary Stats 요청 (프록시) |
 | **Next.js API** | **API** | HTTP | Dictionary API 프록시 요청, Vocabulary CRUD 프록시 요청, Dictionary Stats 프록시 요청 |
-| **API** | **MongoDB** | (via utils.mongodb) | 중복 체크, Article metadata 저장/조회, Vocabulary 저장/조회, Token usage 저장/조회 |
+| **API** | **MongoDB** | (via ArticleRepository + utils.mongodb) | 중복 체크, Article metadata 저장/조회 (ArticleRepository), Vocabulary 저장/조회 (utils.mongodb), Token usage 저장/조회 (utils.mongodb) |
 | **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
 | **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.job_queue` 사용) |
 | **API** | **Stanza NLP** | Local (via utils.lemma_extraction) | German lemma extraction (로컬 NLP, ~51ms) |
@@ -132,9 +132,9 @@ sequenceDiagram
 | **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
 | **Worker** | **Redis** | `SET` | Job 상태 업데이트 (공통 모듈 `api.job_queue` 사용) |
 | **Worker** | **CrewAI** | Function Call | Article 생성 |
-| **Worker** | **MongoDB** | (via utils.mongodb) | Article content 저장, Token usage 저장 |
+| **Worker** | **MongoDB** | (via ArticleRepository + utils.mongodb) | Article content 저장 (ArticleRepository), Token usage 저장 (utils.mongodb) |
 
-**참고**: API와 Worker 모두 `api.job_queue` 모듈을 통해 Redis에 접근합니다. MongoDB 접근은 `utils.mongodb` 모듈을 통해 합니다.
+**참고**: API와 Worker 모두 `api.job_queue` 모듈을 통해 Redis에 접근합니다. Article 관련 MongoDB 접근은 `ArticleRepository` (hexagonal architecture) 를 통해 합니다. Vocabulary, Token usage 등은 아직 `utils.mongodb` 모듈을 통해 접근합니다 (Phase 2에서 마이그레이션 예정).
 
 ### Redis 데이터 구조
 
@@ -265,6 +265,217 @@ queued → running → completed / failed
 - **Article Status (MongoDB)**: Article의 최종 상태 (영구 저장)
 - **Job Status (Redis)**: Job 처리의 실시간 상태 (24시간 후 자동 삭제)
 - Article은 `running` 상태로 생성되고, Job이 완료되면 `completed` 또는 `failed`로 업데이트됨
+
+---
+
+## Hexagonal Architecture (Ports and Adapters)
+
+### Overview
+
+The project is adopting hexagonal architecture (ports and adapters) incrementally, starting with the Article entity (Phase 1). This pattern decouples business logic from infrastructure concerns (MongoDB, Redis) by introducing explicit boundaries between layers.
+
+**Motivation:**
+- Enable unit testing without MongoDB (swap in `FakeArticleRepository`)
+- Make infrastructure decisions (MongoDB vs PostgreSQL) implementation details, not architectural commitments
+- Enforce consistent data access patterns across API and Worker services
+
+### Layer Structure
+
+```mermaid
+graph TB
+    subgraph "Composition Roots"
+        APIRoot["api/dependencies.py<br/>(FastAPI Depends)"]
+        WorkerRoot["worker/main.py<br/>(parameter injection)"]
+    end
+
+    subgraph "Domain Layer"
+        Article["Article<br/>(dataclass)"]
+        ArticleInputs["ArticleInputs<br/>(frozen dataclass)"]
+        ArticleStatus["ArticleStatus<br/>(str Enum)"]
+    end
+
+    subgraph "Port Layer"
+        RepoProtocol["ArticleRepository<br/>(Protocol)"]
+    end
+
+    subgraph "Adapter Layer"
+        MongoAdapter["MongoArticleRepository<br/>(MongoDB)"]
+        FakeAdapter["FakeArticleRepository<br/>(in-memory, testing)"]
+    end
+
+    subgraph "Consumers"
+        ArticlesRoute["api/routes/articles.py"]
+        Processor["worker/processor.py"]
+        Context["worker/context.py"]
+    end
+
+    APIRoot --> RepoProtocol
+    WorkerRoot --> RepoProtocol
+
+    ArticlesRoute --> RepoProtocol
+    Processor --> RepoProtocol
+    Context --> RepoProtocol
+
+    RepoProtocol -.->|implements| MongoAdapter
+    RepoProtocol -.->|implements| FakeAdapter
+
+    MongoAdapter --> Article
+    FakeAdapter --> Article
+
+    Article --> ArticleInputs
+    Article --> ArticleStatus
+
+    style Article fill:#e3f2fd
+    style ArticleInputs fill:#e3f2fd
+    style ArticleStatus fill:#e3f2fd
+    style RepoProtocol fill:#fff3e0
+    style MongoAdapter fill:#e8f5e9
+    style FakeAdapter fill:#e8f5e9
+    style APIRoot fill:#fce4ec
+    style WorkerRoot fill:#fce4ec
+```
+
+### Domain Model (`src/domain/model/article.py`)
+
+The `Article` domain model is a plain Python dataclass with no database dependencies:
+
+```python
+class ArticleStatus(str, Enum):
+    RUNNING = 'running'
+    COMPLETED = 'completed'
+    FAILED = 'failed'
+    DELETED = 'deleted'
+
+@dataclass(frozen=True)
+class ArticleInputs:
+    """Input parameters for article generation."""
+    language: str
+    level: str
+    length: str
+    topic: str
+
+@dataclass
+class Article:
+    """Domain model representing an article."""
+    id: str
+    inputs: ArticleInputs
+    status: ArticleStatus
+    created_at: datetime
+    updated_at: datetime
+    user_id: str | None = None
+    job_id: str | None = None
+    content: str | None = None
+    started_at: datetime | None = None
+```
+
+**Design decisions:**
+- `ArticleInputs` is `frozen=True` (immutable) because inputs never change after creation
+- `ArticleStatus` extends `str` for JSON serialization compatibility
+- `Article` is a mutable dataclass (status, content change during lifecycle)
+
+### Port (`src/port/article_repository.py`)
+
+The port defines the contract for article persistence using Python's `Protocol`:
+
+```python
+class ArticleRepository(Protocol):
+    def save_metadata(self, article_id, inputs, status, ...) -> bool: ...
+    def save_content(self, article_id, content, ...) -> bool: ...
+    def get_by_id(self, article_id) -> Article | None: ...
+    def find_many(self, skip, limit, status, ...) -> tuple[list[Article], int]: ...
+    def find_duplicate(self, inputs, user_id, hours) -> Article | None: ...
+    def update_status(self, article_id, status) -> bool: ...
+    def delete(self, article_id) -> bool: ...
+```
+
+**Why Protocol (structural typing)?**
+- No need for adapters to explicitly inherit from an ABC
+- Any class with matching method signatures satisfies the protocol
+- Supports duck typing while providing IDE/mypy type checking
+
+### Adapters
+
+#### MongoArticleRepository (`src/adapter/mongodb/article_repository.py`)
+
+Production adapter that persists articles to MongoDB.
+
+- Receives a `pymongo.Database` instance via constructor injection
+- Converts between MongoDB documents and `Article` domain objects via `_to_domain()` helper
+- Uses `dataclasses.asdict()` to serialize `ArticleInputs` for storage
+- All methods return `bool` or domain objects (never raw MongoDB documents)
+
+#### FakeArticleRepository (`src/adapter/fake/article_repository.py`)
+
+In-memory adapter for unit testing.
+
+- Stores articles in a `dict[str, Article]` (no external dependencies)
+- Implements the same `ArticleRepository` protocol as `MongoArticleRepository`
+- Enables fast, deterministic tests without database setup
+
+### Composition Roots (Dependency Injection)
+
+#### FastAPI (`src/api/dependencies.py`)
+
+```python
+def get_article_repo() -> ArticleRepository:
+    client = get_mongodb_client()
+    if client is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    db = client[DATABASE_NAME]
+    return MongoArticleRepository(db)
+```
+
+Used by FastAPI route handlers via `Depends(get_article_repo)`:
+
+```python
+@router.get("/{article_id}")
+async def get_article_endpoint(
+    article_id: str,
+    repo: ArticleRepository = Depends(get_article_repo),
+):
+    article = repo.get_by_id(article_id)
+    ...
+```
+
+#### Worker (`src/worker/main.py`)
+
+```python
+def main():
+    client = get_mongodb_client()
+    db = client[DATABASE_NAME]
+    repo = MongoArticleRepository(db)
+    run_worker_loop(repo)  # repo passed as parameter
+```
+
+The worker creates the repository once at startup and passes it through the call chain: `main()` -> `run_worker_loop(repo)` -> `process_job(job_data, repo)` -> `JobContext.from_dict(job_data, repo)`.
+
+### Migration Strategy (Phase 1 vs Phase 2)
+
+#### Phase 1 (Current -- Issue #98)
+Article entity fully migrated to hexagonal architecture:
+- All article CRUD operations go through `ArticleRepository`
+- API routes use `Depends(get_article_repo)` for injection
+- Worker receives `repo` parameter via constructor chain
+- Legacy functions in `utils/mongodb.py` marked with `.. deprecated::` docstrings
+
+#### Phase 2 (Future)
+- Remove deprecated functions from `utils/mongodb.py` (e.g., `save_article()`, `get_article()`, `list_articles()`, `save_article_metadata()`, `find_duplicate_article()`, `get_latest_article()`, `update_article_status()`, `delete_article()`)
+- Migrate Vocabulary entity to hexagonal pattern (`VocabularyRepository`)
+- Migrate User entity to hexagonal pattern (`UserRepository`)
+- Migrate Token Usage to hexagonal pattern (`TokenUsageRepository`)
+
+**Deprecated functions in `utils/mongodb.py`** (Phase 1):
+
+| Deprecated Function | Replacement |
+|---------------------|-------------|
+| `save_article()` | `ArticleRepository.save_content()` |
+| `get_article()` | `ArticleRepository.get_by_id()` |
+| `save_article_metadata()` | `ArticleRepository.save_metadata()` |
+| `find_duplicate_article()` | `ArticleRepository.find_duplicate()` |
+| `get_latest_article()` | `ArticleRepository.find_many(limit=1)` |
+| `list_articles()` | `ArticleRepository.find_many()` |
+| `update_article_status()` | `ArticleRepository.update_status()` |
+| `delete_article()` | `ArticleRepository.delete()` |
 
 ---
 
@@ -959,7 +1170,7 @@ class ReplacedSentence(BaseModel):
 
 **File**: `src/worker/processor.py`
 
-The worker processes the CrewAI result and extracts the reviewed article:
+The worker processes the CrewAI result and extracts the reviewed article. It uses the injected `ArticleRepository` (via `ctx.repo`) instead of calling `utils.mongodb` directly:
 
 ```python
 # Log replaced sentences from review
@@ -967,13 +1178,15 @@ reviewed = result.pydantic
 if isinstance(reviewed, ReviewedArticle) and reviewed.replaced_sentences:
     for change in reviewed.replaced_sentences:
         logger.info(
-            f"Sentence replaced: '{change.original}' → '{change.replaced}' ({change.rationale})",
+            f"Sentence replaced: '{change.original}' -> '{change.replaced}' ({change.rationale})",
             extra=ctx.log_extra
         )
 
-# Save to MongoDB
-content = reviewed.article_content if isinstance(reviewed, ReviewedArticle) else result.raw
-save_article(ctx.article_id, content, ctx.started_at)
+# Save to MongoDB via ArticleRepository (injected)
+content = reviewed.article_content
+if not repo.save_content(ctx.article_id, content, ctx.started_at):
+    ctx.mark_failed('Failed to save article to database', 'MongoDB save error')
+    return False
 ```
 
 **Benefits of the Review Step**:
@@ -989,22 +1202,36 @@ save_article(ctx.article_id, content, ctx.started_at)
 ```
 opad/
 ├── src/
+│   ├── domain/           # Domain layer (hexagonal architecture)
+│   │   └── model/
+│   │       └── article.py    # Article, ArticleInputs, ArticleStatus
+│   │
+│   ├── port/             # Port layer (hexagonal architecture)
+│   │   └── article_repository.py  # ArticleRepository Protocol
+│   │
+│   ├── adapter/          # Adapter layer (hexagonal architecture)
+│   │   ├── mongodb/
+│   │   │   ├── connection.py          # MongoDB client (get_mongodb_client)
+│   │   │   └── article_repository.py  # MongoArticleRepository
+│   │   └── fake/
+│   │       └── article_repository.py  # FakeArticleRepository (testing)
+│   │
 │   ├── api/              # API 서비스 (FastAPI)
 │   │   ├── __init__.py
 │   │   ├── main.py       # FastAPI 앱 진입점
+│   │   ├── dependencies.py  # Composition root (get_article_repo)
 │   │   ├── models.py     # Pydantic 모델 (Article, Job)
 │   │   ├── routes/       # API 엔드포인트
 │   │   │   ├── articles.py
 │   │   │   ├── jobs.py
 │   │   │   ├── health.py
-│   │   │   ├── endpoints.py
 │   │   │   ├── stats.py
 │   │   │   └── dictionary.py  # Dictionary API (word definition)
 │   │   └── job_queue.py  # Redis 큐 관리
 │   │
 │   ├── worker/           # Worker 서비스 (Python)
 │   │   ├── __init__.py
-│   │   ├── main.py       # Worker 진입점
+│   │   ├── main.py       # Worker 진입점 (composition root)
 │   │   ├── processor.py  # Job 처리 로직
 │   │   ├── context.py    # JobContext helper
 │   │   └── tests/        # Worker tests
@@ -1050,7 +1277,7 @@ opad/
 │   │   └── dictionary_service.py  # Dictionary lookup orchestrator (hybrid pipeline)
 │   │
 │   └── utils/            # 공통 유틸리티 (공유)
-│       ├── mongodb.py    # MongoDB 연결 및 작업
+│       ├── mongodb.py    # MongoDB 작업 (article 함수는 deprecated, vocabulary/user/token 함수는 활성)
 │       ├── logging.py    # Structured logging 설정
 │       ├── llm.py        # OpenAI API 공통 함수
 │       ├── prompts.py    # Full LLM fallback 프롬프트만 포함
@@ -1066,6 +1293,9 @@ opad/
 ### 서비스 구분
 | 폴더 | 역할 | 런타임 | 포트 |
 |------|------|--------|------|
+| `src/domain/` | Domain models (Article, ArticleInputs, ArticleStatus) | - | - |
+| `src/port/` | Port definitions (ArticleRepository Protocol) | - | - |
+| `src/adapter/` | Infrastructure adapters (MongoDB, Fake) | - | - |
 | `src/api/` | CRUD + Job enqueue + Dictionary API | Python (FastAPI) | 8001 (default) |
 | `src/worker/` | CrewAI 실행 + Job/Token Tracking | Python | - |
 | `src/web/` | UI | Node.js (Next.js) | 3000 |
@@ -1075,9 +1305,9 @@ opad/
 ### Worker 모듈 구성
 | 파일 | 역할 | 의존성 |
 |------|------|--------|
-| `worker/main.py` | Worker 진입점 (infinite loop) | `processor.py` |
-| `worker/processor.py` | Job 처리 로직 (process_job) | `crew/main.py`, `utils/token_usage.py` |
-| `worker/context.py` | JobContext helper (job data validation) | `api/job_queue.py` |
+| `worker/main.py` | Worker 진입점 + composition root (MongoArticleRepository 생성) | `processor.py`, `adapter/mongodb/` |
+| `worker/processor.py` | Job 처리 로직 (process_job) -- `ArticleRepository` 주입 받음 | `crew/main.py`, `utils/token_usage.py`, `port/article_repository.py` |
+| `worker/context.py` | JobContext helper (job data validation) -- `ArticleRepository` 주입 받음 | `api/job_queue.py`, `port/article_repository.py` |
 | `crew/progress_listener.py` | JobProgressListener (CrewAI event listener) | `api/job_queue.py` |
 
 ### CrewAI 모듈 구성

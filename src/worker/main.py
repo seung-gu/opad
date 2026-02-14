@@ -12,6 +12,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from worker.processor import run_worker_loop
 from utils.logging import setup_structured_logging
+from adapter.mongodb.article_repository import MongoArticleRepository
+from adapter.mongodb.connection import get_mongodb_client, DATABASE_NAME
 
 # Set up structured JSON logging
 setup_structured_logging()
@@ -23,9 +25,15 @@ def main():
     """Main entry point for worker service."""
     logger.info("Starting OPAD Worker service...")
     logger.info("This service consumes jobs from Redis queue and executes CrewAI")
-    
+
     try:
-        run_worker_loop()
+        client = get_mongodb_client()
+        if client is None:
+            logger.error("Cannot start worker: MongoDB connection failed")
+            sys.exit(1)
+        db = client[DATABASE_NAME]
+        repo = MongoArticleRepository(db)
+        run_worker_loop(repo)
     except KeyboardInterrupt:
         logger.info("Worker stopped")
     except Exception as e:

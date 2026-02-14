@@ -66,11 +66,14 @@ def get_allowed_vocab_levels(target_level: str, max_above: int = 1) -> list[str]
 
 def save_article(article_id: str, content: str, started_at: Optional[datetime] = None) -> bool:
     """Save article content to MongoDB.
-    
+
+    .. deprecated::
+        Use ``ArticleRepository.save_content()`` instead. Will be removed in Phase 2.
+
     This function updates only the content and status fields.
     Metadata fields (language, level, length, topic) are immutable
     after article creation and should not be updated here.
-    
+
     Args:
         article_id: Unique article identifier
         content: Markdown content (includes all information: title, source, URL, date, author, body)
@@ -121,10 +124,13 @@ def save_article(article_id: str, content: str, started_at: Optional[datetime] =
 
 def get_article(article_id: str) -> Optional[dict]:
     """Get article from MongoDB.
-    
+
+    .. deprecated::
+        Use ``ArticleRepository.get_by_id()`` instead. Will be removed in Phase 2.
+
     Args:
         article_id: Article identifier
-        
+
     Returns:
         Article document (with content) or None if not found.
         Note: Returns None for both "article not found" and "MongoDB connection failed".
@@ -147,15 +153,18 @@ def get_article(article_id: str) -> Optional[dict]:
         return None
 
 
-def save_article_metadata(article_id: str, language: str, level: str, 
+def save_article_metadata(article_id: str, language: str, level: str,
                           length: str, topic: str, status: str = 'running',
                           created_at: Optional[datetime] = None,
                           user_id: Optional[str] = None,
                           job_id: Optional[str] = None) -> bool:
     """Save article metadata to MongoDB (without content).
-    
+
+    .. deprecated::
+        Use ``ArticleRepository.save_metadata()`` instead. Will be removed in Phase 2.
+
     Used when creating article before generation starts.
-    
+
     Args:
         article_id: Unique article identifier
         language: Target language
@@ -631,10 +640,13 @@ def ensure_indexes() -> bool:
 
 def find_duplicate_article(inputs: dict, user_id: Optional[str] = None, hours: int = 24) -> Optional[dict]:
     """Find duplicate article by inputs within specified hours.
-    
+
+    .. deprecated::
+        Use ``ArticleRepository.find_duplicate()`` instead. Will be removed in Phase 2.
+
     Searches for articles with identical inputs created within the time window.
     Used for duplicate detection before creating new articles.
-    
+
     Args:
         inputs: Article inputs dict with keys: language, level, length, topic
         user_id: Owner ID for user-specific search (None for anonymous)
@@ -691,7 +703,10 @@ def find_duplicate_article(inputs: dict, user_id: Optional[str] = None, hours: i
 
 def get_latest_article() -> Optional[dict]:
     """Get the most recently created article.
-    
+
+    .. deprecated::
+        Use ``ArticleRepository.find_many(limit=1)`` instead. Will be removed in Phase 2.
+
     Returns:
         Article document with all fields or None if no articles exist
     """
@@ -733,6 +748,9 @@ def list_articles(
     exclude_deleted: bool = True
 ) -> tuple[list[dict], int]:
     """List articles with filtering, sorting, and pagination.
+
+    .. deprecated::
+        Use ``ArticleRepository.find_many()`` instead. Will be removed in Phase 2.
     
     Args:
         skip: Number of articles to skip (for pagination)
@@ -796,12 +814,15 @@ def list_articles(
 
 def update_article_status(article_id: str, status: str) -> bool:
     """Update article status in MongoDB.
-    
+
+    .. deprecated::
+        Use ``ArticleRepository.update_status()`` instead. Will be removed in Phase 2.
+
     Used to update article status during job processing:
     - 'running' → 'completed' (when job completes successfully)
     - 'running' → 'failed' (when job fails)
     - 'running' → 'deleted' (when article is soft deleted)
-    
+
     Args:
         article_id: Article ID to update
         status: New status ('running', 'completed', 'failed', 'deleted')
@@ -840,13 +861,16 @@ def update_article_status(article_id: str, status: str) -> bool:
 
 def delete_article(article_id: str) -> bool:
     """Soft delete article by setting status='deleted'.
-    
+
+    .. deprecated::
+        Use ``ArticleRepository.delete()`` instead. Will be removed in Phase 2.
+
     Soft delete preserves data for potential recovery and audit trail.
     Article remains in database but is marked as deleted.
-    
+
     Args:
         article_id: Article ID to delete
-    
+
     Returns:
         True if successful, False otherwise
     """

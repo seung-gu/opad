@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-02-14
+
+### Added
+- Hexagonal Architecture (Ports & Adapters) implementation for Article entity (Issue #98 Phase 1)
+- New domain model layer: `Article`, `ArticleInputs`, `ArticleStatus` for clean business logic separation
+- `ArticleRepository` Protocol (port) defining contract for article persistence with 8 core operations
+- `MongoArticleRepository` adapter providing MongoDB implementation of ArticleRepository Protocol
+- `FakeArticleRepository` adapter for in-memory testing without database dependencies
+- Dependency injection composition roots: `api/dependencies.py` for FastAPI and Worker main.py
+- 36 comprehensive tests covering domain model (21 tests) and repository operations (15 tests)
+- Repository pattern enables seamless adaptation between MongoDB (production) and in-memory (testing) implementations
+
+### Changed
+- Migrated Article persistence from monolithic `mongodb.py` to dedicated adapters following hexagonal architecture
+- API routes now inject `ArticleRepository` Protocol instead of directly accessing MongoDB
+- Worker processor now uses dependency-injected repository for article storage
+- Article retrieval methods unified through `MongoArticleRepository.get_by_id()` and `find_many()` operations
+- Refactored database access layer to comply with Dependency Inversion Principle (SOLID)
+
+### Deprecated
+- 8 Article functions in `utils/mongodb.py` marked for Phase 2 removal: `save_article_metadata()`, `save_article_content()`, `get_article()`, `list_articles()`, `find_duplicate_article()`, `update_article_status()`, `delete_article()`, and related direct database queries
+
 ## [0.12.0] - 2026-02-09
 
 ### Added

@@ -10,7 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.middleware.auth import get_current_user_required
 from api.models import User, TokenUsageSummary, TokenUsageRecord, OperationUsage, DailyUsage
-from utils.mongodb import get_user_token_summary, get_article_token_usage, get_article
+from utils.mongodb import get_user_token_summary, get_article_token_usage
+from api.dependencies import get_article_repo
+from port.article_repository import ArticleRepository
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +75,8 @@ async def get_my_usage(
 @router.get("/articles/{article_id}", response_model=list[TokenUsageRecord])
 async def get_article_usage(
     article_id: str,
-    current_user: User = Depends(get_current_user_required)
+    current_user: User = Depends(get_current_user_required),
+    repo: ArticleRepository = Depends(get_article_repo),
 ):
     """Get token usage records for a specific article.
 
@@ -88,11 +91,11 @@ async def get_article_usage(
         List of TokenUsageRecord objects sorted by created_at ascending
     """
     # Verify article ownership
-    article = get_article(article_id)
+    article = repo.get_by_id(article_id)
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
 
-    if article.get('user_id') != current_user.id:
+    if article.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You don't have permission to access this article's usage")
 
     usage_records = get_article_token_usage(article_id)
