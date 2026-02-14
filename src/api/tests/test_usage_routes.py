@@ -9,6 +9,9 @@ from fastapi.testclient import TestClient
 from api.main import app
 from api.models import User
 from api.middleware.auth import get_current_user_required
+from api.dependencies import get_article_repo
+from adapter.fake.article_repository import FakeArticleRepository
+from domain.model.article import ArticleInputs, ArticleStatus
 
 
 def mock_token_summary():
@@ -169,10 +172,26 @@ class TestGetArticleUsage(unittest.TestCase):
             provider="email"
         )
         self.article_id = "test-article-123"
+        self.repo = FakeArticleRepository()
 
     def tearDown(self):
         """Clean up dependency overrides."""
         app.dependency_overrides.clear()
+
+    def _setup_auth_and_repo(self):
+        """Common setup for authenticated requests with fake repo."""
+        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        app.dependency_overrides[get_article_repo] = lambda: self.repo
+
+    def _create_test_article(self, user_id="test-user-123", status=ArticleStatus.COMPLETED):
+        """Create a test article in the fake repo."""
+        self.repo.save_metadata(
+            article_id=self.article_id,
+            inputs=ArticleInputs(language='English', level='B2', length='500', topic='AI'),
+            user_id=user_id,
+        )
+        if status == ArticleStatus.COMPLETED:
+            self.repo.save_content(self.article_id, "Test content")
 
     def test_get_article_usage_requires_authentication(self):
         """Test that endpoint requires authentication."""
@@ -185,15 +204,10 @@ class TestGetArticleUsage(unittest.TestCase):
         assert response.status_code == 401
 
     @patch('api.routes.usage.get_article_token_usage')
-    @patch('api.routes.usage.get_article')
-    def test_get_article_usage_success(self, mock_get_article, mock_get_usage):
+    def test_get_article_usage_success(self, mock_get_usage):
         """Test successful article usage retrieval."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-        mock_get_article.return_value = {
-            '_id': self.article_id,
-            'user_id': 'test-user-123',
-            'status': 'completed'
-        }
+        self._setup_auth_and_repo()
+        self._create_test_article()
         mock_get_usage.return_value = mock_article_usage()
 
         response = self.client.get(f"/usage/articles/{self.article_id}")
@@ -206,26 +220,20 @@ class TestGetArticleUsage(unittest.TestCase):
         assert data[0]['total_tokens'] == 3500
         assert data[1]['id'] == 'usage-2'
 
-    @patch('api.routes.usage.get_article')
-    def test_get_article_usage_article_not_found(self, mock_get_article):
+    def test_get_article_usage_article_not_found(self):
         """Test 404 when article doesn't exist."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-        mock_get_article.return_value = None
+        self._setup_auth_and_repo()
+        # Don't create article → repo.get_by_id returns None
 
         response = self.client.get("/usage/articles/nonexistent")
 
         assert response.status_code == 404
         assert "not found" in response.json()['detail'].lower()
 
-    @patch('api.routes.usage.get_article')
-    def test_get_article_usage_forbidden_for_other_user(self, mock_get_article):
+    def test_get_article_usage_forbidden_for_other_user(self):
         """Test 403 when trying to access another user's article."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-        mock_get_article.return_value = {
-            '_id': self.article_id,
-            'user_id': 'other-user-456',  # Different user
-            'status': 'completed'
-        }
+        self._setup_auth_and_repo()
+        self._create_test_article(user_id="other-user-456")
 
         response = self.client.get(f"/usage/articles/{self.article_id}")
 
@@ -233,15 +241,10 @@ class TestGetArticleUsage(unittest.TestCase):
         assert "permission" in response.json()['detail'].lower()
 
     @patch('api.routes.usage.get_article_token_usage')
-    @patch('api.routes.usage.get_article')
-    def test_get_article_usage_empty_result(self, mock_get_article, mock_get_usage):
+    def test_get_article_usage_empty_result(self, mock_get_usage):
         """Test article usage with no records."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-        mock_get_article.return_value = {
-            '_id': self.article_id,
-            'user_id': 'test-user-123',
-            'status': 'completed'
-        }
+        self._setup_auth_and_repo()
+        self._create_test_article()
         mock_get_usage.return_value = []
 
         response = self.client.get(f"/usage/articles/{self.article_id}")

@@ -245,6 +245,8 @@ generateResponse.status === 409  ← Response handling!
 
 #### Articles
 
+> **Internal note**: Article endpoints use hexagonal architecture (ports and adapters pattern) internally. All article data access goes through `ArticleRepository` protocol, injected via `Depends(get_article_repo)`. See [ARCHITECTURE.md - Hexagonal Architecture](ARCHITECTURE.md#hexagonal-architecture-ports-and-adapters) for details.
+
 - **GET** `/articles` - List articles with filters (status, language, level) and pagination
 - **POST** `/articles/generate` - Create article and start generation (unified endpoint)
 - **GET** `/articles/{article_id}` - Get article metadata
@@ -299,7 +301,7 @@ generateResponse.status === 409  ← Response handling!
 
 #### POST /articles/generate
 
-**Description**: Create article and start generation (unified endpoint).
+**Description**: Create article and start generation (unified endpoint). Internally creates an `ArticleInputs` domain object, checks for duplicates via `ArticleRepository.find_duplicate()`, saves metadata via `ArticleRepository.save_metadata()`, and enqueues a job to Redis.
 
 **Auth**: Required (JWT)
 

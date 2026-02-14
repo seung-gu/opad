@@ -14,6 +14,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from api.job_queue import enqueue_job, get_job_status, update_job_status, get_redis_client
 from worker.processor import process_job
+from adapter.fake.article_repository import FakeArticleRepository
+from domain.model.article import ArticleInputs
 import api.job_queue as queue_module
 
 
@@ -56,42 +58,46 @@ class TestQueueBasics(unittest.TestCase):
     
     @patch('worker.context.update_job_status')
     @patch('worker.processor.run_crew')
-    @patch('worker.processor.save_article')
-    @patch('worker.processor.get_user_vocabulary_for_generation')
-    @patch('api.job_queue.get_redis_client')
-    def test_end_to_end_job_processing(self, mock_get_redis,
-                                        mock_get_vocab, mock_save_article,
+    @patch('crew.progress_listener.JobProgressListener')
+    def test_end_to_end_job_processing(self, mock_listener,
                                         mock_run_crew, mock_update_status):
         """Test end-to-end job processing flow."""
-        # Setup
-        mock_redis = MagicMock()
-        mock_get_redis.return_value = mock_redis
-        
+        repo = FakeArticleRepository()
+        repo.save_metadata(
+            article_id='e2e-test-article',
+            inputs=ArticleInputs(language='German', level='B2', length='500', topic='AI'),
+            user_id='test-user-789',
+        )
+
         job_data = {
             'job_id': 'e2e-test-job',
             'article_id': 'e2e-test-article',
             'user_id': 'test-user-789',
             'inputs': {'language': 'German', 'level': 'B2', 'length': '500', 'topic': 'AI'}
         }
-        
+
         # Mock successful execution
         mock_result = MagicMock()
         mock_result.raw = "# Test Article\n\nContent"
+        mock_result.pydantic.article_content = "# Test Article\n\nContent"
+        mock_result.pydantic.replaced_sentences = []
         mock_run_crew.return_value = mock_result
-        mock_save_article.return_value = True
-        mock_get_vocab.return_value = ['word1', 'word2']
-        
+
+        mock_listener_instance = MagicMock()
+        mock_listener_instance.task_failed = False
+        mock_listener.return_value = mock_listener_instance
+
         # Execute
-        result = process_job(job_data)
-        
+        result = process_job(job_data, repo)
+
         # Verify
         self.assertTrue(result)
         # Should update status multiple times: running -> completed
         self.assertGreaterEqual(mock_update_status.call_count, 2)
-        
+
         # Check final status update (positional args: job_id, status, progress, message)
         final_call = mock_update_status.call_args_list[-1]
-        args, kwargs = final_call
+        args, _ = final_call
         self.assertEqual(args[1], 'completed')  # status
         self.assertEqual(args[2], 100)  # progress
 

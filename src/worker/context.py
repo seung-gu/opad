@@ -5,7 +5,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from api.job_queue import update_job_status
-from utils.mongodb import update_article_status
+from port.article_repository import ArticleRepository
+from domain.model.article import ArticleStatus
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +19,11 @@ class JobContext:
     article_id: str | None
     user_id: str | None
     inputs: dict
+    repo: ArticleRepository
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @classmethod
-    def from_dict(cls, job_data: dict) -> 'JobContext | None':
+    def from_dict(cls, job_data: dict, repo: ArticleRepository) -> 'JobContext | None':
         """Create JobContext from queue data. Returns None if invalid."""
         job_id = job_data.get('job_id')
         inputs = job_data.get('inputs', {})
@@ -34,7 +36,8 @@ class JobContext:
             job_id=job_id,
             article_id=job_data.get('article_id'),
             user_id=job_data.get('user_id'),
-            inputs=inputs
+            inputs=inputs,
+            repo=repo,
         )
 
     @property
@@ -50,7 +53,7 @@ class JobContext:
         """Mark both job and article as failed."""
         self.update_status('failed', 0, message, error)
         if self.article_id:
-            update_article_status(self.article_id, 'failed')
+            self.repo.update_status(self.article_id, ArticleStatus.FAILED)
 
 
 def translate_error(error: Exception) -> str:
