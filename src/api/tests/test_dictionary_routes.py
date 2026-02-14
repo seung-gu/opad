@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from fastapi.testclient import TestClient
 from api.main import app
-from api.models import User
+from api.models import UserResponse
 from api.middleware.auth import get_current_user_required
 from api.routes.dictionary import get_dictionary_service
 from services.dictionary_service import DictionaryService, LookupResult, LookupRequest
@@ -36,7 +36,7 @@ class TestSearchWordRoute(unittest.TestCase):
     def setUp(self):
         """Set up test client."""
         self.client = TestClient(app)
-        self.mock_user = User(
+        self.mock_user = UserResponse(
             id="test-user-123",
             email="test@example.com",
             name="Test User",
@@ -386,7 +386,7 @@ class TestGetVocabulariesList(unittest.TestCase):
     def setUp(self):
         """Set up test client."""
         self.client = TestClient(app)
-        self.mock_user = User(
+        self.mock_user = UserResponse(
             id="test-user-123",
             email="test@example.com",
             name="Test User",

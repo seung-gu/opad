@@ -14,7 +14,7 @@ sys.path.insert(0, str(_src_path))
 
 from api.middleware.auth import create_access_token, get_current_user_required
 from utils.mongodb import get_user, create_user, update_last_login
-from api.models import User
+from api.models import UserResponse
 from fastapi import Depends
 import bcrypt
 
@@ -198,7 +198,7 @@ async def login(request: LoginRequest):
 
 
 @router.get("/me")
-async def get_me(current_user: User = Depends(get_current_user_required)):
+async def get_me(current_user: UserResponse = Depends(get_current_user_required)):
     """Get current authenticated user info.
 
     Args:

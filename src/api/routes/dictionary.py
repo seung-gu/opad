@@ -18,7 +18,7 @@ from api.middleware.auth import get_current_user_required
 from api.models import (
     SearchRequest,
     SearchResponse,
-    User,
+    UserResponse,
     VocabularyRequest,
     VocabularyResponse,
     VocabularyCount,
@@ -48,7 +48,7 @@ def get_dictionary_service() -> DictionaryService:
 @router.post("/search", response_model=SearchResponse)
 async def search_word(
     request: SearchRequest,
-    current_user: User = Depends(get_current_user_required),
+    current_user: UserResponse = Depends(get_current_user_required),
     service: DictionaryService = Depends(get_dictionary_service)
 ):
     """Search for word definition and lemma using hybrid approach.
@@ -120,7 +120,7 @@ async def search_word(
 @router.post("/vocabulary", response_model=VocabularyResponse)
 async def add_vocabulary(
     request: VocabularyRequest,
-    current_user: User = Depends(get_current_user_required)
+    current_user: UserResponse = Depends(get_current_user_required)
 ):
     """Add a word to vocabulary list.
 
@@ -176,7 +176,7 @@ async def get_vocabularies_list(
     language: str | None = None,
     skip: int = 0,
     limit: int = 100,
-    current_user: User = Depends(get_current_user_required)
+    current_user: UserResponse = Depends(get_current_user_required)
 ):
     """Get aggregated vocabulary list grouped by lemma with counts.
 
@@ -213,7 +213,7 @@ async def get_vocabularies_list(
 @router.delete("/vocabularies/{vocabulary_id}")
 async def delete_vocabulary_word(
     vocabulary_id: str,
-    current_user: User = Depends(get_current_user_required)
+    current_user: UserResponse = Depends(get_current_user_required)
 ):
     """Delete a vocabulary word.
 

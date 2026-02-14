@@ -177,8 +177,8 @@ class VocabularyCount(BaseModel):
     examples: Optional[list[str]] = Field(None, description="Example sentences from most recent entry")
 
 
-class User(BaseModel):
-    """User model for authentication."""
+class UserResponse(BaseModel):
+    """User model for API responses and authentication."""
     id: str = Field(..., description="User ID (MongoDB _id)")
     email: str = Field(..., description="User email")
     name: str = Field(..., description="Display name")

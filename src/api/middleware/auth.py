@@ -15,7 +15,7 @@ _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
 from utils.mongodb import get_user_by_id
-from api.models import User
+from api.models import UserResponse
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ def verify_token(token: str) -> Optional[str]:
 
 def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
-) -> Optional[User]:
+) -> Optional[UserResponse]:
     """Get current authenticated user from JWT token.
     
     This is an optional dependency - returns None if no token provided.
@@ -96,12 +96,12 @@ def get_current_user(
     if not user_dict:
         return None
     
-    return User(**user_dict)
+    return UserResponse(**user_dict)
 
 
 def get_current_user_required(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
-) -> User:
+) -> UserResponse:
     """Get current authenticated user from JWT token (required).
     
     This is a required dependency - raises 401 if no token or invalid.
@@ -139,4 +139,4 @@ def get_current_user_required(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    return User(**user_dict)
+    return UserResponse(**user_dict)

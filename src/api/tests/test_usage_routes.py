@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from api.main import app
-from api.models import User
+from api.models import UserResponse
 from api.middleware.auth import get_current_user_required
 from api.dependencies import get_article_repo
 from adapter.fake.article_repository import FakeArticleRepository
@@ -67,7 +67,7 @@ class TestGetMyUsage(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.client = TestClient(app)
-        self.mock_user = User(
+        self.mock_user = UserResponse(
             id="test-user-123",
             email="test@example.com",
             name="Test User",
@@ -163,7 +163,7 @@ class TestGetArticleUsage(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.client = TestClient(app)
-        self.mock_user = User(
+        self.mock_user = UserResponse(
             id="test-user-123",
             email="test@example.com",
             name="Test User",
@@ -259,7 +259,7 @@ class TestDictionarySearchTokenUsageIntegration(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.client = TestClient(app)
-        self.mock_user = User(
+        self.mock_user = UserResponse(
             id="test-user-123",
             email="test@example.com",
             name="Test User",

@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 
-from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse, ArticleListResponse, User, VocabularyResponse
+from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse, ArticleListResponse, UserResponse, VocabularyResponse
 from api.middleware.auth import get_current_user_required
 from api.job_queue import enqueue_job, update_job_status, get_job_status
 from api.dependencies import get_article_repo
@@ -59,7 +59,7 @@ def _build_article_response(article: Article) -> dict:
     }
 
 
-def _check_ownership(article: Article, current_user: User, article_id: str, action: str = "access") -> None:
+def _check_ownership(article: Article, current_user: UserResponse, article_id: str, action: str = "access") -> None:
     """Check if the current user owns the article."""
     if article.user_id != current_user.id:
         logger.warning(
@@ -164,7 +164,7 @@ async def list_articles_endpoint(
     status: Optional[str] = None,
     language: Optional[str] = None,
     level: Optional[str] = None,
-    current_user: User = Depends(get_current_user_required),
+    current_user: UserResponse = Depends(get_current_user_required),
     repo: ArticleRepository = Depends(get_article_repo),
 ):
     """Get article list with filters and pagination."""
@@ -210,7 +210,7 @@ async def list_articles_endpoint(
 async def generate_article(
     request: GenerateRequest,
     force: bool = False,
-    current_user: User = Depends(get_current_user_required),
+    current_user: UserResponse = Depends(get_current_user_required),
     repo: ArticleRepository = Depends(get_article_repo),
 ):
     """Create article and start generation (unified endpoint)."""
@@ -262,7 +262,7 @@ async def generate_article(
 @router.get("/{article_id}", response_model=ArticleResponse)
 async def get_article_endpoint(
     article_id: str,
-    current_user: User = Depends(get_current_user_required),
+    current_user: UserResponse = Depends(get_current_user_required),
     repo: ArticleRepository = Depends(get_article_repo),
 ):
     """Get article metadata by ID."""
@@ -276,7 +276,7 @@ async def get_article_endpoint(
 @router.get("/{article_id}/content")
 async def get_article_content(
     article_id: str,
-    current_user: User = Depends(get_current_user_required),
+    current_user: UserResponse = Depends(get_current_user_required),
     repo: ArticleRepository = Depends(get_article_repo),
 ):
     """Get article content (markdown)."""
@@ -294,7 +294,7 @@ async def get_article_content(
 @router.get("/{article_id}/vocabularies", response_model=list[VocabularyResponse])
 async def get_article_vocabularies(
     article_id: str,
-    current_user: User = Depends(get_current_user_required),
+    current_user: UserResponse = Depends(get_current_user_required),
     repo: ArticleRepository = Depends(get_article_repo),
 ):
     """Get vocabularies for a specific article."""
@@ -318,7 +318,7 @@ async def get_article_vocabularies(
 @router.delete("/{article_id}")
 async def delete_article_endpoint(
     article_id: str,
-    current_user: User = Depends(get_current_user_required),
+    current_user: UserResponse = Depends(get_current_user_required),
     repo: ArticleRepository = Depends(get_article_repo),
 ):
     """Soft delete article."""

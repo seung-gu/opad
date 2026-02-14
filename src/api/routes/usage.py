@@ -9,7 +9,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.middleware.auth import get_current_user_required
-from api.models import User, TokenUsageSummary, TokenUsageRecord, OperationUsage, DailyUsage
+from api.models import UserResponse, TokenUsageSummary, TokenUsageRecord, OperationUsage, DailyUsage
 from utils.mongodb import get_user_token_summary, get_article_token_usage
 from api.dependencies import get_article_repo
 from port.article_repository import ArticleRepository
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/usage", tags=["usage"])
 @router.get("/me", response_model=TokenUsageSummary)
 async def get_my_usage(
     days: int = Query(default=30, ge=1, le=365, description="Number of days to look back"),
-    current_user: User = Depends(get_current_user_required)
+    current_user: UserResponse = Depends(get_current_user_required)
 ):
     """Get current user's token usage summary.
 
@@ -75,7 +75,7 @@ async def get_my_usage(
 @router.get("/articles/{article_id}", response_model=list[TokenUsageRecord])
 async def get_article_usage(
     article_id: str,
-    current_user: User = Depends(get_current_user_required),
+    current_user: UserResponse = Depends(get_current_user_required),
     repo: ArticleRepository = Depends(get_article_repo),
 ):
     """Get token usage records for a specific article.
