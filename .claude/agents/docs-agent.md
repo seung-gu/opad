@@ -54,6 +54,8 @@ Add endpoint documentation:
 - Update Mermaid diagrams if flow changed
 - Update data storage section for schema changes
 - Keep diagrams synchronized with actual code
+- **Never reference issue/ticket numbers** — describe the system as it currently is, not its migration history
+- Directory tree must reflect actual file structure — verify with `ls` before writing
 
 ### docs/SETUP.md
 **When**: New env vars, commands, or setup steps

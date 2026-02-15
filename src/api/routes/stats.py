@@ -3,7 +3,7 @@
 import logging
 import sys
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 
 # Add src to path
@@ -12,8 +12,11 @@ from fastapi.responses import HTMLResponse
 _src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_src_path))
 
-from utils.mongodb import get_mongodb_client, get_database_stats, get_vocabulary_stats
+from adapter.mongodb.connection import get_mongodb_client, DATABASE_NAME
+from adapter.mongodb.stats import get_database_stats, get_vocabulary_stats
 from api.job_queue import get_job_stats
+from api.models import UserResponse
+from api.security import get_current_user_required
 
 logger = logging.getLogger(__name__)
 
@@ -21,35 +24,34 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 
 
 @router.get("")
-async def get_database_stats_endpoint():
+async def get_database_stats_endpoint(
+    _current_user: UserResponse = Depends(get_current_user_required),
+):
     """Get MongoDB database and Redis statistics.
     
     Returns information about collection size, index size, document counts, job statistics, etc.
     Useful for debugging disk space issues and job processing.
     """
-    _check_mongodb_connection()
-    
-    stats = get_database_stats()
+    client = get_mongodb_client()
+    if not client:
+        raise HTTPException(status_code=503, detail="Database service unavailable")
+    db = client[DATABASE_NAME]
+
+    stats = get_database_stats(db)
     if not stats:
         raise HTTPException(status_code=503, detail="Failed to retrieve database statistics")
-    
+
     # Get job statistics from Redis
     job_stats = get_job_stats()
     if job_stats:
         stats.update({f'job_{k}': v for k, v in job_stats.items()})
-    
+
     # Get vocabulary statistics
-    vocab_stats = get_vocabulary_stats()
+    vocab_stats = get_vocabulary_stats(db)
     if vocab_stats:
         stats.update({f'vocab_{k}': v for k, v in vocab_stats.items()})
-    
+
     return _render_stats_html(stats)
-
-
-def _check_mongodb_connection() -> None:
-    """Check MongoDB connection and raise if unavailable."""
-    if not get_mongodb_client():
-        raise HTTPException(status_code=503, detail="Database service unavailable")
 
 
 def _format_bytes(bytes_val: int) -> str:

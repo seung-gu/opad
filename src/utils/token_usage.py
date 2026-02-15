@@ -2,16 +2,15 @@
 
 This module provides utilities for:
 - Calculating LLM costs using LiteLLM's pricing database
-- Saving CrewAI agent token usage to MongoDB
+- Saving CrewAI agent token usage via TokenUsageRepository
 """
 
 import logging
 from typing import TYPE_CHECKING
 
-from utils.mongodb import save_token_usage
-
 if TYPE_CHECKING:
     from crew.main import CrewResult
+    from port.token_usage_repository import TokenUsageRepository
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +50,10 @@ def save_crew_token_usage(
     result: "CrewResult",
     user_id: str,
     article_id: str | None,
-    job_id: str
+    job_id: str,
+    repo: "TokenUsageRepository",
 ) -> None:
-    """Save token usage for each CrewAI agent to MongoDB.
+    """Save token usage for each CrewAI agent.
 
     Uses CrewAI's built-in token tracking (agent.llm.get_token_usage_summary())
     to get per-agent, per-model usage metrics. Cost is calculated using
@@ -64,12 +64,12 @@ def save_crew_token_usage(
         user_id: User ID who initiated the generation
         article_id: Article ID being generated
         job_id: Job ID for metadata
+        repo: TokenUsageRepository instance for persisting usage records
     """
     try:
         agent_usage = result.get_agent_usage()
         total_saved = 0
 
-        # Debug: Log what get_agent_usage returns
         logger.info(
             "Agent usage retrieved",
             extra={
@@ -98,7 +98,7 @@ def save_crew_token_usage(
             agent_name = usage.get('agent_name')
             display_name = agent_name if isinstance(agent_name, str) and agent_name else usage['agent_role']
 
-            save_token_usage(
+            repo.save(
                 user_id=user_id,
                 operation="article_generation",
                 model=usage['model'],

@@ -1,4 +1,4 @@
-"""JWT authentication middleware and utilities."""
+"""JWT authentication and security dependencies."""
 
 import os
 import logging
@@ -7,15 +7,11 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-import sys
-from pathlib import Path
 
-# Add src to path
-_src_path = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(_src_path))
-
-from utils.mongodb import get_user_by_id
+from api.dependencies import get_user_repo
 from api.models import UserResponse
+from domain.model.user import User
+from port.user_repository import UserRepository
 
 logger = logging.getLogger(__name__)
 
@@ -32,34 +28,33 @@ JWT_EXPIRATION_DAYS = 7
 security = HTTPBearer(auto_error=False)
 
 
+def _to_response(user: User) -> UserResponse:
+    """Convert domain User to API UserResponse."""
+    return UserResponse(
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+        last_login=user.last_login,
+        provider=user.provider,
+    )
+
+
 def create_access_token(user_id: str) -> str:
-    """Create JWT access token for user.
-    
-    Args:
-        user_id: User ID to encode in token
-        
-    Returns:
-        JWT token string
-    """
+    """Create JWT access token for user."""
     expire = datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRATION_DAYS)
     payload = {
-        "sub": user_id,  # Subject (user ID)
-        "exp": expire,   # Expiration
-        "iat": datetime.now(timezone.utc),  # Issued at
+        "sub": user_id,
+        "exp": expire,
+        "iat": datetime.now(timezone.utc),
     }
     token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
     return token
 
 
 def verify_token(token: str) -> Optional[str]:
-    """Verify JWT token and extract user_id.
-    
-    Args:
-        token: JWT token string
-        
-    Returns:
-        User ID if token is valid, None otherwise
-    """
+    """Verify JWT token and extract user_id."""
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
         user_id: str = payload.get("sub")
@@ -72,57 +67,36 @@ def verify_token(token: str) -> Optional[str]:
 
 
 def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    user_repo: UserRepository = Depends(get_user_repo),
 ) -> Optional[UserResponse]:
-    """Get current authenticated user from JWT token.
-    
-    This is an optional dependency - returns None if no token provided.
-    Use this for endpoints that work with or without authentication.
-    
-    Args:
-        credentials: HTTP Bearer token credentials
-        
-    Returns:
-        User object if authenticated, None otherwise
-    """
+    """Get current authenticated user (optional). Returns None if no token."""
     if not credentials:
         return None
-    
+
     user_id = verify_token(credentials.credentials)
     if not user_id:
         return None
-    
-    user_dict = get_user_by_id(user_id)
-    if not user_dict:
+
+    user = user_repo.get_by_id(user_id)
+    if not user:
         return None
-    
-    return UserResponse(**user_dict)
+
+    return _to_response(user)
 
 
 def get_current_user_required(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    user_repo: UserRepository = Depends(get_user_repo),
 ) -> UserResponse:
-    """Get current authenticated user from JWT token (required).
-    
-    This is a required dependency - raises 401 if no token or invalid.
-    Use this for protected endpoints that require authentication.
-    
-    Args:
-        credentials: HTTP Bearer token credentials
-        
-    Returns:
-        User object
-        
-    Raises:
-        HTTPException: 401 if authentication fails
-    """
+    """Get current authenticated user (required). Raises 401 if not authenticated."""
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     user_id = verify_token(credentials.credentials)
     if not user_id:
         raise HTTPException(
@@ -130,13 +104,13 @@ def get_current_user_required(
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    user_dict = get_user_by_id(user_id)
-    if not user_dict:
+
+    user = user_repo.get_by_id(user_id)
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    return UserResponse(**user_dict)
+
+    return _to_response(user)

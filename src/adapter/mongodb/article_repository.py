@@ -4,6 +4,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from logging import getLogger
 
+from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
 from adapter.mongodb import COLLECTION_NAME
@@ -13,8 +14,30 @@ logger = getLogger(__name__)
 
 
 class MongoArticleRepository:
-    def __init__(self, db):
+    def __init__(self, db: Database):
         self.collection = db[COLLECTION_NAME]
+
+    # ── indexes ──────────────────────────────────────────────
+
+    def ensure_indexes(self) -> bool:
+        """Create indexes for articles collection."""
+        from adapter.mongodb.indexes import create_index_safe
+
+        try:
+            create_index_safe(self.collection, [('created_at', -1)], 'idx_created_at_desc')
+            create_index_safe(self.collection, [('user_id', 1)], 'idx_user_id', sparse=True)
+            create_index_safe(self.collection, [
+                ('user_id', 1),
+                ('inputs.language', 1),
+                ('inputs.level', 1),
+                ('inputs.length', 1),
+                ('inputs.topic', 1),
+                ('created_at', -1),
+            ], 'idx_duplicate_detection')
+            return True
+        except Exception as e:
+            logger.error("Failed to create articles indexes", extra={"error": str(e)})
+            return False
 
     # ── helpers ──────────────────────────────────────────────
 

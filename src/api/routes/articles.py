@@ -18,12 +18,13 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 
 from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse, ArticleListResponse, UserResponse, VocabularyResponse
-from api.middleware.auth import get_current_user_required
+from api.security import get_current_user_required
 from api.job_queue import enqueue_job, update_job_status, get_job_status
 from api.dependencies import get_article_repo
 from port.article_repository import ArticleRepository
 from domain.model.article import ArticleInputs, ArticleStatus, Article
-from utils.mongodb import get_vocabularies
+from api.dependencies import get_vocab_repo
+from port.vocabulary_repository import VocabularyRepository
 
 logger = logging.getLogger(__name__)
 
@@ -296,23 +297,42 @@ async def get_article_vocabularies(
     article_id: str,
     current_user: UserResponse = Depends(get_current_user_required),
     repo: ArticleRepository = Depends(get_article_repo),
+    vocab_repo: VocabularyRepository = Depends(get_vocab_repo),
 ):
     """Get vocabularies for a specific article."""
     article = _get_article_or_404(repo, article_id)
     _check_ownership(article, current_user, article_id, "access")
 
-    vocabularies = get_vocabularies(
-        article_id=article_id,
-        user_id=current_user.id
-    )
+    vocabs = vocab_repo.find(article_id=article_id, user_id=current_user.id)
 
     logger.info("Article vocabularies retrieved", extra={
         "articleId": article_id,
-        "count": len(vocabularies),
+        "count": len(vocabs),
         "userId": current_user.id
     })
 
-    return vocabularies
+    return [
+        {
+            'id': v.id,
+            'article_id': v.article_id,
+            'word': v.word,
+            'lemma': v.lemma,
+            'definition': v.definition,
+            'sentence': v.sentence,
+            'language': v.language,
+            'related_words': v.related_words,
+            'span_id': v.span_id,
+            'created_at': v.created_at,
+            'user_id': v.user_id,
+            'pos': v.grammar.pos if v.grammar else None,
+            'gender': v.grammar.gender if v.grammar else None,
+            'phonetics': v.grammar.phonetics if v.grammar else None,
+            'conjugations': v.grammar.conjugations if v.grammar else None,
+            'level': v.grammar.level if v.grammar else None,
+            'examples': v.grammar.examples if v.grammar else None,
+        }
+        for v in vocabs
+    ]
 
 
 @router.delete("/{article_id}")

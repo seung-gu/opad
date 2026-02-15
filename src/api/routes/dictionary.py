@@ -14,7 +14,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.middleware.auth import get_current_user_required
+from api.security import get_current_user_required
 from api.models import (
     SearchRequest,
     SearchResponse,
@@ -24,15 +24,12 @@ from api.models import (
     VocabularyCount,
 )
 from services.dictionary_service import DictionaryService, LookupRequest
+from services import vocabulary_service
 from utils.llm import get_llm_error_response
-from utils.mongodb import (
-    delete_vocabulary,
-    get_vocabularies,
-    get_vocabulary_by_id,
-    get_vocabulary_counts,
-    save_vocabulary,
-    save_token_usage,
-)
+from api.dependencies import get_token_usage_repo, get_vocab_repo
+from port.token_usage_repository import TokenUsageRepository
+from port.vocabulary_repository import VocabularyRepository
+from domain.model.vocabulary import GrammaticalInfo
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +46,8 @@ def get_dictionary_service() -> DictionaryService:
 async def search_word(
     request: SearchRequest,
     current_user: UserResponse = Depends(get_current_user_required),
-    service: DictionaryService = Depends(get_dictionary_service)
+    service: DictionaryService = Depends(get_dictionary_service),
+    token_usage_repo: TokenUsageRepository = Depends(get_token_usage_repo),
 ):
     """Search for word definition and lemma using hybrid approach.
 
@@ -76,7 +74,7 @@ async def search_word(
         # Track token usage
         stats = service.last_token_stats
         if stats:
-            save_token_usage(
+            token_usage_repo.save(
                 user_id=current_user.id,
                 operation="dictionary_search",
                 model=stats.model,
@@ -120,18 +118,12 @@ async def search_word(
 @router.post("/vocabulary", response_model=VocabularyResponse)
 async def add_vocabulary(
     request: VocabularyRequest,
-    current_user: UserResponse = Depends(get_current_user_required)
+    current_user: UserResponse = Depends(get_current_user_required),
+    repo: VocabularyRepository = Depends(get_vocab_repo),
 ):
-    """Add a word to vocabulary list.
-
-    Args:
-        request: Vocabulary request with word, lemma, definition, etc.
-        current_user: Authenticated user
-
-    Returns:
-        VocabularyResponse with saved vocabulary data
-    """
-    vocabulary_id = save_vocabulary(
+    """Add a word to vocabulary list."""
+    vocabulary_id = vocabulary_service.save_vocabulary(
+        repo,
         article_id=request.article_id,
         word=request.word,
         lemma=request.lemma,
@@ -141,24 +133,21 @@ async def add_vocabulary(
         related_words=request.related_words,
         span_id=request.span_id,
         user_id=current_user.id,
-        metadata={
-            'pos': request.pos,
-            'gender': request.gender,
-            'phonetics': request.phonetics,
-            'conjugations': request.conjugations,
-            'level': request.level,
-            'examples': request.examples
-        }
+        grammar=GrammaticalInfo(
+            pos=request.pos,
+            gender=request.gender,
+            phonetics=request.phonetics,
+            conjugations=request.conjugations,
+            level=request.level,
+            examples=request.examples,
+        ),
     )
 
     if not vocabulary_id:
         raise HTTPException(status_code=500, detail="Failed to save vocabulary")
 
-    # Get the saved vocabulary to return
-    vocabularies = get_vocabularies(article_id=request.article_id, user_id=current_user.id)
-    vocabulary = next((v for v in vocabularies if v['id'] == vocabulary_id), None)
-
-    if not vocabulary:
+    vocab = repo.get_by_id(vocabulary_id)
+    if not vocab:
         raise HTTPException(status_code=500, detail="Vocabulary saved but not found")
 
     logger.info("Vocabulary added", extra={
@@ -168,7 +157,25 @@ async def add_vocabulary(
         "user_id": current_user.id
     })
 
-    return VocabularyResponse(**vocabulary)
+    return VocabularyResponse(
+        id=vocab.id,
+        article_id=vocab.article_id,
+        word=vocab.word,
+        lemma=vocab.lemma,
+        definition=vocab.definition,
+        sentence=vocab.sentence,
+        language=vocab.language,
+        created_at=vocab.created_at,
+        related_words=vocab.related_words,
+        span_id=vocab.span_id,
+        user_id=vocab.user_id,
+        pos=vocab.grammar.pos if vocab.grammar else None,
+        gender=vocab.grammar.gender if vocab.grammar else None,
+        phonetics=vocab.grammar.phonetics if vocab.grammar else None,
+        conjugations=vocab.grammar.conjugations if vocab.grammar else None,
+        level=vocab.grammar.level if vocab.grammar else None,
+        examples=vocab.grammar.examples if vocab.grammar else None,
+    )
 
 
 @router.get("/vocabularies", response_model=list[VocabularyCount])
@@ -176,68 +183,69 @@ async def get_vocabularies_list(
     language: str | None = None,
     skip: int = 0,
     limit: int = 100,
-    current_user: UserResponse = Depends(get_current_user_required)
+    current_user: UserResponse = Depends(get_current_user_required),
+    repo: VocabularyRepository = Depends(get_vocab_repo),
 ):
-    """Get aggregated vocabulary list grouped by lemma with counts.
-
-    Args:
-        language: Optional language filter
-        skip: Number of entries to skip (for pagination)
-        limit: Maximum number of entries to return (default: 100, max: 1000)
-        current_user: Authenticated user
-
-    Returns:
-        List of vocabulary groups with counts (VocabularyCount)
-    """
-    # Enforce maximum limit
+    """Get aggregated vocabulary list grouped by lemma with counts."""
     limit = min(limit, 1000)
 
-    word_counts = get_vocabulary_counts(
-        language=language,
-        user_id=current_user.id,
-        skip=skip,
-        limit=limit
+    domain_counts = vocabulary_service.get_counts(
+        repo, language=language, user_id=current_user.id, skip=skip, limit=limit,
     )
 
+    result = []
+    for dc in domain_counts:
+        v = dc.vocabulary
+        g = v.grammar
+        result.append(VocabularyCount(
+            id=v.id,
+            article_id=v.article_id,
+            word=v.word,
+            lemma=v.lemma,
+            definition=v.definition,
+            sentence=v.sentence,
+            language=v.language,
+            related_words=v.related_words,
+            span_id=v.span_id,
+            created_at=v.created_at,
+            user_id=v.user_id,
+            count=dc.count,
+            article_ids=dc.article_ids,
+            pos=g.pos if g else None,
+            gender=g.gender if g else None,
+            phonetics=g.phonetics if g else None,
+            conjugations=g.conjugations if g else None,
+            level=g.level if g else None,
+            examples=g.examples if g else None,
+        ))
+
     logger.info("Grouped vocabularies retrieved", extra={
-        "group_count": len(word_counts),
+        "group_count": len(result),
         "language": language,
-        "skip": skip,
-        "limit": limit,
         "user_id": current_user.id
     })
 
-    return word_counts
+    return result
 
 
 @router.delete("/vocabularies/{vocabulary_id}")
 async def delete_vocabulary_word(
     vocabulary_id: str,
-    current_user: UserResponse = Depends(get_current_user_required)
+    current_user: UserResponse = Depends(get_current_user_required),
+    repo: VocabularyRepository = Depends(get_vocab_repo),
 ):
-    """Delete a vocabulary word.
-
-    Args:
-        vocabulary_id: Vocabulary ID to delete
-        current_user: Authenticated user
-
-    Returns:
-        Success message
-    """
-    # Check if vocabulary exists and verify ownership
-    vocabulary = get_vocabulary_by_id(vocabulary_id)
-    if not vocabulary:
+    """Delete a vocabulary word."""
+    vocab = repo.get_by_id(vocabulary_id)
+    if not vocab:
         raise HTTPException(status_code=404, detail="Vocabulary not found")
 
-    # Verify ownership
-    if vocabulary.get('user_id') != current_user.id:
+    if vocab.user_id != current_user.id:
         raise HTTPException(
             status_code=403,
             detail="You don't have permission to delete this vocabulary"
         )
 
-    success = delete_vocabulary(vocabulary_id)
-
+    success = repo.delete(vocabulary_id)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete vocabulary")
 

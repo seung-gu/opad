@@ -245,7 +245,7 @@ generateResponse.status === 409  ← Response handling!
 
 #### Articles
 
-> **Internal note**: Article endpoints use hexagonal architecture (ports and adapters pattern) internally. All article data access goes through `ArticleRepository` protocol, injected via `Depends(get_article_repo)`. See [ARCHITECTURE.md - Hexagonal Architecture](ARCHITECTURE.md#hexagonal-architecture-ports-and-adapters) for details.
+> **Internal note**: All endpoints use hexagonal architecture (ports and adapters pattern) internally. All database access goes through Protocol-based repositories (`ArticleRepository`, `UserRepository`, `VocabularyRepository`, `TokenUsageRepository`), injected via `Depends()` from `api/dependencies.py`. See [ARCHITECTURE.md - Hexagonal Architecture](ARCHITECTURE.md#hexagonal-architecture-ports-and-adapters) for details.
 
 - **GET** `/articles` - List articles with filters (status, language, level) and pagination
 - **POST** `/articles/generate` - Create article and start generation (unified endpoint)
@@ -273,7 +273,7 @@ generateResponse.status === 409  ← Response handling!
 
 #### Stats
 
-- **GET** `/stats` - Get Database Stats Endpoint
+- **GET** `/stats` - Get Database Stats Endpoint (requires authentication)
 
 #### Dictionary
 
@@ -592,6 +592,27 @@ generateResponse.status === 409  ← Response handling!
 
 ---
 
+### Stats Endpoint
+
+#### GET /stats
+
+**Description**: Get MongoDB database and Redis statistics. Returns article collection size, index size, document counts by status, vocabulary statistics by language, and job queue statistics. Rendered as an HTML dashboard page.
+
+**Auth**: Required (JWT)
+
+**Response** (200): HTML page with database statistics dashboard
+
+**Response** (503 - Database unavailable):
+```json
+{
+  "detail": "Database service unavailable"
+}
+```
+
+**Implementation note**: Statistics are gathered from `adapter/mongodb/stats.py` (`get_database_stats()` and `get_vocabulary_stats()`) and `api/job_queue.py` (`get_job_stats()`).
+
+---
+
 ### Dictionary Endpoints
 
 #### POST /dictionary/search
@@ -894,24 +915,25 @@ The article detail page displays token usage with smart aggregation:
 
 ### Token Usage Functions
 
-#### save_token_usage()
+#### TokenUsageRepository.save()
 
-**Module**: `utils/mongodb.py`
+**Module**: `adapter/mongodb/token_usage_repository.py` (implements `port/token_usage_repository.py`)
 
 **Description**: Save token usage record to MongoDB for cost tracking and analytics.
 
 **Signature**:
 ```python
-def save_token_usage(
+def save(
+    self,
     user_id: str,
     operation: str,
     model: str,
     prompt_tokens: int,
     completion_tokens: int,
     estimated_cost: float,
-    article_id: Optional[str] = None,
-    metadata: Optional[dict] = None
-) -> Optional[str]
+    article_id: str | None = None,
+    metadata: dict | None = None,
+) -> str | None
 ```
 
 **Parameters**:
@@ -922,119 +944,117 @@ def save_token_usage(
 - `completion_tokens`: Number of output tokens
 - `estimated_cost`: Estimated cost in USD
 - `article_id` (optional): Article ID if usage is associated with an article
-- `metadata` (optional): Additional metadata (e.g., `{"query": "word", "language": "English"}`)
+- `metadata` (optional): Additional metadata (e.g., `{"word": "hello", "language": "English"}`)
 
 **Returns**: Document ID if successful, `None` otherwise
 
-**Example**:
+**Example** (via FastAPI dependency injection):
 ```python
-from utils.mongodb import save_token_usage
+from api.dependencies import get_token_usage_repo
+from port.token_usage_repository import TokenUsageRepository
 
-usage_id = save_token_usage(
+token_usage_repo: TokenUsageRepository = Depends(get_token_usage_repo)
+
+usage_id = token_usage_repo.save(
     user_id="user-123",
     operation="dictionary_search",
     model="gpt-4.1-mini",
     prompt_tokens=100,
     completion_tokens=50,
     estimated_cost=0.00025,
-    metadata={"query": "hello", "language": "English"}
+    metadata={"word": "hello", "language": "English"}
 )
 ```
 
 ---
 
-#### get_user_token_summary()
+#### TokenUsageRepository.get_user_summary()
 
-**Module**: `utils/mongodb.py`
+**Module**: `adapter/mongodb/token_usage_repository.py` (implements `port/token_usage_repository.py`)
 
 **Description**: Get token usage summary for a user within a specified time window.
 
 **Signature**:
 ```python
-def get_user_token_summary(user_id: str, days: int = 30) -> dict
+def get_user_summary(self, user_id: str, days: int = 30) -> TokenUsageSummary
 ```
 
 **Parameters**:
 - `user_id`: User ID to get summary for
 - `days`: Number of days to look back (default: 30, clamped to [1, 365])
 
-**Returns**:
+**Returns**: `TokenUsageSummary` dataclass with:
 ```python
-{
-    'total_tokens': int,           # Total tokens used
-    'total_cost': float,            # Total estimated cost in USD
-    'by_operation': {               # Usage by operation type
-        'operation_type': {
-            'tokens': int,
-            'cost': float,
-            'count': int
-        }
-    },
-    'daily_usage': [                # Daily usage breakdown
-        {
-            'date': 'YYYY-MM-DD',
-            'tokens': int,
-            'cost': float
-        }
-    ]
-}
+@dataclass
+class TokenUsageSummary:
+    total_tokens: int               # Total tokens used
+    total_cost: float               # Total estimated cost in USD
+    by_operation: dict[str, OperationUsage]  # Usage by operation type
+    daily_usage: list[DailyUsage]   # Daily usage breakdown
 ```
 
-**Example**:
+**Example** (via FastAPI dependency injection):
 ```python
-from utils.mongodb import get_user_token_summary
+from api.dependencies import get_token_usage_repo
+from port.token_usage_repository import TokenUsageRepository
 
-summary = get_user_token_summary("user-123", days=7)
-print(f"Total cost (7 days): ${summary['total_cost']:.4f}")
-print(f"Total tokens: {summary['total_tokens']}")
+repo: TokenUsageRepository = Depends(get_token_usage_repo)
 
-for op, stats in summary['by_operation'].items():
-    print(f"{op}: {stats['tokens']} tokens, ${stats['cost']:.4f}")
+summary = repo.get_user_summary("user-123", days=7)
+print(f"Total cost (7 days): ${summary.total_cost:.4f}")
+print(f"Total tokens: {summary.total_tokens}")
+
+for op, stats in summary.by_operation.items():
+    print(f"{op}: {stats.tokens} tokens, ${stats.cost:.4f}")
 ```
 
 ---
 
-#### get_article_token_usage()
+#### TokenUsageRepository.get_by_article()
 
-**Module**: `utils/mongodb.py`
+**Module**: `adapter/mongodb/token_usage_repository.py` (implements `port/token_usage_repository.py`)
 
 **Description**: Get all token usage records for a specific article.
 
 **Signature**:
 ```python
-def get_article_token_usage(article_id: str) -> list[dict]
+def get_by_article(self, article_id: str) -> list[TokenUsage]
 ```
 
 **Parameters**:
 - `article_id`: Article ID to get usage for
 
-**Returns**: List of token usage records sorted by `created_at` ascending (oldest first)
+**Returns**: List of `TokenUsage` domain objects sorted by `created_at` ascending (oldest first)
 
-**Record Format**:
+**TokenUsage fields**:
 ```python
-{
-    'id': str,                      # Usage record ID
-    'user_id': str,                 # User who incurred usage
-    'operation': str,               # Operation type (always "article_generation" for articles)
-    'model': str,                   # Model used
-    'prompt_tokens': int,           # Input tokens
-    'completion_tokens': int,       # Output tokens
-    'total_tokens': int,            # Total tokens
-    'estimated_cost': float,        # Cost in USD
-    'metadata': dict,               # Additional metadata (contains 'job_id')
-    'created_at': datetime          # Timestamp
-}
+@dataclass
+class TokenUsage:
+    id: str                         # Usage record ID
+    user_id: str                    # User who incurred usage
+    operation: str                  # Operation type ("dictionary_search" | "article_generation")
+    model: str                      # Model used
+    prompt_tokens: int              # Input tokens
+    completion_tokens: int          # Output tokens
+    total_tokens: int               # Total tokens
+    estimated_cost: float           # Cost in USD
+    created_at: datetime            # Timestamp
+    article_id: str | None          # Article ID (optional)
+    metadata: dict                  # Additional metadata (contains 'job_id' for article_generation)
 ```
 
 **Note**: Multiple records per article are expected during article generation. CrewAI makes multiple LLM calls (research, writing, editing agents), and each call generates a separate token usage record. Total cost = sum of all records.
 
-**Example**:
+**Example** (via FastAPI dependency injection):
 ```python
-from utils.mongodb import get_article_token_usage
+from api.dependencies import get_token_usage_repo
+from port.token_usage_repository import TokenUsageRepository
 
-usage_records = get_article_token_usage("article-123")
-total_cost = sum(record['estimated_cost'] for record in usage_records)
-total_tokens = sum(record['total_tokens'] for record in usage_records)
+repo: TokenUsageRepository = Depends(get_token_usage_repo)
+
+usage_records = repo.get_by_article("article-123")
+total_cost = sum(record.estimated_cost for record in usage_records)
+total_tokens = sum(record.total_tokens for record in usage_records)
 print(f"Total article generation cost: ${total_cost:.4f}")
 print(f"Total tokens used: {total_tokens}")
 print(f"Number of LLM calls: {len(usage_records)}")
@@ -1167,39 +1187,31 @@ indexes = [
 
 #### Index Conflict Resolution
 
-스키마 변경 시 인덱스 충돌을 자동으로 해결하는 헬퍼 함수들:
+**Module**: `adapter/mongodb/indexes.py`
+
+스키마 변경 시 인덱스 충돌을 자동으로 해결하는 헬퍼 함수들. 앱 시작 시 `ensure_all_indexes(db)`가 호출되어 모든 컬렉션의 인덱스를 검증/생성합니다:
 
 ```python
-def _create_index_safe(collection, keys, name, **kwargs) -> bool:
+def create_index_safe(collection, keys, name, **kwargs) -> bool:
     """Create index with conflict resolution."""
     try:
         collection.create_index(keys, name=name, **kwargs)
         return True
     except PyMongoError as e:
-        if "already exists" not in str(e):
+        if "already exists" not in str(e) and "Conflict" not in str(e):
             raise
-        return _resolve_index_conflict(collection, keys, name, **kwargs)
+        return _resolve_conflict(collection, keys, name, **kwargs)
 
 
-def _resolve_index_conflict(collection, keys, name, **kwargs) -> bool:
-    """Resolve by dropping conflicting index and recreating."""
-    keys_dict = dict(keys)
-    existing_indexes = collection.index_information()
-
-    for idx_name, idx_info in existing_indexes.items():
-        if idx_name == '_id_':
-            continue
-
-        idx_keys = dict(idx_info.get('key', []))
-
-        # 같은 이름 다른 키, 또는 같은 키 다른 이름
-        if (idx_name == name and idx_keys != keys_dict) or \
-           (idx_keys == keys_dict and idx_name != name):
-            collection.drop_index(idx_name)
-            collection.create_index(keys, name=name, **kwargs)
-            return True
-
-    return False
+def ensure_all_indexes(db) -> bool:
+    """Ensure indexes for all collections. Called at app startup."""
+    results = [
+        MongoArticleRepository(db).ensure_indexes(),
+        MongoUserRepository(db).ensure_indexes(),
+        MongoVocabularyRepository(db).ensure_indexes(),
+        MongoTokenUsageRepository(db).ensure_indexes(),
+    ]
+    return all(results)
 ```
 
 **사용 사례:**
@@ -1212,7 +1224,8 @@ def _resolve_index_conflict(collection, keys, name, **kwargs) -> bool:
 #### Input Validation
 
 ```python
-def save_token_usage(...) -> Optional[str]:
+# MongoTokenUsageRepository.save()
+def save(self, ...) -> str | None:
     # 1. user_id 검증 (빈 문자열 방지)
     if not user_id or not user_id.strip():
         logger.warning("Invalid user_id: empty or whitespace")
@@ -1228,7 +1241,8 @@ def save_token_usage(...) -> Optional[str]:
 ```
 
 ```python
-def get_user_token_summary(user_id: str, days: int = 30) -> dict:
+# MongoTokenUsageRepository.get_user_summary()
+def get_user_summary(self, user_id: str, days: int = 30) -> TokenUsageSummary:
     # days 범위 검증 [1, 365]
     if days < 1 or days > 365:
         logger.warning(f"Invalid days {days}, clamping to [1, 365]")
@@ -1263,7 +1277,7 @@ call_llm_with_tracking()
     ┌───────┴───────┐
     │               │
     ▼               ▼
-[로깅]        save_token_usage()
+[로깅]        token_usage_repo.save()
 logger.info()       │
                     ▼
               MongoDB insert
@@ -1291,7 +1305,7 @@ run_crew(inputs)
     │ calculate_cost()
     │       │       │
     │       ▼       │
-    │ save_token_usage()
+    │ token_usage_repo.save()
     └───────────────┘
             │
             ▼
@@ -1306,19 +1320,21 @@ run_crew(inputs)
     ┌───────────────┼───────────────┐
     │               │               │
     ▼               ▼               ▼
-get_user_      get_article_    Dashboard
-token_summary  token_usage     (Phase 7)
+repo.get_      repo.get_       Dashboard
+user_summary   by_article
     │               │
     ▼               ▼
-{total_tokens,  [usage records
- total_cost,     by article]
+TokenUsage     [TokenUsage
+Summary         records]
+{total_tokens,
+ total_cost,
  by_operation,
  daily_usage}
 ```
 
 **Phase 구분:**
 - **Phase 1** ✅: LiteLLM 통합, TokenUsageStats, Dictionary API 로깅
-- **Phase 2** ✅: MongoDB 저장 함수, 집계 함수, 인덱스
+- **Phase 2** ✅: MongoDB 저장 함수, 집계 함수, 인덱스 (migrated to `MongoTokenUsageRepository` in Issue #99)
 - **Phase 3** ✅: API 엔드포인트 (`/usage/me`, `/usage/articles/{id}`), Authentication/Authorization
 - **Phase 4** ✅: Worker에서 article_generation 토큰 추적 (LiteLLM callbacks)
 - **Phase 5** ✅: JobTracker coordinator pattern
@@ -1406,13 +1422,15 @@ print(f"Response: {content}")
 **Integration Example** (Dictionary API):
 ```python
 from services.dictionary_service import DictionaryService, LookupRequest
-from utils.mongodb import save_token_usage
+from api.dependencies import get_token_usage_repo
+from port.token_usage_repository import TokenUsageRepository
 
 @router.post("/dictionary/search")
 async def search_word(
     request: SearchRequest,
-    current_user: User = Depends(get_current_user_required),
-    service: DictionaryService = Depends(get_dictionary_service)
+    current_user: UserResponse = Depends(get_current_user_required),
+    service: DictionaryService = Depends(get_dictionary_service),
+    token_usage_repo: TokenUsageRepository = Depends(get_token_usage_repo),
 ):
     # Convert API request to service request
     lookup_request = LookupRequest(
@@ -1425,20 +1443,21 @@ async def search_word(
     # Perform hybrid lookup (LLM lemma extraction + API + LLM entry/sense selection)
     result = await service.lookup(lookup_request)
 
-    # Track accumulated token usage (reduced prompt + entry/sense selection)
+    # Track accumulated token usage via injected repository
     stats = service.last_token_stats
     if stats:
-        save_token_usage(
+        token_usage_repo.save(
             user_id=current_user.id,
             operation="dictionary_search",
             model=stats.model,
             prompt_tokens=stats.prompt_tokens,
             completion_tokens=stats.completion_tokens,
             estimated_cost=stats.estimated_cost,
-            metadata={"query": request.word, "language": request.language}
+            article_id=request.article_id,
+            metadata={"word": request.word, "language": request.language}
         )
 
-    return SearchResponse(**result.__dict__)
+    return SearchResponse(...)
 ```
 
 ---

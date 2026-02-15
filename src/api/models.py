@@ -217,8 +217,8 @@ class TokenUsageSummary(BaseModel):
     )
 
 
-class TokenUsageRecord(BaseModel):
-    """Single token usage record."""
+class TokenUsageResponse(BaseModel):
+    """Single token usage response."""
     id: str = Field(..., description="Usage record ID")
     user_id: str = Field(..., description="User ID who incurred the usage")
     operation: str = Field(..., description="Operation type: dictionary_search or article_generation")

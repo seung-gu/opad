@@ -13,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from worker.processor import run_worker_loop
 from utils.logging import setup_structured_logging
 from adapter.mongodb.article_repository import MongoArticleRepository
+from adapter.mongodb.token_usage_repository import MongoTokenUsageRepository
+from adapter.mongodb.vocabulary_repository import MongoVocabularyRepository
 from adapter.mongodb.connection import get_mongodb_client, DATABASE_NAME
 
 # Set up structured JSON logging
@@ -33,7 +35,9 @@ def main():
             sys.exit(1)
         db = client[DATABASE_NAME]
         repo = MongoArticleRepository(db)
-        run_worker_loop(repo)
+        token_usage_repo = MongoTokenUsageRepository(db)
+        vocab_repo = MongoVocabularyRepository(db)
+        run_worker_loop(repo, token_usage_repo, vocab_repo)
     except KeyboardInterrupt:
         logger.info("Worker stopped")
     except Exception as e:
