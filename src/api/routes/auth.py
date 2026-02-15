@@ -2,21 +2,18 @@
 
 import logging
 import re
-from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, EmailStr
-import sys
-from pathlib import Path
+from dataclasses import asdict
 
-# Add src to path
-_src_path = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(_src_path))
-
-from api.middleware.auth import create_access_token, get_current_user_required
-from utils.mongodb import get_user, create_user, update_last_login
-from api.models import User
-from fastapi import Depends
 import bcrypt
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, EmailStr
+
+from api.dependencies import get_user_repo
+from api.models import UserResponse
+from api.security import create_access_token, get_current_user_required
+from domain.model.user import User
+from port.user_repository import UserRepository
+
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +94,7 @@ class AuthResponse(BaseModel):
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-async def register(request: RegisterRequest):
+async def register(request: RegisterRequest, repo: UserRepository = Depends(get_user_repo)):
     """Register a new user.
 
     Args:
@@ -110,7 +107,7 @@ async def register(request: RegisterRequest):
         HTTPException: 409 Conflict if email already exists, 400 Bad Request if validation fails
     """
     # Check if user already exists
-    existing_user = get_user(request.email)
+    existing_user = repo.get_by_email(request.email)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -129,7 +126,7 @@ async def register(request: RegisterRequest):
     password_hash = get_password_hash(request.password)
     
     # Create user
-    user = create_user(
+    user: User | None = repo.create(
         email=request.email,
         password_hash=password_hash,
         name=request.name
@@ -142,18 +139,18 @@ async def register(request: RegisterRequest):
         )
     
     # Generate JWT token
-    token = create_access_token(user['id'])
+    token = create_access_token(user.id)
     
     # Remove password_hash from response
-    user_response = {k: v for k, v in user.items() if k != 'password_hash'}
+    user_response = {k: v for k, v in asdict(user).items() if k != 'password_hash'}
     
-    logger.info("User registered", extra={"userId": user['id'], "email": request.email})
+    logger.info("User registered", extra={"userId": user.id, "email": request.email})
     
     return AuthResponse(token=token, user=user_response)
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(request: LoginRequest):
+async def login(request: LoginRequest, repo: UserRepository = Depends(get_user_repo)):
     """Login user and return JWT token.
     
     Args:
@@ -166,7 +163,7 @@ async def login(request: LoginRequest):
         HTTPException: 401 if credentials are invalid
     """
     # Get user by email
-    user = get_user(request.email)
+    user = repo.get_by_email(request.email)
     if not user:
         # Don't reveal if email exists (security best practice)
         raise HTTPException(
@@ -175,7 +172,7 @@ async def login(request: LoginRequest):
         )
     
     # Verify password
-    if not verify_password(request.password, user['password_hash']):
+    if not verify_password(request.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
@@ -184,21 +181,21 @@ async def login(request: LoginRequest):
     # Update last_login timestamp
     # Note: We don't check the return value - login succeeds even if update fails
     # This is intentional to prevent login failures due to database issues
-    update_last_login(user['id'])
+    repo.update_last_login(user.id)
 
     # Generate JWT token
-    token = create_access_token(user['id'])
+    token = create_access_token(user.id)
     
     # Remove password_hash from response
-    user_response = {k: v for k, v in user.items() if k != 'password_hash'}
+    user_response = {k: v for k, v in asdict(user).items() if k != 'password_hash'}
     
-    logger.info("User logged in", extra={"userId": user['id'], "email": request.email})
+    logger.info("User logged in", extra={"userId": user.id, "email": request.email})
 
     return AuthResponse(token=token, user=user_response)
 
 
 @router.get("/me")
-async def get_me(current_user: User = Depends(get_current_user_required)):
+async def get_me(current_user: UserResponse = Depends(get_current_user_required)):
     """Get current authenticated user info.
 
     Args:

@@ -1,7 +1,6 @@
 """Unit tests for article vocabularies route."""
 
 import unittest
-from unittest.mock import patch
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
@@ -11,11 +10,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from fastapi.testclient import TestClient
 from api.main import app
-from api.models import User
-from api.middleware.auth import get_current_user_required
-from api.dependencies import get_article_repo
+from api.models import UserResponse
+from api.security import get_current_user_required
+from api.dependencies import get_article_repo, get_vocab_repo
 from adapter.fake.article_repository import FakeArticleRepository
+from adapter.fake.vocabulary_repository import FakeVocabularyRepository
 from domain.model.article import ArticleInputs, ArticleStatus
+from domain.model.vocabulary import GrammaticalInfo
 
 
 class TestGetArticleVocabularies(unittest.TestCase):
@@ -24,7 +25,7 @@ class TestGetArticleVocabularies(unittest.TestCase):
     def setUp(self):
         """Set up test client and fixtures."""
         self.client = TestClient(app)
-        self.mock_user = User(
+        self.mock_user = UserResponse(
             id="test-user-123",
             email="test@example.com",
             name="Test User",
@@ -34,6 +35,7 @@ class TestGetArticleVocabularies(unittest.TestCase):
         )
         self.article_id = "test-article-123"
         self.repo = FakeArticleRepository()
+        self.vocab_repo = FakeVocabularyRepository()
 
     def tearDown(self):
         """Clean up dependency overrides."""
@@ -43,6 +45,7 @@ class TestGetArticleVocabularies(unittest.TestCase):
         """Common setup for authenticated requests with fake repo."""
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         app.dependency_overrides[get_article_repo] = lambda: self.repo
+        app.dependency_overrides[get_vocab_repo] = lambda: self.vocab_repo
 
     def _create_test_article(self, user_id="test-user-123", status=ArticleStatus.COMPLETED):
         """Create a test article in the fake repo."""
@@ -54,26 +57,19 @@ class TestGetArticleVocabularies(unittest.TestCase):
         if status == ArticleStatus.COMPLETED:
             self.repo.save_content(self.article_id, "Test content")
 
-    @patch('api.routes.articles.get_vocabularies')
-    def test_get_article_vocabularies_success(self, mock_get_vocabs):
+    def test_get_article_vocabularies_success(self):
         """Test successful retrieval of article vocabularies."""
         self._setup_auth_and_repo()
         self._create_test_article()
-        mock_get_vocabs.return_value = [
-            {
-                'id': 'vocab-1',
-                'article_id': self.article_id,
-                'word': 'testing',
-                'lemma': 'test',
-                'definition': 'a procedure',
-                'sentence': 'This is a test.',
-                'language': 'English',
-                'related_words': None,
-                'span_id': None,
-                'created_at': datetime.now(timezone.utc),
-                'user_id': 'test-user-123'
-            }
-        ]
+        self.vocab_repo.save(
+            article_id=self.article_id,
+            word='testing',
+            lemma='test',
+            definition='a procedure',
+            sentence='This is a test.',
+            language='English',
+            user_id='test-user-123',
+        )
 
         response = self.client.get(f"/articles/{self.article_id}/vocabularies")
 
@@ -82,11 +78,6 @@ class TestGetArticleVocabularies(unittest.TestCase):
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['lemma'], 'test')
         self.assertEqual(data[0]['article_id'], self.article_id)
-
-        mock_get_vocabs.assert_called_once_with(
-            article_id=self.article_id,
-            user_id='test-user-123'
-        )
 
     def test_get_article_vocabularies_article_not_found(self):
         """Test 404 response when article doesn't exist."""
@@ -121,12 +112,10 @@ class TestGetArticleVocabularies(unittest.TestCase):
 
         self.assertEqual(response.status_code, 401)
 
-    @patch('api.routes.articles.get_vocabularies')
-    def test_get_article_vocabularies_empty_result(self, mock_get_vocabs):
+    def test_get_article_vocabularies_empty_result(self):
         """Test successful response with no vocabularies."""
         self._setup_auth_and_repo()
         self._create_test_article()
-        mock_get_vocabs.return_value = []
 
         response = self.client.get(f"/articles/{self.article_id}/vocabularies")
 

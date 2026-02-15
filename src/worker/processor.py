@@ -28,24 +28,32 @@ sys.path.insert(0, str(_src_path))
 
 from crew.main import run as run_crew
 from api.job_queue import dequeue_job
-from utils.mongodb import get_user_vocabulary_for_generation
 from utils.token_usage import save_crew_token_usage
 from worker.context import JobContext, translate_error
 from crew.progress_listener import JobProgressListener
 from crew.models import ReviewedArticle
 from port.article_repository import ArticleRepository
+from port.token_usage_repository import TokenUsageRepository
+from port.vocabulary_repository import VocabularyRepository
+from services import vocabulary_service
 from domain.model.article import ArticleStatus
 
 
 logger = logging.getLogger(__name__)
 
 
-def process_job(job_data: dict, repo: ArticleRepository) -> bool:
+def process_job(
+    job_data: dict,
+    repo: ArticleRepository,
+    token_usage_repo: TokenUsageRepository | None = None,
+    vocab_repo: VocabularyRepository | None = None,
+) -> bool:
     """Process a single job from the queue.
 
     Args:
         job_data: Job data from queue (job_id, article_id, user_id, inputs, created_at)
         repo: ArticleRepository (injected from main.py or test)
+        token_usage_repo: TokenUsageRepository (injected from main.py or test)
 
     Returns:
         True if job completed, False if failed
@@ -71,12 +79,13 @@ def process_job(job_data: dict, repo: ArticleRepository) -> bool:
             # Fetch vocabulary for personalized generation (always set default to avoid template error)
             # Filter by target level to avoid vocab too difficult for the article
             vocab = None
-            if ctx.user_id and ctx.inputs.get('language'):
-                vocab = get_user_vocabulary_for_generation(
+            if ctx.user_id and ctx.inputs.get('language') and vocab_repo:
+                vocab = vocabulary_service.get_user_lemmas(
+                    vocab_repo,
                     user_id=ctx.user_id,
                     language=ctx.inputs['language'],
                     target_level=ctx.inputs.get('level'),
-                    limit=50
+                    limit=50,
                 )
             ctx.inputs['vocabulary_list'] = vocab if vocab else ""
 
@@ -87,7 +96,7 @@ def process_job(job_data: dict, repo: ArticleRepository) -> bool:
 
             # Save token usage for each agent (even if task failed - tokens were still consumed)
             if ctx.user_id:
-                save_crew_token_usage(result, ctx.user_id, ctx.article_id, ctx.job_id)
+                save_crew_token_usage(result, ctx.user_id, ctx.article_id, ctx.job_id, repo=token_usage_repo)
 
             # Check for task failures
             if listener.task_failed:
@@ -123,7 +132,11 @@ def process_job(job_data: dict, repo: ArticleRepository) -> bool:
         return False
 
 
-def run_worker_loop(repo: ArticleRepository):
+def run_worker_loop(
+    repo: ArticleRepository,
+    token_usage_repo: TokenUsageRepository | None = None,
+    vocab_repo: VocabularyRepository | None = None,
+):
     """Main worker loop - continuously processes jobs from Redis queue."""
     logger.info("Worker started, waiting for jobs...")
 
@@ -134,7 +147,7 @@ def run_worker_loop(repo: ArticleRepository):
             if job_data:
                 job_id = job_data.get('job_id')
                 logger.info("Received job", extra={"jobId": job_id})
-                process_job(job_data, repo)
+                process_job(job_data, repo, token_usage_repo, vocab_repo)
             else:
                 import time
                 time.sleep(5)

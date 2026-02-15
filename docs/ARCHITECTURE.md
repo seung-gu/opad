@@ -123,7 +123,7 @@ sequenceDiagram
 | **Web** | **API** | HTTP | Article 생성, Job enqueue, Token usage 조회 |
 | **Web** | **Next.js API** | HTTP | Dictionary API 요청 (프록시), Vocabulary CRUD 요청 (프록시), Dictionary Stats 요청 (프록시) |
 | **Next.js API** | **API** | HTTP | Dictionary API 프록시 요청, Vocabulary CRUD 프록시 요청, Dictionary Stats 프록시 요청 |
-| **API** | **MongoDB** | (via ArticleRepository + utils.mongodb) | 중복 체크, Article metadata 저장/조회 (ArticleRepository), Vocabulary 저장/조회 (utils.mongodb), Token usage 저장/조회 (utils.mongodb) |
+| **API** | **MongoDB** | (via Repository adapters) | 중복 체크, Article metadata 저장/조회 (ArticleRepository), Vocabulary 저장/조회 (VocabularyRepository), Token usage 저장/조회 (TokenUsageRepository), User 인증/조회 (UserRepository) |
 | **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
 | **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.job_queue` 사용) |
 | **API** | **Stanza NLP** | Local (via utils.lemma_extraction) | German lemma extraction (로컬 NLP, ~51ms) |
@@ -132,9 +132,9 @@ sequenceDiagram
 | **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
 | **Worker** | **Redis** | `SET` | Job 상태 업데이트 (공통 모듈 `api.job_queue` 사용) |
 | **Worker** | **CrewAI** | Function Call | Article 생성 |
-| **Worker** | **MongoDB** | (via ArticleRepository + utils.mongodb) | Article content 저장 (ArticleRepository), Token usage 저장 (utils.mongodb) |
+| **Worker** | **MongoDB** | (via Repository adapters) | Article content 저장 (ArticleRepository), Token usage 저장 (TokenUsageRepository) |
 
-**참고**: API와 Worker 모두 `api.job_queue` 모듈을 통해 Redis에 접근합니다. Article 관련 MongoDB 접근은 `ArticleRepository` (hexagonal architecture) 를 통해 합니다. Vocabulary, Token usage 등은 아직 `utils.mongodb` 모듈을 통해 접근합니다 (Phase 2에서 마이그레이션 예정).
+**참고**: API와 Worker 모두 `api.job_queue` 모듈을 통해 Redis에 접근합니다. 모든 MongoDB 접근은 hexagonal architecture의 Repository 어댑터를 통해 합니다: `ArticleRepository`, `VocabularyRepository`, `TokenUsageRepository`, `UserRepository`. 각 Repository는 `api/dependencies.py`(Composition Root)에서 생성되어 FastAPI `Depends()`로 주입됩니다.
 
 ### Redis 데이터 구조
 
@@ -272,72 +272,119 @@ queued → running → completed / failed
 
 ### Overview
 
-The project is adopting hexagonal architecture (ports and adapters) incrementally, starting with the Article entity (Phase 1). This pattern decouples business logic from infrastructure concerns (MongoDB, Redis) by introducing explicit boundaries between layers.
+The project uses hexagonal architecture (ports and adapters) for all database entities. This pattern decouples business logic from infrastructure concerns (MongoDB, Redis) by introducing explicit boundaries between layers. All MongoDB access goes through Protocol-based repository interfaces, with concrete adapters in `adapter/mongodb/`.
 
 **Motivation:**
 - Enable unit testing without MongoDB (swap in `FakeArticleRepository`)
 - Make infrastructure decisions (MongoDB vs PostgreSQL) implementation details, not architectural commitments
 - Enforce consistent data access patterns across API and Worker services
 
+**Dependency flow:**
+```
+api/worker (Driving) --> services --> domain <-- ports <-- adapters (Driven)
+```
+
 ### Layer Structure
 
 ```mermaid
 graph TB
-    subgraph "Composition Roots"
+    subgraph "Composition Root"
         APIRoot["api/dependencies.py<br/>(FastAPI Depends)"]
         WorkerRoot["worker/main.py<br/>(parameter injection)"]
     end
 
+    subgraph "Service Layer"
+        VocabService["vocabulary_service.py"]
+        DictService["dictionary_service.py"]
+    end
+
     subgraph "Domain Layer"
-        Article["Article<br/>(dataclass)"]
-        ArticleInputs["ArticleInputs<br/>(frozen dataclass)"]
-        ArticleStatus["ArticleStatus<br/>(str Enum)"]
+        Article["Article"]
+        User["User"]
+        Vocabulary["Vocabulary<br/>GrammaticalInfo<br/>VocabularyCount"]
+        TokenUsage["TokenUsage<br/>TokenUsageSummary"]
     end
 
     subgraph "Port Layer"
-        RepoProtocol["ArticleRepository<br/>(Protocol)"]
+        ArticlePort["ArticleRepository<br/>(Protocol)"]
+        UserPort["UserRepository<br/>(Protocol)"]
+        VocabPort["VocabularyRepository<br/>(Protocol)"]
+        TokenPort["TokenUsageRepository<br/>(Protocol)"]
     end
 
-    subgraph "Adapter Layer"
-        MongoAdapter["MongoArticleRepository<br/>(MongoDB)"]
-        FakeAdapter["FakeArticleRepository<br/>(in-memory, testing)"]
+    subgraph "Adapter Layer (adapter/mongodb/)"
+        MongoArticle["MongoArticleRepository"]
+        MongoUser["MongoUserRepository"]
+        MongoVocab["MongoVocabularyRepository"]
+        MongoToken["MongoTokenUsageRepository"]
+        FakeArticle["FakeArticleRepository<br/>(in-memory, testing)"]
+        Indexes["indexes.py<br/>(ensure_all_indexes)"]
+        Stats["stats.py<br/>(get_database_stats)"]
     end
 
-    subgraph "Consumers"
+    subgraph "Consumers (Driving Side)"
         ArticlesRoute["api/routes/articles.py"]
+        AuthRoute["api/routes/auth.py"]
+        DictRoute["api/routes/dictionary.py"]
+        UsageRoute["api/routes/usage.py"]
+        StatsRoute["api/routes/stats.py"]
         Processor["worker/processor.py"]
-        Context["worker/context.py"]
     end
 
-    APIRoot --> RepoProtocol
-    WorkerRoot --> RepoProtocol
+    APIRoot --> ArticlePort
+    APIRoot --> UserPort
+    APIRoot --> VocabPort
+    APIRoot --> TokenPort
+    WorkerRoot --> ArticlePort
 
-    ArticlesRoute --> RepoProtocol
-    Processor --> RepoProtocol
-    Context --> RepoProtocol
+    ArticlesRoute --> ArticlePort
+    AuthRoute --> UserPort
+    DictRoute --> VocabPort
+    DictRoute --> TokenPort
+    UsageRoute --> ArticlePort
+    UsageRoute --> TokenPort
+    Processor --> ArticlePort
 
-    RepoProtocol -.->|implements| MongoAdapter
-    RepoProtocol -.->|implements| FakeAdapter
+    VocabService --> VocabPort
+    DictService --> VocabPort
 
-    MongoAdapter --> Article
-    FakeAdapter --> Article
+    ArticlePort -.->|implements| MongoArticle
+    ArticlePort -.->|implements| FakeArticle
+    UserPort -.->|implements| MongoUser
+    VocabPort -.->|implements| MongoVocab
+    TokenPort -.->|implements| MongoToken
 
-    Article --> ArticleInputs
-    Article --> ArticleStatus
+    MongoArticle --> Article
+    MongoUser --> User
+    MongoVocab --> Vocabulary
+    MongoToken --> TokenUsage
 
     style Article fill:#e3f2fd
-    style ArticleInputs fill:#e3f2fd
-    style ArticleStatus fill:#e3f2fd
-    style RepoProtocol fill:#fff3e0
-    style MongoAdapter fill:#e8f5e9
-    style FakeAdapter fill:#e8f5e9
+    style User fill:#e3f2fd
+    style Vocabulary fill:#e3f2fd
+    style TokenUsage fill:#e3f2fd
+    style ArticlePort fill:#fff3e0
+    style UserPort fill:#fff3e0
+    style VocabPort fill:#fff3e0
+    style TokenPort fill:#fff3e0
+    style MongoArticle fill:#e8f5e9
+    style MongoUser fill:#e8f5e9
+    style MongoVocab fill:#e8f5e9
+    style MongoToken fill:#e8f5e9
+    style FakeArticle fill:#e8f5e9
+    style Indexes fill:#e8f5e9
+    style Stats fill:#e8f5e9
     style APIRoot fill:#fce4ec
     style WorkerRoot fill:#fce4ec
+    style VocabService fill:#f3e5f5
+    style DictService fill:#f3e5f5
 ```
 
-### Domain Model (`src/domain/model/article.py`)
+### Domain Models (`src/domain/model/`)
 
-The `Article` domain model is a plain Python dataclass with no database dependencies:
+All domain models are plain Python dataclasses with no database dependencies.
+
+#### Article (`domain/model/article.py`)
 
 ```python
 class ArticleStatus(str, Enum):
@@ -348,7 +395,6 @@ class ArticleStatus(str, Enum):
 
 @dataclass(frozen=True)
 class ArticleInputs:
-    """Input parameters for article generation."""
     language: str
     level: str
     length: str
@@ -356,7 +402,6 @@ class ArticleInputs:
 
 @dataclass
 class Article:
-    """Domain model representing an article."""
     id: str
     inputs: ArticleInputs
     status: ArticleStatus
@@ -368,14 +413,92 @@ class Article:
     started_at: datetime | None = None
 ```
 
+#### User (`domain/model/user.py`)
+
+```python
+@dataclass
+class User:
+    id: str
+    name: str
+    email: str
+    created_at: datetime
+    updated_at: datetime
+    last_login: datetime | None = None
+    password_hash: str | None = None
+    provider: str = 'email'
+```
+
+#### Vocabulary (`domain/model/vocabulary.py`)
+
+```python
+@dataclass
+class GrammaticalInfo:
+    pos: str | None = None
+    gender: str | None = None
+    phonetics: str | None = None
+    conjugations: dict | None = None
+    level: str | None = None
+    examples: list[str] | None = None
+
+@dataclass
+class Vocabulary:
+    id: str
+    article_id: str
+    word: str
+    lemma: str
+    definition: str
+    sentence: str
+    language: str
+    created_at: datetime
+    related_words: list[str] | None = None
+    span_id: str | None = None
+    user_id: str | None = None
+    grammar: GrammaticalInfo = field(default_factory=GrammaticalInfo)
+
+@dataclass
+class VocabularyCount:
+    vocabulary: Vocabulary
+    count: int
+    article_ids: list[str] = field(default_factory=list)
+```
+
+#### Token Usage (`domain/model/token_usage.py`)
+
+```python
+@dataclass
+class TokenUsage:
+    id: str
+    user_id: str
+    operation: str
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    estimated_cost: float
+    created_at: datetime
+    article_id: str | None = None
+    metadata: dict = field(default_factory=dict)
+
+@dataclass
+class TokenUsageSummary:
+    total_tokens: int
+    total_cost: float
+    by_operation: dict[str, OperationUsage] = field(default_factory=dict)
+    daily_usage: list[DailyUsage] = field(default_factory=list)
+```
+
 **Design decisions:**
 - `ArticleInputs` is `frozen=True` (immutable) because inputs never change after creation
 - `ArticleStatus` extends `str` for JSON serialization compatibility
 - `Article` is a mutable dataclass (status, content change during lifecycle)
+- `GrammaticalInfo` groups optional grammatical metadata for vocabulary entries
+- `VocabularyCount` is a composite model combining a vocabulary entry with its aggregated count
 
-### Port (`src/port/article_repository.py`)
+### Ports (`src/port/`)
 
-The port defines the contract for article persistence using Python's `Protocol`:
+Each port defines the contract for a domain entity's persistence using Python's `Protocol`:
+
+#### ArticleRepository (`port/article_repository.py`)
 
 ```python
 class ArticleRepository(Protocol):
@@ -388,21 +511,62 @@ class ArticleRepository(Protocol):
     def delete(self, article_id) -> bool: ...
 ```
 
+#### UserRepository (`port/user_repository.py`)
+
+```python
+class UserRepository(Protocol):
+    def create(self, email, password_hash, name) -> User | None: ...
+    def get_by_email(self, email) -> User | None: ...
+    def get_by_id(self, user_id) -> User | None: ...
+    def update_last_login(self, user_id) -> bool: ...
+```
+
+#### VocabularyRepository (`port/vocabulary_repository.py`)
+
+```python
+class VocabularyRepository(Protocol):
+    def save(self, article_id, word, lemma, ...) -> str | None: ...
+    def get_by_id(self, vocabulary_id) -> Vocabulary | None: ...
+    def find(self, article_id, user_id, lemma) -> list[Vocabulary]: ...
+    def update_span_id(self, vocabulary_id, span_id) -> None: ...
+    def delete(self, vocabulary_id) -> bool: ...
+    def count_by_lemma(self, language, user_id, skip, limit) -> list[VocabularyCount]: ...
+    def find_lemmas(self, user_id, language, levels, limit) -> list[str]: ...
+```
+
+#### TokenUsageRepository (`port/token_usage_repository.py`)
+
+```python
+class TokenUsageRepository(Protocol):
+    def save(self, user_id, operation, model, ...) -> str | None: ...
+    def get_user_summary(self, user_id, days) -> TokenUsageSummary: ...
+    def get_by_article(self, article_id) -> list[TokenUsage]: ...
+```
+
 **Why Protocol (structural typing)?**
 - No need for adapters to explicitly inherit from an ABC
 - Any class with matching method signatures satisfies the protocol
 - Supports duck typing while providing IDE/mypy type checking
 
-### Adapters
+### Adapters (`src/adapter/mongodb/`)
 
-#### MongoArticleRepository (`src/adapter/mongodb/article_repository.py`)
+All MongoDB adapters follow the same pattern:
+- Receive a `pymongo.Database` instance via constructor injection
+- Convert between MongoDB documents and domain objects via `_to_domain()` helper
+- All methods return `bool`, domain objects, or `None` (never raw MongoDB documents)
+- Each adapter has an `ensure_indexes()` method for index management
 
-Production adapter that persists articles to MongoDB.
+| Adapter | File | Collection | Domain Model |
+|---------|------|------------|-------------|
+| `MongoArticleRepository` | `article_repository.py` | `articles` | `Article` |
+| `MongoUserRepository` | `user_repository.py` | `users` | `User` |
+| `MongoVocabularyRepository` | `vocabulary_repository.py` | `vocabularies` | `Vocabulary` |
+| `MongoTokenUsageRepository` | `token_usage_repository.py` | `token_usage` | `TokenUsage` |
 
-- Receives a `pymongo.Database` instance via constructor injection
-- Converts between MongoDB documents and `Article` domain objects via `_to_domain()` helper
-- Uses `dataclasses.asdict()` to serialize `ArticleInputs` for storage
-- All methods return `bool` or domain objects (never raw MongoDB documents)
+**Shared utilities in `adapter/mongodb/`:**
+- `indexes.py`: `create_index_safe()` with conflict resolution, `ensure_all_indexes(db)` called at app startup
+- `stats.py`: `get_database_stats(db)` and `get_vocabulary_stats(db)` for the `/stats` endpoint
+- `connection.py`: MongoDB client singleton (`get_mongodb_client()`, `DATABASE_NAME`)
 
 #### FakeArticleRepository (`src/adapter/fake/article_repository.py`)
 
@@ -412,20 +576,34 @@ In-memory adapter for unit testing.
 - Implements the same `ArticleRepository` protocol as `MongoArticleRepository`
 - Enables fast, deterministic tests without database setup
 
-### Composition Roots (Dependency Injection)
+### Composition Root (Dependency Injection)
 
 #### FastAPI (`src/api/dependencies.py`)
 
+The composition root creates all repository instances. A private `_get_db()` helper centralizes the database connection:
+
 ```python
-def get_article_repo() -> ArticleRepository:
+def _get_db():
+    """Get MongoDB database, raising 503 if unavailable."""
     client = get_mongodb_client()
     if client is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
-    db = client[DATABASE_NAME]
-    return MongoArticleRepository(db)
+    return client[DATABASE_NAME]
+
+def get_article_repo() -> ArticleRepository:
+    return MongoArticleRepository(_get_db())
+
+def get_user_repo() -> UserRepository:
+    return MongoUserRepository(_get_db())
+
+def get_token_usage_repo() -> TokenUsageRepository:
+    return MongoTokenUsageRepository(_get_db())
+
+def get_vocab_repo() -> VocabularyRepository:
+    return MongoVocabularyRepository(_get_db())
 ```
 
-Used by FastAPI route handlers via `Depends(get_article_repo)`:
+Used by FastAPI route handlers via `Depends()`:
 
 ```python
 @router.get("/{article_id}")
@@ -449,33 +627,21 @@ def main():
 
 The worker creates the repository once at startup and passes it through the call chain: `main()` -> `run_worker_loop(repo)` -> `process_job(job_data, repo)` -> `JobContext.from_dict(job_data, repo)`.
 
-### Migration Strategy (Phase 1 vs Phase 2)
+### Repository Overview
 
-#### Phase 1 (Current -- Issue #98)
-Article entity fully migrated to hexagonal architecture:
-- All article CRUD operations go through `ArticleRepository`
-- API routes use `Depends(get_article_repo)` for injection
-- Worker receives `repo` parameter via constructor chain
-- Legacy functions in `utils/mongodb.py` marked with `.. deprecated::` docstrings
+All database entities use hexagonal architecture. MongoDB access goes through Protocol-based repository interfaces.
 
-#### Phase 2 (Future)
-- Remove deprecated functions from `utils/mongodb.py` (e.g., `save_article()`, `get_article()`, `list_articles()`, `save_article_metadata()`, `find_duplicate_article()`, `get_latest_article()`, `update_article_status()`, `delete_article()`)
-- Migrate Vocabulary entity to hexagonal pattern (`VocabularyRepository`)
-- Migrate User entity to hexagonal pattern (`UserRepository`)
-- Migrate Token Usage to hexagonal pattern (`TokenUsageRepository`)
+| Entity | Port | Adapter |
+|--------|------|---------|
+| Article | `ArticleRepository` | `MongoArticleRepository` |
+| User | `UserRepository` | `MongoUserRepository` |
+| Vocabulary | `VocabularyRepository` | `MongoVocabularyRepository` |
+| Token Usage | `TokenUsageRepository` | `MongoTokenUsageRepository` |
 
-**Deprecated functions in `utils/mongodb.py`** (Phase 1):
-
-| Deprecated Function | Replacement |
-|---------------------|-------------|
-| `save_article()` | `ArticleRepository.save_content()` |
-| `get_article()` | `ArticleRepository.get_by_id()` |
-| `save_article_metadata()` | `ArticleRepository.save_metadata()` |
-| `find_duplicate_article()` | `ArticleRepository.find_duplicate()` |
-| `get_latest_article()` | `ArticleRepository.find_many(limit=1)` |
-| `list_articles()` | `ArticleRepository.find_many()` |
-| `update_article_status()` | `ArticleRepository.update_status()` |
-| `delete_article()` | `ArticleRepository.delete()` |
+**Additional components added during migration:**
+- `adapter/mongodb/indexes.py`: Centralized index management with `ensure_all_indexes(db)`
+- `adapter/mongodb/stats.py`: Database statistics for `/stats` endpoint
+- `services/vocabulary_service.py`: Business logic for vocabulary operations (duplicate detection, CEFR level filtering)
 
 ---
 
@@ -528,45 +694,36 @@ content, stats = await call_llm_with_tracking(
 # stats.estimated_cost = 0.000015
 ```
 
-#### 2. MongoDB Storage (`utils/mongodb.py`)
+#### 2. MongoDB Storage (`adapter/mongodb/token_usage_repository.py`)
 
-**save_token_usage()**: Save token usage record
+Token usage persistence is handled by `MongoTokenUsageRepository`, implementing the `TokenUsageRepository` protocol.
+
+**save()**: Save token usage record
 ```python
-def save_token_usage(
+def save(
+    self,
     user_id: str,
     operation: str,  # "dictionary_search" | "article_generation"
     model: str,
     prompt_tokens: int,
     completion_tokens: int,
     estimated_cost: float,
-    article_id: Optional[str] = None,
-    metadata: Optional[dict] = None
-) -> Optional[str]:
+    article_id: str | None = None,
+    metadata: dict | None = None,
+) -> str | None:
     """Save token usage record to MongoDB."""
 ```
 
-**get_user_token_summary()**: Get user's token usage summary
+**get_user_summary()**: Get user's token usage summary
 ```python
-def get_user_token_summary(user_id: str, days: int = 30) -> dict:
-    """
-    Returns:
-    {
-        'total_tokens': int,
-        'total_cost': float,
-        'by_operation': {
-            'operation_type': {'tokens': int, 'cost': float, 'count': int}
-        },
-        'daily_usage': [
-            {'date': 'YYYY-MM-DD', 'tokens': int, 'cost': float}
-        ]
-    }
-    """
+def get_user_summary(self, user_id: str, days: int = 30) -> TokenUsageSummary:
+    """Returns TokenUsageSummary dataclass with aggregated usage data."""
 ```
 
-**get_article_token_usage()**: Get token usage for specific article
+**get_by_article()**: Get token usage for specific article
 ```python
-def get_article_token_usage(article_id: str) -> list[dict]:
-    """Returns all token usage records for an article."""
+def get_by_article(self, article_id: str) -> list[TokenUsage]:
+    """Returns all TokenUsage domain objects for an article."""
 ```
 
 #### 3. Token Usage Collection Schema (MongoDB)
@@ -604,8 +761,9 @@ def get_article_token_usage(article_id: str) -> list[dict]:
 @router.post("/search", response_model=SearchResponse)
 async def search_word(
     request: SearchRequest,
-    current_user: User = Depends(get_current_user_required),
-    service: DictionaryService = Depends(get_dictionary_service)
+    current_user: UserResponse = Depends(get_current_user_required),
+    service: DictionaryService = Depends(get_dictionary_service),
+    token_usage_repo: TokenUsageRepository = Depends(get_token_usage_repo),
 ):
     # Convert API request to service request
     lookup_request = LookupRequest(
@@ -618,20 +776,21 @@ async def search_word(
     # Perform lookup via DictionaryService (hybrid LLM + API approach)
     result = await service.lookup(lookup_request)
 
-    # Track token usage (accumulated from reduced prompt + entry/sense selection)
+    # Track token usage via injected repository
     stats = service.last_token_stats
     if stats:
-        save_token_usage(
+        token_usage_repo.save(
             user_id=current_user.id,
             operation="dictionary_search",
             model=stats.model,
             prompt_tokens=stats.prompt_tokens,
             completion_tokens=stats.completion_tokens,
             estimated_cost=stats.estimated_cost,
-            metadata={"query": request.word, "language": request.language}
+            article_id=request.article_id,
+            metadata={"word": request.word, "language": request.language}
         )
 
-    return SearchResponse(**result.__dict__)
+    return SearchResponse(...)
 ```
 
 #### Token Usage API Endpoints (`src/api/routes/usage.py`)
@@ -641,10 +800,11 @@ async def search_word(
 @router.get("/me", response_model=TokenUsageSummary)
 async def get_my_usage(
     days: int = Query(default=30, ge=1, le=365),
-    current_user: User = Depends(get_current_user_required)
+    current_user: UserResponse = Depends(get_current_user_required),
+    repo: TokenUsageRepository = Depends(get_token_usage_repo),
 ):
-    # Get aggregated summary from MongoDB
-    summary = get_user_token_summary(user_id=current_user.id, days=days)
+    # Get aggregated summary via injected repository
+    summary = repo.get_user_summary(user_id=current_user.id, days=days)
 
     # Convert to response models
     by_operation = {
@@ -665,22 +825,24 @@ async def get_my_usage(
 
 **GET /usage/articles/{article_id}**: Get token usage for specific article
 ```python
-@router.get("/articles/{article_id}", response_model=list[TokenUsageRecord])
+@router.get("/articles/{article_id}", response_model=list[TokenUsageResponse])
 async def get_article_usage(
     article_id: str,
-    current_user: User = Depends(get_current_user_required)
+    current_user: UserResponse = Depends(get_current_user_required),
+    article_repo: ArticleRepository = Depends(get_article_repo),
+    token_usage_repo: TokenUsageRepository = Depends(get_token_usage_repo),
 ):
-    # Verify article ownership
-    article = get_article(article_id)
+    # Verify article ownership via injected ArticleRepository
+    article = article_repo.get_by_id(article_id)
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
-    if article.get('user_id') != current_user.id:
+    if article.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You don't have permission")
 
-    # Get all usage records for article
-    usage_records = get_article_token_usage(article_id)
+    # Get all usage records via injected TokenUsageRepository
+    usage_records = token_usage_repo.get_by_article(article_id)
 
-    return [TokenUsageRecord(**record) for record in usage_records]
+    return [asdict(record) for record in usage_records]
 ```
 
 ### Token Usage Flow Diagram
@@ -952,43 +1114,45 @@ The system now supports vocabulary-aware article generation, where CrewAI adjust
 - `level`: CEFR difficulty level (A1-C2) for vocabulary tracking and adaptive learning.
 - `examples`: Example sentences from Free Dictionary API showing word usage in context.
 
-#### VocabularyMetadata TypedDict (`src/utils/mongodb.py`)
+#### GrammaticalInfo Domain Model (`src/domain/model/vocabulary.py`)
 
-The `VocabularyMetadata` TypedDict provides type hints for optional grammatical metadata when saving vocabulary entries:
+The `GrammaticalInfo` dataclass holds optional grammatical metadata for vocabulary entries:
 
 ```python
-class VocabularyMetadata(TypedDict, total=False):
-    """Optional grammatical metadata for vocabulary entries."""
-    pos: str | None
-    gender: str | None
-    phonetics: str | None
-    conjugations: dict | None
-    level: str | None
-    examples: list[str] | None
+@dataclass
+class GrammaticalInfo:
+    pos: str | None = None
+    gender: str | None = None
+    phonetics: str | None = None
+    conjugations: dict | None = None
+    level: str | None = None
+    examples: list[str] | None = None
 ```
 
-**Usage**:
+**Usage (via vocabulary_service)**:
 ```python
-from utils.mongodb import save_vocabulary, VocabularyMetadata
+from services import vocabulary_service
+from domain.model.vocabulary import GrammaticalInfo
 
-metadata: VocabularyMetadata = {
-    'pos': 'noun',
-    'gender': 'der',
-    'phonetics': '/hʊnt/',
-    'conjugations': {'genitive': 'Hundes', 'plural': 'Hunde'},
-    'level': 'A1',
-    'examples': ['Der Hund bellt.', 'Ich habe einen Hund.']
-}
+grammar = GrammaticalInfo(
+    pos='noun',
+    gender='der',
+    phonetics='/hʊnt/',
+    conjugations={'genitive': 'Hundes', 'plural': 'Hunde'},
+    level='A1',
+    examples=['Der Hund bellt.', 'Ich habe einen Hund.'],
+)
 
-save_vocabulary(
+vocabulary_service.save_vocabulary(
+    repo,
     article_id=article_id,
-    user_id=user_id,
     word='Hunde',
     lemma='Hund',
     definition='dog',
     sentence='Die Hunde spielen im Park.',
     language='German',
-    metadata=metadata
+    user_id=user_id,
+    grammar=grammar,
 )
 ```
 
@@ -1030,7 +1194,7 @@ All vocabulary endpoints require JWT authentication. Users can only:
 
 **Function**: `get_allowed_vocab_levels(target_level, max_above=1)`
 
-**File**: `src/utils/mongodb.py`
+**File**: `src/services/vocabulary_service.py`
 
 **Purpose**: Filters vocabulary words to only include those appropriate for the target CEFR level when generating articles.
 
@@ -1042,6 +1206,8 @@ All vocabulary endpoints require JWT authentication. Users can only:
 
 **Examples**:
 ```python
+from services.vocabulary_service import get_allowed_vocab_levels
+
 get_allowed_vocab_levels('A2', max_above=1)  # Returns: ['A1', 'A2', 'B1']
 get_allowed_vocab_levels('B1', max_above=1)  # Returns: ['A1', 'A2', 'B1', 'B2']
 get_allowed_vocab_levels('C2', max_above=1)  # Returns: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
@@ -1050,11 +1216,14 @@ get_allowed_vocab_levels('C2', max_above=1)  # Returns: ['A1', 'A2', 'B1', 'B2',
 **Usage in Worker**:
 When generating articles, the worker fetches user vocabulary filtered by target level:
 ```python
-vocab = get_user_vocabulary_for_generation(
+from services.vocabulary_service import get_user_lemmas
+
+lemmas = get_user_lemmas(
+    repo,
     user_id=ctx.user_id,
     language=ctx.inputs['language'],
     target_level=ctx.inputs.get('level'),  # Filters vocab by CEFR level
-    limit=50
+    limit=50,
 )
 ```
 
@@ -1204,22 +1373,36 @@ opad/
 ├── src/
 │   ├── domain/           # Domain layer (hexagonal architecture)
 │   │   └── model/
-│   │       └── article.py    # Article, ArticleInputs, ArticleStatus
+│   │       ├── article.py       # Article, ArticleInputs, ArticleStatus
+│   │       ├── user.py          # User
+│   │       ├── vocabulary.py    # Vocabulary, GrammaticalInfo, VocabularyCount
+│   │       └── token_usage.py   # TokenUsage, TokenUsageSummary, OperationUsage, DailyUsage
 │   │
 │   ├── port/             # Port layer (hexagonal architecture)
-│   │   └── article_repository.py  # ArticleRepository Protocol
+│   │   ├── article_repository.py       # ArticleRepository Protocol
+│   │   ├── user_repository.py          # UserRepository Protocol
+│   │   ├── vocabulary_repository.py    # VocabularyRepository Protocol
+│   │   └── token_usage_repository.py   # TokenUsageRepository Protocol
 │   │
 │   ├── adapter/          # Adapter layer (hexagonal architecture)
 │   │   ├── mongodb/
-│   │   │   ├── connection.py          # MongoDB client (get_mongodb_client)
-│   │   │   └── article_repository.py  # MongoArticleRepository
+│   │   │   ├── connection.py              # MongoDB client (get_mongodb_client)
+│   │   │   ├── article_repository.py      # MongoArticleRepository
+│   │   │   ├── user_repository.py         # MongoUserRepository
+│   │   │   ├── vocabulary_repository.py   # MongoVocabularyRepository
+│   │   │   ├── token_usage_repository.py  # MongoTokenUsageRepository
+│   │   │   ├── indexes.py                 # Shared index management (ensure_all_indexes)
+│   │   │   └── stats.py                   # Database statistics (get_database_stats)
 │   │   └── fake/
-│   │       └── article_repository.py  # FakeArticleRepository (testing)
+│   │       ├── article_repository.py      # FakeArticleRepository (testing)
+│   │       ├── user_repository.py         # FakeUserRepository (testing)
+│   │       ├── vocabulary_repository.py   # FakeVocabularyRepository (testing)
+│   │       └── token_usage_repository.py  # FakeTokenUsageRepository (testing)
 │   │
 │   ├── api/              # API 서비스 (FastAPI)
 │   │   ├── __init__.py
-│   │   ├── main.py       # FastAPI 앱 진입점
-│   │   ├── dependencies.py  # Composition root (get_article_repo)
+│   │   ├── main.py       # FastAPI 앱 진입점 (lifespan pattern)
+│   │   ├── dependencies.py  # Composition root (all repository factories)
 │   │   ├── models.py     # Pydantic 모델 (Article, Job)
 │   │   ├── routes/       # API 엔드포인트
 │   │   │   ├── articles.py
@@ -1273,11 +1456,11 @@ opad/
 │   │       ├── agents.yaml  # 에이전트 정의 (article_finder, article_picker, article_rewriter, article_reviewer)
 │   │       └── tasks.yaml   # 태스크 정의 (find_news_articles, pick_best_article, adapt_news_article, review_article_quality)
 │   │
-│   ├── services/         # 서비스 계층
-│   │   └── dictionary_service.py  # Dictionary lookup orchestrator (hybrid pipeline)
+│   ├── services/         # 서비스 계층 (business logic)
+│   │   ├── dictionary_service.py  # Dictionary lookup orchestrator (hybrid pipeline)
+│   │   └── vocabulary_service.py  # Vocabulary business logic (save, counts, CEFR filtering)
 │   │
 │   └── utils/            # 공통 유틸리티 (공유)
-│       ├── mongodb.py    # MongoDB 작업 (article 함수는 deprecated, vocabulary/user/token 함수는 활성)
 │       ├── logging.py    # Structured logging 설정
 │       ├── llm.py        # OpenAI API 공통 함수
 │       ├── prompts.py    # Full LLM fallback 프롬프트만 포함
@@ -1293,9 +1476,10 @@ opad/
 ### 서비스 구분
 | 폴더 | 역할 | 런타임 | 포트 |
 |------|------|--------|------|
-| `src/domain/` | Domain models (Article, ArticleInputs, ArticleStatus) | - | - |
-| `src/port/` | Port definitions (ArticleRepository Protocol) | - | - |
+| `src/domain/` | Domain models (Article, User, Vocabulary, TokenUsage) | - | - |
+| `src/port/` | Port definitions (ArticleRepository, UserRepository, VocabularyRepository, TokenUsageRepository) | - | - |
 | `src/adapter/` | Infrastructure adapters (MongoDB, Fake) | - | - |
+| `src/services/` | Business logic (vocabulary_service, dictionary_service) | - | - |
 | `src/api/` | CRUD + Job enqueue + Dictionary API | Python (FastAPI) | 8001 (default) |
 | `src/worker/` | CrewAI 실행 + Job/Token Tracking | Python | - |
 | `src/web/` | UI | Node.js (Next.js) | 3000 |

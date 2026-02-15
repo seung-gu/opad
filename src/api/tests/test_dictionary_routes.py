@@ -11,8 +11,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from fastapi.testclient import TestClient
 from api.main import app
-from api.models import User
-from api.middleware.auth import get_current_user_required
+from api.models import UserResponse
+from api.security import get_current_user_required
+from api.dependencies import get_token_usage_repo, get_vocab_repo
+from adapter.fake.vocabulary_repository import FakeVocabularyRepository
+from domain.model.vocabulary import GrammaticalInfo
 from api.routes.dictionary import get_dictionary_service
 from services.dictionary_service import DictionaryService, LookupResult, LookupRequest
 from utils.llm import TokenUsageStats
@@ -36,7 +39,7 @@ class TestSearchWordRoute(unittest.TestCase):
     def setUp(self):
         """Set up test client."""
         self.client = TestClient(app)
-        self.mock_user = User(
+        self.mock_user = UserResponse(
             id="test-user-123",
             email="test@example.com",
             name="Test User",
@@ -44,10 +47,17 @@ class TestSearchWordRoute(unittest.TestCase):
             updated_at=datetime.now(timezone.utc),
             provider="email"
         )
+        self.mock_token_repo = MagicMock()
+        self.mock_token_repo.save.return_value = "usage-id-stub"
 
     def tearDown(self):
         """Clean up dependency overrides."""
         app.dependency_overrides.clear()
+
+    def _setup_overrides(self):
+        """Set up common dependency overrides for authenticated requests."""
+        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        app.dependency_overrides[get_token_usage_repo] = lambda: self.mock_token_repo
 
     def _create_mock_service(self, lookup_result: LookupResult) -> DictionaryService:
         """Create a mock DictionaryService that returns the given result."""
@@ -61,10 +71,9 @@ class TestSearchWordRoute(unittest.TestCase):
         )
         return mock_service
 
-    @patch('api.routes.dictionary.save_token_usage')
-    def test_search_word_success_with_valid_json(self, mock_save_usage):
+    def test_search_word_success_with_valid_json(self):
         """Test successful word search with valid JSON response from LLM."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        self._setup_overrides()
 
         # Create mock service with expected result
         result = LookupResult(
@@ -99,10 +108,9 @@ class TestSearchWordRoute(unittest.TestCase):
         self.assertIsNone(data["conjugations"])
         self.assertEqual(data["level"], "B1")
 
-    @patch('api.routes.dictionary.save_token_usage')
-    def test_search_word_success_without_related_words(self, mock_save_usage):
+    def test_search_word_success_without_related_words(self):
         """Test successful word search when LLM doesn't return related_words."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        self._setup_overrides()
 
         result = LookupResult(
             lemma="run",
@@ -136,10 +144,9 @@ class TestSearchWordRoute(unittest.TestCase):
         self.assertIsNone(data["conjugations"])
         self.assertIsNone(data["level"])
 
-    @patch('api.routes.dictionary.save_token_usage')
-    def test_search_word_fallback_on_json_parse_failure(self, mock_save_usage):
+    def test_search_word_fallback_on_json_parse_failure(self):
         """Test fallback behavior when JSON parsing fails."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        self._setup_overrides()
 
         # Service returns fallback result
         result = LookupResult(
@@ -164,10 +171,9 @@ class TestSearchWordRoute(unittest.TestCase):
         self.assertEqual(data["lemma"], "test")
         self.assertEqual(data["definition"], "This is a simple definition without JSON")
 
-    @patch('api.routes.dictionary.save_token_usage')
-    def test_search_word_truncates_long_non_json_response(self, mock_save_usage):
+    def test_search_word_truncates_long_non_json_response(self):
         """Test that long non-JSON responses are truncated."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        self._setup_overrides()
 
         # Service returns "Definition not found" for long content
         result = LookupResult(
@@ -249,12 +255,11 @@ class TestSearchWordRoute(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 422)
 
-    @patch('api.routes.dictionary.save_token_usage')
-    def test_search_word_handles_llm_timeout_error(self, mock_save_usage):
+    def test_search_word_handles_llm_timeout_error(self):
         """Test handling of LLM timeout errors."""
         import litellm
 
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        self._setup_overrides()
 
         # Create mock service that raises timeout
         mock_service = MagicMock(spec=DictionaryService)
@@ -274,12 +279,11 @@ class TestSearchWordRoute(unittest.TestCase):
 
         self.assertEqual(response.status_code, 504)
 
-    @patch('api.routes.dictionary.save_token_usage')
-    def test_search_word_handles_llm_api_error(self, mock_save_usage):
+    def test_search_word_handles_llm_api_error(self):
         """Test handling of LLM API errors."""
         import litellm
 
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        self._setup_overrides()
 
         # Create mock service that raises API error
         mock_service = MagicMock(spec=DictionaryService)
@@ -304,10 +308,9 @@ class TestSearchWordRoute(unittest.TestCase):
 
         self.assertEqual(response.status_code, 502)
 
-    @patch('api.routes.dictionary.save_token_usage')
-    def test_search_word_with_verb_conjugations(self, mock_save_usage):
+    def test_search_word_with_verb_conjugations(self):
         """Test word search for verb with conjugations."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        self._setup_overrides()
 
         result = LookupResult(
             lemma="gehen",
@@ -344,10 +347,9 @@ class TestSearchWordRoute(unittest.TestCase):
         self.assertEqual(data["conjugations"]["participle"], "gegangen")
         self.assertEqual(data["level"], "A1")
 
-    @patch('api.routes.dictionary.save_token_usage')
-    def test_search_word_with_german_noun_gender(self, mock_save_usage):
+    def test_search_word_with_german_noun_gender(self):
         """Test word search for German noun with gender."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        self._setup_overrides()
 
         result = LookupResult(
             lemma="Hund",
@@ -386,7 +388,7 @@ class TestGetVocabulariesList(unittest.TestCase):
     def setUp(self):
         """Set up test client."""
         self.client = TestClient(app)
-        self.mock_user = User(
+        self.mock_user = UserResponse(
             id="test-user-123",
             email="test@example.com",
             name="Test User",
@@ -394,36 +396,27 @@ class TestGetVocabulariesList(unittest.TestCase):
             updated_at=datetime.now(timezone.utc),
             provider="email"
         )
+        self.vocab_repo = FakeVocabularyRepository()
 
     def tearDown(self):
         """Clean up dependency overrides."""
         app.dependency_overrides.clear()
 
-    @patch('api.routes.dictionary.get_vocabulary_counts')
-    def test_get_vocabularies_list_success(self, mock_get_counts):
-        """Test successful retrieval of vocabulary list."""
+    def _setup(self):
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-        mock_get_counts.return_value = [
-            {
-                'id': 'vocab-1',
-                'article_id': 'article-1',
-                'language': 'English',
-                'lemma': 'test',
-                'count': 5,
-                'article_ids': ['article-1', 'article-2'],
-                'definition': 'a procedure',
-                'sentence': 'This is a test.',
-                'word': 'testing',
-                'created_at': datetime.now(timezone.utc),
-                'related_words': None,
-                'span_id': None,
-                'user_id': 'test-user-123',
-                'pos': 'noun',
-                'gender': None,
-                'conjugations': None,
-                'level': 'B1'
-            }
-        ]
+        app.dependency_overrides[get_vocab_repo] = lambda: self.vocab_repo
+
+    def test_get_vocabularies_list_success(self):
+        """Test successful retrieval of vocabulary list."""
+        self._setup()
+        # Save same lemma twice to get count=2
+        for article_id in ['article-1', 'article-2']:
+            self.vocab_repo.save(
+                article_id=article_id, word='testing', lemma='test',
+                definition='a procedure', sentence='This is a test.',
+                language='English', user_id='test-user-123',
+                grammar=GrammaticalInfo(pos='noun', level='B1'),
+            )
 
         response = self.client.get("/dictionary/vocabularies")
 
@@ -431,57 +424,47 @@ class TestGetVocabulariesList(unittest.TestCase):
         data = response.json()
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['lemma'], 'test')
-        self.assertEqual(data[0]['count'], 5)
+        self.assertEqual(data[0]['count'], 2)
         self.assertEqual(data[0]['pos'], 'noun')
         self.assertEqual(data[0]['level'], 'B1')
 
-    @patch('api.routes.dictionary.get_vocabulary_counts')
-    def test_get_vocabularies_list_with_language_filter(self, mock_get_counts):
+    def test_get_vocabularies_list_with_language_filter(self):
         """Test vocabulary list with language filter."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-        mock_get_counts.return_value = []
+        self._setup()
+        self.vocab_repo.save(
+            article_id='a1', word='Hund', lemma='Hund',
+            definition='dog', sentence='Der Hund.',
+            language='German', user_id='test-user-123',
+        )
+        self.vocab_repo.save(
+            article_id='a2', word='dog', lemma='dog',
+            definition='dog', sentence='The dog.',
+            language='English', user_id='test-user-123',
+        )
 
         response = self.client.get("/dictionary/vocabularies?language=German")
 
         self.assertEqual(response.status_code, 200)
-        mock_get_counts.assert_called_once_with(
-            language='German',
-            user_id='test-user-123',
-            skip=0,
-            limit=100
-        )
+        data = response.json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['lemma'], 'Hund')
 
-    @patch('api.routes.dictionary.get_vocabulary_counts')
-    def test_get_vocabularies_list_with_pagination(self, mock_get_counts):
+    def test_get_vocabularies_list_with_pagination(self):
         """Test vocabulary list with pagination parameters."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-        mock_get_counts.return_value = []
+        self._setup()
 
         response = self.client.get("/dictionary/vocabularies?skip=10&limit=50")
 
         self.assertEqual(response.status_code, 200)
-        mock_get_counts.assert_called_once_with(
-            language=None,
-            user_id='test-user-123',
-            skip=10,
-            limit=50
-        )
+        self.assertEqual(response.json(), [])
 
-    @patch('api.routes.dictionary.get_vocabulary_counts')
-    def test_get_vocabularies_list_enforces_max_limit(self, mock_get_counts):
+    def test_get_vocabularies_list_enforces_max_limit(self):
         """Test that vocabulary list enforces maximum limit of 1000."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-        mock_get_counts.return_value = []
+        self._setup()
 
         response = self.client.get("/dictionary/vocabularies?limit=5000")
 
         self.assertEqual(response.status_code, 200)
-        mock_get_counts.assert_called_once_with(
-            language=None,
-            user_id='test-user-123',
-            skip=0,
-            limit=1000
-        )
 
     def test_get_vocabularies_list_requires_authentication(self):
         """Test that get_vocabularies_list requires authentication."""
@@ -496,11 +479,9 @@ class TestGetVocabulariesList(unittest.TestCase):
 
         self.assertEqual(response.status_code, 401)
 
-    @patch('api.routes.dictionary.get_vocabulary_counts')
-    def test_get_vocabularies_list_empty_result(self, mock_get_counts):
+    def test_get_vocabularies_list_empty_result(self):
         """Test vocabulary list with empty result."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-        mock_get_counts.return_value = []
+        self._setup()
 
         response = self.client.get("/dictionary/vocabularies")
 

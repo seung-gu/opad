@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-02-14
+
+### Added
+- Phase 2 completion: User, Vocabulary, and TokenUsage repositories migrated to hexagonal pattern (Issues #98/#99)
+- Domain models: `User`, `Vocabulary`, `VocabularyCount`, `GrammaticalInfo`, and `TokenUsage` with clean business logic separation
+- `UserRepository`, `VocabularyRepository`, and `TokenUsageRepository` protocols (ports) defining contracts for persistence
+- `MongoUserRepository`, `MongoVocabularyRepository`, and `MongoTokenUsageRepository` adapters implementing MongoDB persistence
+- `FakeUserRepository`, `FakeVocabularyRepository`, and `FakeTokenUsageRepository` in-memory adapters for testing without database
+- Shared index management: `adapter/mongodb/indexes.py` with `create_index_safe()` and `ensure_all_indexes()` for conflict resolution
+- Operational statistics module: `adapter/mongodb/stats.py` for database and vocabulary collection analytics
+- Vocabulary service (`services/vocabulary_service.py`) extracting business logic: duplicate detection, CEFR level filtering
+- Each MongoXxxRepository now includes `ensure_indexes()` method for autonomous index management
+- FastAPI lifespan pattern migration from deprecated `@app.on_event("startup")` to modern `@asynccontextmanager`
+- Authentication requirement for `/stats` endpoint via `get_current_user_required` dependency
+
+### Changed
+- Deleted legacy `utils/mongodb.py` (2,000+ lines) — monolithic utility replaced by dedicated repositories
+- API routes now inject repository Protocol types instead of direct MongoDB calls
+- `/stats` endpoint now requires authentication (was previously public)
+- Worker processor uses dependency-injected repositories from composition roots
+- API models now use `UserResponse` instead of direct `User` domain model (authentication refactoring)
+- Refactored user/vocabulary/token_usage imports to use domain models and protocols throughout codebase
+
+### Removed
+- `utils/mongodb.py` — entire 2,000+ line monolithic utility file deleted
+- Old MongoDB utility functions for user, vocabulary, and token usage management
+- `api/middleware/auth.py` — renamed to `api/security.py` as authentication utility module
+- Domain model tests moved to unit test suite (previously inline in domain models)
+- Direct MongoDB imports from route handlers (now injected via dependencies)
+
+### Technical Impact
+- **Code reduction**: Net 4,561 lines deleted (MongoDB utility + duplicates), net improvement in codebase maintainability
+- **Testability**: Repository protocols enable seamless swapping between MongoDB and in-memory adapters
+- **Separation of concerns**: Business logic extracted from persistence layer into dedicated services
+- **Index management**: Centralized safe index creation with conflict resolution prevents schema migration issues
+- **SOLID principles**: Dependency Inversion (ports/adapters), Single Responsibility (per repository), Open/Closed (protocols for extensibility)
+
 ## [0.13.0] - 2026-02-14
 
 ### Added
