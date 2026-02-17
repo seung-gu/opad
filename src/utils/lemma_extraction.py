@@ -10,7 +10,9 @@ import logging
 import threading
 from typing import Any
 
-from utils.llm import TokenUsageStats, call_llm_with_tracking, parse_json_from_content
+from port.llm import LLMPort
+from domain.model.token_usage import LLMCallResult
+from utils.llm import parse_json_from_content
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +56,9 @@ async def extract_lemma(
     word: str,
     sentence: str,
     language: str,
+    llm: LLMPort,
     model: str = "openai/gpt-4.1-mini",
-) -> tuple[dict[str, Any] | None, TokenUsageStats | None]:
+) -> tuple[dict[str, Any] | None, LLMCallResult | None]:
     """Extract lemma, related_words, and CEFR level for a word in context.
 
     German uses Stanza NLP with a small LLM call for CEFR.
@@ -65,6 +68,7 @@ async def extract_lemma(
         word: The clicked word.
         sentence: Full sentence containing the word.
         language: Language name (e.g., "German", "English").
+        llm: LLM port for API calls.
         model: LLM model identifier for reduced prompt / CEFR calls.
 
     Returns:
@@ -77,7 +81,7 @@ async def extract_lemma(
         if result is not None:
             # Stanza doesn't know CEFR — ask LLM with a tiny prompt
             level, stats = await _estimate_cefr(
-                word, sentence, result["lemma"], model
+                word, sentence, result["lemma"], llm, model
             )
             result["level"] = level
             logger.info("Lemma extracted (Stanza)", extra={
@@ -90,7 +94,7 @@ async def extract_lemma(
         logger.info("Stanza extraction failed, falling back to LLM",
                      extra={"word": word})
 
-    return await _extract_with_llm(word, sentence, language, model)
+    return await _extract_with_llm(word, sentence, language, llm, model)
 
 
 # ---------------------------------------------------------------------------
@@ -213,8 +217,8 @@ def _collect_related_words(sent, target, word: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 async def _estimate_cefr(
-    word: str, sentence: str, lemma: str, model: str,
-) -> tuple[str | None, TokenUsageStats | None]:
+    word: str, sentence: str, lemma: str, llm: LLMPort, model: str,
+) -> tuple[str | None, LLMCallResult | None]:
     """Estimate CEFR level with a minimal LLM call."""
     prompt = (
         f'Sentence: "{sentence}"\n'
@@ -223,7 +227,7 @@ async def _estimate_cefr(
         f"A1=basic A2=daily B1=general B2=professional C1=academic C2=literary"
     )
     try:
-        content, stats = await call_llm_with_tracking(
+        content, stats = await llm.call(
             messages=[{"role": "user", "content": prompt}],
             model=model,
             max_tokens=_CEFR_PROMPT_MAX_TOKENS,
@@ -243,13 +247,13 @@ async def _estimate_cefr(
 # ---------------------------------------------------------------------------
 
 async def _extract_with_llm(
-    word: str, sentence: str, language: str, model: str,
-) -> tuple[dict[str, Any] | None, TokenUsageStats | None]:
+    word: str, sentence: str, language: str, llm: LLMPort, model: str,
+) -> tuple[dict[str, Any] | None, LLMCallResult | None]:
     """Extract lemma using LLM reduced prompt."""
     try:
         prompt = _build_reduced_prompt(language, sentence, word)
 
-        content, stats = await call_llm_with_tracking(
+        content, stats = await llm.call(
             messages=[{"role": "user", "content": prompt}],
             model=model,
             max_tokens=_REDUCED_PROMPT_MAX_TOKENS,

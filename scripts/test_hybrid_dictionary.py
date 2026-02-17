@@ -17,7 +17,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from utils.mongodb import get_mongodb_client
-from utils.llm import call_llm_with_tracking, parse_json_from_content
+from adapter.external.litellm import LiteLLMAdapter
+from utils.llm import parse_json_from_content
+
+_llm = LiteLLMAdapter()
 from utils.lemma_extraction import _build_reduced_prompt as build_reduced_word_definition_prompt
 from utils.prompts import build_word_definition_prompt
 from utils.dictionary_api import fetch_from_free_dictionary_api
@@ -62,7 +65,7 @@ async def test_hybrid_lookup(vocab: dict) -> dict:
 
     llm_start = time.time()
     try:
-        content, stats = await call_llm_with_tracking(
+        content, stats = await _llm.call(
             messages=[{"role": "user", "content": prompt}],
             model="openai/gpt-4.1",
             max_tokens=500,
@@ -133,7 +136,7 @@ async def test_full_llm_lookup(vocab: dict) -> dict:
 
     start = time.time()
     try:
-        content, stats = await call_llm_with_tracking(
+        content, stats = await _llm.call(
             messages=[{"role": "user", "content": prompt}],
             model="openai/gpt-4.1-mini",
             max_tokens=2000,

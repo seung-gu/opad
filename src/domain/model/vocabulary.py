@@ -18,6 +18,9 @@ class GrammaticalInfo:
 @dataclass
 class Vocabulary:
     """A single vocabulary entry saved by a user."""
+
+    IDENTITY_FIELDS = ('user_id', 'article_id', 'lemma')
+
     id: str
     article_id: str
     word: str
@@ -30,6 +33,11 @@ class Vocabulary:
     span_id: str | None = None
     user_id: str | None = None
     grammar: GrammaticalInfo = field(default_factory=GrammaticalInfo)
+
+    @property
+    def identity(self) -> dict:
+        """Business identity — fields that define uniqueness."""
+        return {f: getattr(self, f) for f in self.IDENTITY_FIELDS}
 
 
 @dataclass

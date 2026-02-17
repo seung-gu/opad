@@ -13,17 +13,17 @@ from fastapi.testclient import TestClient
 from api.main import app
 from api.models import UserResponse
 from api.security import get_current_user_required
-from api.dependencies import get_token_usage_repo, get_vocab_repo
+from api.dependencies import get_token_usage_repo, get_vocab_repo, get_dictionary_port, get_llm_port
+from adapter.fake.dictionary import FakeDictionaryAdapter
+from adapter.fake.llm import FakeLLMAdapter
 from adapter.fake.vocabulary_repository import FakeVocabularyRepository
 from domain.model.vocabulary import GrammaticalInfo
-from api.routes.dictionary import get_dictionary_service
-from services.dictionary_service import DictionaryService, LookupResult, LookupRequest
-from utils.llm import TokenUsageStats
+from domain.model.token_usage import LLMCallResult
 
 
-def mock_token_stats() -> TokenUsageStats:
-    """Create a mock TokenUsageStats for testing."""
-    return TokenUsageStats(
+def mock_token_stats() -> LLMCallResult:
+    """Create a mock LLMCallResult for testing."""
+    return LLMCallResult(
         model="gpt-4.1-mini",
         prompt_tokens=100,
         completion_tokens=50,
@@ -31,6 +31,33 @@ def mock_token_stats() -> TokenUsageStats:
         estimated_cost=0.0001,
         provider="openai"
     )
+
+
+def _make_result(
+    lemma="test",
+    definition="a procedure",
+    related_words=None,
+    pos=None,
+    gender=None,
+    phonetics=None,
+    conjugations=None,
+    level=None,
+    examples=None,
+    source="hybrid",
+) -> dict:
+    """Create a result dict matching dictionary_service.lookup() output."""
+    return {
+        "lemma": lemma,
+        "definition": definition,
+        "related_words": related_words,
+        "pos": pos,
+        "gender": gender,
+        "phonetics": phonetics,
+        "conjugations": conjugations,
+        "level": level,
+        "examples": examples,
+        "source": source,
+    }
 
 
 class TestSearchWordRoute(unittest.TestCase):
@@ -58,36 +85,19 @@ class TestSearchWordRoute(unittest.TestCase):
         """Set up common dependency overrides for authenticated requests."""
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         app.dependency_overrides[get_token_usage_repo] = lambda: self.mock_token_repo
+        app.dependency_overrides[get_dictionary_port] = lambda: FakeDictionaryAdapter()
+        app.dependency_overrides[get_llm_port] = lambda: FakeLLMAdapter()
 
-    def _create_mock_service(self, lookup_result: LookupResult) -> DictionaryService:
-        """Create a mock DictionaryService that returns the given result."""
-        mock_service = MagicMock(spec=DictionaryService)
-        mock_service.lookup = AsyncMock(return_value=lookup_result)
-        mock_service.last_token_stats = MagicMock(
-            model="gpt-4.1-mini",
-            prompt_tokens=100,
-            completion_tokens=50,
-            estimated_cost=0.0001
-        )
-        return mock_service
-
-    def test_search_word_success_with_valid_json(self):
+    @patch('services.dictionary_service.lookup')
+    def test_search_word_success_with_valid_json(self, mock_lookup):
         """Test successful word search with valid JSON response from LLM."""
         self._setup_overrides()
 
-        # Create mock service with expected result
-        result = LookupResult(
-            lemma="test",
-            definition="a procedure",
-            related_words=["test", "testing"],
-            pos="noun",
-            gender=None,
-            conjugations=None,
-            level="B1",
-            source="hybrid"
+        result = _make_result(
+            lemma="test", definition="a procedure",
+            related_words=["test", "testing"], pos="noun", level="B1",
         )
-        mock_service = self._create_mock_service(result)
-        app.dependency_overrides[get_dictionary_service] = lambda: mock_service
+        mock_lookup.return_value = result
 
         response = self.client.post(
             "/dictionary/search",
@@ -108,22 +118,15 @@ class TestSearchWordRoute(unittest.TestCase):
         self.assertIsNone(data["conjugations"])
         self.assertEqual(data["level"], "B1")
 
-    def test_search_word_success_without_related_words(self):
+    @patch('services.dictionary_service.lookup')
+    def test_search_word_success_without_related_words(self, mock_lookup):
         """Test successful word search when LLM doesn't return related_words."""
         self._setup_overrides()
 
-        result = LookupResult(
-            lemma="run",
-            definition="to move quickly",
-            related_words=None,
-            pos=None,
-            gender=None,
-            conjugations=None,
-            level=None,
-            source="llm"
+        result = _make_result(
+            lemma="run", definition="to move quickly", source="llm",
         )
-        mock_service = self._create_mock_service(result)
-        app.dependency_overrides[get_dictionary_service] = lambda: mock_service
+        mock_lookup.return_value = result
 
         response = self.client.post(
             "/dictionary/search",
@@ -144,18 +147,17 @@ class TestSearchWordRoute(unittest.TestCase):
         self.assertIsNone(data["conjugations"])
         self.assertIsNone(data["level"])
 
-    def test_search_word_fallback_on_json_parse_failure(self):
+    @patch('services.dictionary_service.lookup')
+    def test_search_word_fallback_on_json_parse_failure(self, mock_lookup):
         """Test fallback behavior when JSON parsing fails."""
         self._setup_overrides()
 
-        # Service returns fallback result
-        result = LookupResult(
+        result = _make_result(
             lemma="test",
             definition="This is a simple definition without JSON",
-            source="llm"
+            source="llm",
         )
-        mock_service = self._create_mock_service(result)
-        app.dependency_overrides[get_dictionary_service] = lambda: mock_service
+        mock_lookup.return_value = result
 
         response = self.client.post(
             "/dictionary/search",
@@ -171,18 +173,15 @@ class TestSearchWordRoute(unittest.TestCase):
         self.assertEqual(data["lemma"], "test")
         self.assertEqual(data["definition"], "This is a simple definition without JSON")
 
-    def test_search_word_truncates_long_non_json_response(self):
+    @patch('services.dictionary_service.lookup')
+    def test_search_word_truncates_long_non_json_response(self, mock_lookup):
         """Test that long non-JSON responses are truncated."""
         self._setup_overrides()
 
-        # Service returns "Definition not found" for long content
-        result = LookupResult(
-            lemma="test",
-            definition="Definition not found",
-            source="llm"
+        result = _make_result(
+            lemma="test", definition="Definition not found", source="llm",
         )
-        mock_service = self._create_mock_service(result)
-        app.dependency_overrides[get_dictionary_service] = lambda: mock_service
+        mock_lookup.return_value = result
 
         response = self.client.post(
             "/dictionary/search",
@@ -255,18 +254,14 @@ class TestSearchWordRoute(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 422)
 
-    def test_search_word_handles_llm_timeout_error(self):
+    @patch('services.dictionary_service.lookup')
+    def test_search_word_handles_llm_timeout_error(self, mock_lookup):
         """Test handling of LLM timeout errors."""
-        import litellm
+        from port.llm import LLMTimeoutError
 
         self._setup_overrides()
 
-        # Create mock service that raises timeout
-        mock_service = MagicMock(spec=DictionaryService)
-        mock_service.lookup = AsyncMock(
-            side_effect=litellm.Timeout("Request timeout", llm_provider="openai", model="gpt-4o-mini")
-        )
-        app.dependency_overrides[get_dictionary_service] = lambda: mock_service
+        mock_lookup.side_effect = LLMTimeoutError("Request timeout")
 
         response = self.client.post(
             "/dictionary/search",
@@ -279,23 +274,14 @@ class TestSearchWordRoute(unittest.TestCase):
 
         self.assertEqual(response.status_code, 504)
 
-    def test_search_word_handles_llm_api_error(self):
+    @patch('services.dictionary_service.lookup')
+    def test_search_word_handles_llm_api_error(self, mock_lookup):
         """Test handling of LLM API errors."""
-        import litellm
+        from port.llm import LLMError
 
         self._setup_overrides()
 
-        # Create mock service that raises API error
-        mock_service = MagicMock(spec=DictionaryService)
-        mock_service.lookup = AsyncMock(
-            side_effect=litellm.APIError(
-                status_code=500,
-                message="Internal server error",
-                llm_provider="openai",
-                model="gpt-4o-mini"
-            )
-        )
-        app.dependency_overrides[get_dictionary_service] = lambda: mock_service
+        mock_lookup.side_effect = LLMError("Internal server error")
 
         response = self.client.post(
             "/dictionary/search",
@@ -308,26 +294,22 @@ class TestSearchWordRoute(unittest.TestCase):
 
         self.assertEqual(response.status_code, 502)
 
-    def test_search_word_with_verb_conjugations(self):
+    @patch('services.dictionary_service.lookup')
+    def test_search_word_with_verb_conjugations(self, mock_lookup):
         """Test word search for verb with conjugations."""
         self._setup_overrides()
 
-        result = LookupResult(
-            lemma="gehen",
-            definition="to go, to walk",
-            related_words=["gehen"],
-            pos="verb",
-            gender=None,
+        result = _make_result(
+            lemma="gehen", definition="to go, to walk",
+            related_words=["gehen"], pos="verb",
             conjugations={
                 "present": "gehe, gehst, geht",
                 "past": "ging",
                 "participle": "gegangen"
             },
             level="A1",
-            source="hybrid"
         )
-        mock_service = self._create_mock_service(result)
-        app.dependency_overrides[get_dictionary_service] = lambda: mock_service
+        mock_lookup.return_value = result
 
         response = self.client.post(
             "/dictionary/search",
@@ -347,22 +329,16 @@ class TestSearchWordRoute(unittest.TestCase):
         self.assertEqual(data["conjugations"]["participle"], "gegangen")
         self.assertEqual(data["level"], "A1")
 
-    def test_search_word_with_german_noun_gender(self):
+    @patch('services.dictionary_service.lookup')
+    def test_search_word_with_german_noun_gender(self, mock_lookup):
         """Test word search for German noun with gender."""
         self._setup_overrides()
 
-        result = LookupResult(
-            lemma="Hund",
-            definition="dog",
-            related_words=["Hund"],
-            pos="noun",
-            gender="der",
-            conjugations=None,
-            level="A1",
-            source="hybrid"
+        result = _make_result(
+            lemma="Hund", definition="dog",
+            related_words=["Hund"], pos="noun", gender="der", level="A1",
         )
-        mock_service = self._create_mock_service(result)
-        app.dependency_overrides[get_dictionary_service] = lambda: mock_service
+        mock_lookup.return_value = result
 
         response = self.client.post(
             "/dictionary/search",

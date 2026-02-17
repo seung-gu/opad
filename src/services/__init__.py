@@ -1,5 +1,5 @@
 """Services layer for business logic."""
 
-from services.dictionary_service import DictionaryService
+from services.dictionary_service import lookup
 
-__all__ = ["DictionaryService"]
+__all__ = ["lookup"]

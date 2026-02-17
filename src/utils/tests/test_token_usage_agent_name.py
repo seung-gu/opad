@@ -6,17 +6,17 @@ Tests for:
 - Type validation for agent_name (string vs non-string)
 - Fallback behavior when agent_name is missing/empty
 - Malformed metadata handling
-- Integration with save_crew_token_usage and TokenUsageRepository
+- Integration with track_crew_usage and TokenUsageRepository
 """
 
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
-from utils.token_usage import save_crew_token_usage
+from services.token_usage_service import track_crew_usage
 
 
 class TestAgentNameHandling(unittest.TestCase):
-    """Test cases for agent_name handling in save_crew_token_usage."""
+    """Test cases for agent_name handling in track_crew_usage."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -38,21 +38,20 @@ class TestAgentNameHandling(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
-                # Verify agent_name is in metadata
-                self.assertIn('agent_name', call_kwargs['metadata'])
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Article Search')
+                usage = mock_repo.save.call_args[0][0]
+                self.assertIn('agent_name', usage.metadata)
+                self.assertEqual(usage.metadata['agent_name'], 'Article Search')
 
     def test_agent_role_fallback_when_agent_name_is_none(self):
         """Test that agent_role is used as fallback when agent_name is None."""
@@ -68,20 +67,19 @@ class TestAgentNameHandling(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.01):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.01):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
-                # Should use agent_role as fallback
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Article Writer')
+                usage = mock_repo.save.call_args[0][0]
+                self.assertEqual(usage.metadata['agent_name'], 'Article Writer')
 
     def test_agent_name_empty_string_uses_fallback(self):
         """Test that empty string agent_name falls back to agent_role."""
@@ -97,20 +95,19 @@ class TestAgentNameHandling(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
-                # Empty string is falsy, should use agent_role
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Quality Reviewer')
+                usage = mock_repo.save.call_args[0][0]
+                self.assertEqual(usage.metadata['agent_name'], 'Quality Reviewer')
 
     def test_agent_name_with_numeric_value_uses_fallback(self):
         """Test that numeric agent_name is rejected, uses agent_role instead."""
@@ -126,20 +123,19 @@ class TestAgentNameHandling(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
-                # Non-string should be rejected by isinstance check
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Researcher')
+                usage = mock_repo.save.call_args[0][0]
+                self.assertEqual(usage.metadata['agent_name'], 'Researcher')
 
     def test_agent_name_with_boolean_value_uses_fallback(self):
         """Test that boolean agent_name is rejected, uses agent_role instead."""
@@ -155,20 +151,19 @@ class TestAgentNameHandling(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
-                # Boolean should be rejected
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Content Parser')
+                usage = mock_repo.save.call_args[0][0]
+                self.assertEqual(usage.metadata['agent_name'], 'Content Parser')
 
     def test_agent_name_with_dict_value_uses_fallback(self):
         """Test that dict agent_name is rejected, uses agent_role instead."""
@@ -184,20 +179,19 @@ class TestAgentNameHandling(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
-                # Dict should be rejected
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Validator')
+                usage = mock_repo.save.call_args[0][0]
+                self.assertEqual(usage.metadata['agent_name'], 'Validator')
 
     def test_agent_name_with_special_characters(self):
         """Test that agent_name with special characters is preserved."""
@@ -213,20 +207,20 @@ class TestAgentNameHandling(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.01):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.01):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
+                usage = mock_repo.save.call_args[0][0]
                 # Special characters should be preserved
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Quality Check #2 (Advanced)')
+                self.assertEqual(usage.metadata['agent_name'], 'Quality Check #2 (Advanced)')
 
     def test_agent_name_with_unicode_characters(self):
         """Test that agent_name with unicode characters is preserved."""
@@ -242,20 +236,20 @@ class TestAgentNameHandling(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
+                usage = mock_repo.save.call_args[0][0]
                 # Unicode should be preserved
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Recherche 📰 Française')
+                self.assertEqual(usage.metadata['agent_name'], 'Recherche 📰 Française')
 
     def test_agent_name_priority_over_agent_role(self):
         """Test that agent_name takes priority over agent_role in metadata."""
@@ -271,20 +265,20 @@ class TestAgentNameHandling(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.01):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.01):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
+                usage = mock_repo.save.call_args[0][0]
                 # agent_name should be used, not agent_role
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Short Name')
+                self.assertEqual(usage.metadata['agent_name'], 'Short Name')
 
     def test_agent_name_with_leading_trailing_whitespace(self):
         """Test that agent_name with whitespace is preserved as-is."""
@@ -300,20 +294,20 @@ class TestAgentNameHandling(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
+                usage = mock_repo.save.call_args[0][0]
                 # Whitespace should be preserved
-                self.assertEqual(call_kwargs['metadata']['agent_name'], '  Article Search  ')
+                self.assertEqual(usage.metadata['agent_name'], '  Article Search  ')
 
     def test_multiple_agents_different_agent_names(self):
         """Test multiple agents with different agent_name values."""
@@ -345,15 +339,15 @@ class TestAgentNameHandling(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
                 # Verify all 3 calls with correct agent_name values
@@ -361,13 +355,13 @@ class TestAgentNameHandling(unittest.TestCase):
                 calls = mock_repo.save.call_args_list
 
                 # First agent: agent_name provided
-                self.assertEqual(calls[0][1]['metadata']['agent_name'], 'Article Search')
+                self.assertEqual(calls[0][0][0].metadata['agent_name'], 'Article Search')
 
                 # Second agent: None falls back to agent_role
-                self.assertEqual(calls[1][1]['metadata']['agent_name'], 'Writer')
+                self.assertEqual(calls[1][0][0].metadata['agent_name'], 'Writer')
 
                 # Third agent: agent_name provided
-                self.assertEqual(calls[2][1]['metadata']['agent_name'], 'Quality Check')
+                self.assertEqual(calls[2][0][0].metadata['agent_name'], 'Quality Check')
 
     def test_agent_name_with_very_long_string(self):
         """Test that very long agent_name is preserved."""
@@ -384,19 +378,19 @@ class TestAgentNameHandling(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
-                self.assertEqual(call_kwargs['metadata']['agent_name'], long_name)
+                usage = mock_repo.save.call_args[0][0]
+                self.assertEqual(usage.metadata['agent_name'], long_name)
 
     def test_agent_name_metadata_structure(self):
         """Test that agent_name is properly placed in metadata dict."""
@@ -412,19 +406,19 @@ class TestAgentNameHandling(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
-                metadata = call_kwargs['metadata']
+                usage = mock_repo.save.call_args[0][0]
+                metadata = usage.metadata
 
                 # Verify metadata has both job_id and agent_name
                 self.assertIn('job_id', metadata)
@@ -446,19 +440,19 @@ class TestAgentNameHandling(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
-                metadata = call_kwargs['metadata']
+                usage = mock_repo.save.call_args[0][0]
+                metadata = usage.metadata
 
                 # Both should exist without overwriting
                 self.assertEqual(len(metadata), 2)  # job_id and agent_name
@@ -489,20 +483,20 @@ class TestAgentNameTypeValidation(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
+                usage = mock_repo.save.call_args[0][0]
                 # String should pass
-                self.assertIsInstance(call_kwargs['metadata']['agent_name'], str)
+                self.assertIsInstance(usage.metadata['agent_name'], str)
 
     def test_agent_name_type_validation_with_list(self):
         """Test that list agent_name is rejected."""
@@ -518,20 +512,20 @@ class TestAgentNameTypeValidation(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
+                usage = mock_repo.save.call_args[0][0]
                 # Should fall back to agent_role
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Researcher')
+                self.assertEqual(usage.metadata['agent_name'], 'Researcher')
 
     def test_agent_name_type_validation_with_none(self):
         """Test that None agent_name is handled correctly."""
@@ -547,20 +541,20 @@ class TestAgentNameTypeValidation(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
+                usage = mock_repo.save.call_args[0][0]
                 # Should fall back to agent_role
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Researcher')
+                self.assertEqual(usage.metadata['agent_name'], 'Researcher')
 
 
 if __name__ == '__main__':

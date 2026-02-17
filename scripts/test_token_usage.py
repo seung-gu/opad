@@ -5,19 +5,20 @@ import asyncio
 import sys
 sys.path.insert(0, "src")
 
-from utils.llm import call_llm_with_tracking
+from adapter.external.litellm import LiteLLMAdapter
 
 
 async def test_token_usage():
     """Test token usage tracking with a simple prompt."""
     print("Testing token usage tracking...\n")
+    llm = LiteLLMAdapter()
 
     # Test 1: Simple greeting
     print("=" * 50)
     print("Test 1: Simple greeting")
     print("=" * 50)
 
-    content, stats = await call_llm_with_tracking(
+    content, stats = await llm.call(
         messages=[{"role": "user", "content": "Say hello in German"}],
         model="gpt-4.1-mini",
         max_tokens=50
@@ -49,7 +50,7 @@ Return ONLY valid JSON:
   "level": "A1/A2/B1/B2/C1/C2"
 }"""
 
-    content2, stats2 = await call_llm_with_tracking(
+    content2, stats2 = await llm.call(
         messages=[{"role": "user", "content": prompt}],
         model="gpt-4.1-mini",
         max_tokens=200,

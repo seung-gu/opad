@@ -1421,30 +1421,30 @@ print(f"Response: {content}")
 
 **Integration Example** (Dictionary API):
 ```python
-from services.dictionary_service import DictionaryService, LookupRequest
-from api.dependencies import get_token_usage_repo
+from services import dictionary_service
+from api.dependencies import get_dictionary_port, get_llm_port, get_token_usage_repo
+from port.dictionary import DictionaryPort
+from port.llm import LLMPort
 from port.token_usage_repository import TokenUsageRepository
 
 @router.post("/dictionary/search")
 async def search_word(
     request: SearchRequest,
     current_user: UserResponse = Depends(get_current_user_required),
-    service: DictionaryService = Depends(get_dictionary_service),
+    dictionary: DictionaryPort = Depends(get_dictionary_port),
+    llm: LLMPort = Depends(get_llm_port),
     token_usage_repo: TokenUsageRepository = Depends(get_token_usage_repo),
 ):
-    # Convert API request to service request
-    lookup_request = LookupRequest(
+    # Perform hybrid lookup via module function (ports injected as parameters)
+    result, stats = await dictionary_service.lookup(
         word=request.word,
         sentence=request.sentence,
         language=request.language,
-        article_id=request.article_id
+        dictionary=dictionary,
+        llm=llm,
     )
 
-    # Perform hybrid lookup (LLM lemma extraction + API + LLM entry/sense selection)
-    result = await service.lookup(lookup_request)
-
     # Track accumulated token usage via injected repository
-    stats = service.last_token_stats
     if stats:
         token_usage_repo.save(
             user_id=current_user.id,
@@ -1454,7 +1454,8 @@ async def search_word(
             completion_tokens=stats.completion_tokens,
             estimated_cost=stats.estimated_cost,
             article_id=request.article_id,
-            metadata={"word": request.word, "language": request.language}
+            metadata={"word": request.word, "language": request.language,
+                       "source": result["source"], "phonetics": result["phonetics"]}
         )
 
     return SearchResponse(...)
@@ -1466,7 +1467,7 @@ async def search_word(
 
 **Module**: `utils/llm.py`
 
-**Description**: Combine multiple `TokenUsageStats` instances into a single aggregated result. Co-located with the `TokenUsageStats` dataclass for cohesion. Used by `DictionaryService` to merge token usage from multi-step LLM pipelines (e.g., lemma extraction + sense selection).
+**Description**: Combine multiple `TokenUsageStats` instances into a single aggregated result. Co-located with the `TokenUsageStats` dataclass for cohesion. Used by `dictionary_service.lookup()` to merge token usage from multi-step LLM pipelines (e.g., lemma extraction + sense selection).
 
 **Signature**:
 ```python
