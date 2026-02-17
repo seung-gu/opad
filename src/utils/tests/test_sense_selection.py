@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from adapter.fake.llm import FakeLLMAdapter
 from utils.sense_selection import (
     select_best_sense,
     SenseResult,
@@ -25,7 +26,7 @@ from utils.sense_selection import (
     _get_definition_from_selection,
     _extract_examples,
 )
-from utils.llm import TokenUsageStats
+from domain.model.token_usage import LLMCallResult
 
 
 class TestSenseResultDataclass(unittest.TestCase):
@@ -44,7 +45,7 @@ class TestSenseResultDataclass(unittest.TestCase):
 
     def test_custom_values(self):
         """Test SenseResult with custom values."""
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=10, completion_tokens=2,
             total_tokens=12, estimated_cost=0.0001
         )
@@ -70,7 +71,7 @@ class TestSelectBestSense(unittest.IsolatedAsyncioTestCase):
 
     async def test_empty_entries_returns_defaults(self):
         """Test empty entries list returns default SenseResult."""
-        result = await select_best_sense("Sentence", "word", [])
+        result = await select_best_sense("Sentence", "word", [], FakeLLMAdapter())
 
         assert isinstance(result, SenseResult)
         assert result.entry_idx == 0
@@ -90,7 +91,7 @@ class TestSelectBestSense(unittest.IsolatedAsyncioTestCase):
         mock_def.return_value = ("only sense", {"definition": "only sense"})
         mock_examples.return_value = None
 
-        result = await select_best_sense("Sentence", "word", entries)
+        result = await select_best_sense("Sentence", "word", entries, FakeLLMAdapter())
 
         assert result.entry_idx == 0
         assert result.sense_idx == 0
@@ -110,7 +111,7 @@ class TestSelectBestSense(unittest.IsolatedAsyncioTestCase):
                 {"definition": "sense 2"},
             ]
         }]
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=50, completion_tokens=3,
             total_tokens=53, estimated_cost=0.001
         )
@@ -118,7 +119,7 @@ class TestSelectBestSense(unittest.IsolatedAsyncioTestCase):
         mock_def.return_value = ("sense 2", {"definition": "sense 2"})
         mock_examples.return_value = ["example 1"]
 
-        result = await select_best_sense("Sentence", "word", entries)
+        result = await select_best_sense("Sentence", "word", entries, FakeLLMAdapter())
 
         assert result.entry_idx == 0
         assert result.sense_idx == 1
@@ -141,7 +142,7 @@ class TestSelectBestSense(unittest.IsolatedAsyncioTestCase):
                 ]
             }]
         }]
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=50, completion_tokens=3,
             total_tokens=53, estimated_cost=0.001
         )
@@ -149,7 +150,7 @@ class TestSelectBestSense(unittest.IsolatedAsyncioTestCase):
         mock_def.return_value = ("subsense 1", {"definition": "subsense 1"})
         mock_examples.return_value = None
 
-        result = await select_best_sense("Sentence", "word", entries)
+        result = await select_best_sense("Sentence", "word", entries, FakeLLMAdapter())
 
         assert result.subsense_idx == 1
         assert result.definition == "subsense 1"
@@ -162,7 +163,7 @@ class TestSelectEntrySense(unittest.IsolatedAsyncioTestCase):
         """Test trivial case (1 entry, 1 sense, 0 subsenses) skips LLM."""
         entries = [{"partOfSpeech": "noun", "senses": [{"definition": "only"}]}]
 
-        ei, si, ssi, stats = await _select_entry_sense("Sentence", "word", entries, "gpt-4")
+        ei, si, ssi, stats = await _select_entry_sense("Sentence", "word", entries, FakeLLMAdapter(), "gpt-4")
 
         assert (ei, si, ssi) == (0, 0, -1)
         assert stats is None
@@ -177,20 +178,19 @@ class TestSelectEntrySense(unittest.IsolatedAsyncioTestCase):
             ]
         }]
 
-        with patch('utils.sense_selection.call_llm_with_tracking') as mock_llm:
-            stats = TokenUsageStats(
-                model="gpt-4", prompt_tokens=50, completion_tokens=3,
-                total_tokens=53, estimated_cost=0.001
-            )
-            mock_llm.return_value = ("0.1", stats)
+        stats = LLMCallResult(
+            model="gpt-4", prompt_tokens=50, completion_tokens=3,
+            total_tokens=53, estimated_cost=0.001
+        )
+        fake_llm = FakeLLMAdapter(response="0.1", stats=stats)
 
-            ei, si, ssi, returned_stats = await _select_entry_sense(
-                "Sentence", "word", entries, "gpt-4"
-            )
+        ei, si, ssi, returned_stats = await _select_entry_sense(
+            "Sentence", "word", entries, fake_llm, "gpt-4"
+        )
 
-            assert (ei, si, ssi) == (0, 1, -1)
-            assert returned_stats == stats
-            mock_llm.assert_called_once()
+        assert (ei, si, ssi) == (0, 1, -1)
+        assert returned_stats == stats
+        assert len(fake_llm.calls) == 1
 
     async def test_multiple_entries_calls_llm(self):
         """Test multiple entries triggers LLM."""
@@ -199,19 +199,18 @@ class TestSelectEntrySense(unittest.IsolatedAsyncioTestCase):
             {"partOfSpeech": "verb", "senses": [{"definition": "v1"}]},
         ]
 
-        with patch('utils.sense_selection.call_llm_with_tracking') as mock_llm:
-            stats = TokenUsageStats(
-                model="gpt-4", prompt_tokens=50, completion_tokens=3,
-                total_tokens=53, estimated_cost=0.001
-            )
-            mock_llm.return_value = ("1.0", stats)
+        stats = LLMCallResult(
+            model="gpt-4", prompt_tokens=50, completion_tokens=3,
+            total_tokens=53, estimated_cost=0.001
+        )
+        fake_llm = FakeLLMAdapter(response="1.0", stats=stats)
 
-            ei, si, ssi, returned_stats = await _select_entry_sense(
-                "Sentence", "word", entries, "gpt-4"
-            )
+        ei, si, ssi, returned_stats = await _select_entry_sense(
+            "Sentence", "word", entries, fake_llm, "gpt-4"
+        )
 
-            assert ei == 1
-            mock_llm.assert_called_once()
+        assert ei == 1
+        assert len(fake_llm.calls) == 1
 
     async def test_single_entry_with_subsenses_calls_llm(self):
         """Test subsenses trigger LLM even with single entry/sense."""
@@ -226,31 +225,30 @@ class TestSelectEntrySense(unittest.IsolatedAsyncioTestCase):
             }]
         }]
 
-        with patch('utils.sense_selection.call_llm_with_tracking') as mock_llm:
-            stats = TokenUsageStats(
-                model="gpt-4", prompt_tokens=50, completion_tokens=3,
-                total_tokens=53, estimated_cost=0.001
-            )
-            mock_llm.return_value = ("0.0.1", stats)
+        stats = LLMCallResult(
+            model="gpt-4", prompt_tokens=50, completion_tokens=3,
+            total_tokens=53, estimated_cost=0.001
+        )
+        fake_llm = FakeLLMAdapter(response="0.0.1", stats=stats)
 
-            ei, si, ssi, returned_stats = await _select_entry_sense(
-                "Sentence", "word", entries, "gpt-4"
-            )
+        ei, si, ssi, returned_stats = await _select_entry_sense(
+            "Sentence", "word", entries, fake_llm, "gpt-4"
+        )
 
-            assert (ei, si, ssi) == (0, 0, 1)
-            mock_llm.assert_called_once()
+        assert (ei, si, ssi) == (0, 0, 1)
+        assert len(fake_llm.calls) == 1
 
-    @patch('utils.sense_selection.call_llm_with_tracking')
-    async def test_llm_exception_returns_defaults(self, mock_llm):
+    async def test_llm_exception_returns_defaults(self):
         """Test LLM exception returns defaults."""
         entries = [
             {"partOfSpeech": "noun", "senses": [{"definition": "n1"}]},
             {"partOfSpeech": "verb", "senses": [{"definition": "v1"}]},
         ]
-        mock_llm.side_effect = Exception("API error")
+        failing_llm = MagicMock()
+        failing_llm.call = AsyncMock(side_effect=Exception("API error"))
 
         ei, si, ssi, stats = await _select_entry_sense(
-            "Sentence", "word", entries, "gpt-4"
+            "Sentence", "word", entries, failing_llm, "gpt-4"
         )
 
         assert (ei, si, ssi) == (0, 0, -1)
@@ -711,7 +709,7 @@ class TestEdgeCases(unittest.IsolatedAsyncioTestCase):
         """Test select_best_sense with empty word and sentence."""
         entries = [{"partOfSpeech": "noun", "senses": [{"definition": "def"}]}]
 
-        result = await select_best_sense("", "", entries)
+        result = await select_best_sense("", "", entries, FakeLLMAdapter())
 
         assert isinstance(result, SenseResult)
 
@@ -761,8 +759,7 @@ class TestEdgeCases(unittest.IsolatedAsyncioTestCase):
 class TestIntegrationScenarios(unittest.IsolatedAsyncioTestCase):
     """Test realistic integration scenarios."""
 
-    @patch('utils.sense_selection.call_llm_with_tracking')
-    async def test_full_sense_selection_flow(self, mock_llm):
+    async def test_full_sense_selection_flow(self):
         """Test complete sense selection flow."""
         entries = [
             {
@@ -783,13 +780,13 @@ class TestIntegrationScenarios(unittest.IsolatedAsyncioTestCase):
             }
         ]
 
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=80, completion_tokens=2,
             total_tokens=82, estimated_cost=0.001
         )
-        mock_llm.return_value = ("1.0", stats)
+        fake_llm = FakeLLMAdapter(response="1.0", stats=stats)
 
-        result = await select_best_sense("Test sentence", "word", entries)
+        result = await select_best_sense("Test sentence", "word", entries, fake_llm)
 
         assert result.entry_idx == 1
         assert result.sense_idx == 0
@@ -797,8 +794,7 @@ class TestIntegrationScenarios(unittest.IsolatedAsyncioTestCase):
         assert result.examples == ["Example 1", "Example 2"]
         assert result.stats == stats
 
-    @patch('utils.sense_selection.call_llm_with_tracking')
-    async def test_subsense_selection_with_examples(self, mock_llm):
+    async def test_subsense_selection_with_examples(self):
         """Test subsense selection with examples extraction."""
         entries = [{
             "partOfSpeech": "noun",
@@ -812,13 +808,13 @@ class TestIntegrationScenarios(unittest.IsolatedAsyncioTestCase):
             }]
         }]
 
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=60, completion_tokens=2,
             total_tokens=62, estimated_cost=0.001
         )
-        mock_llm.return_value = ("0.0.1", stats)
+        fake_llm = FakeLLMAdapter(response="0.0.1", stats=stats)
 
-        result = await select_best_sense("Test", "word", entries)
+        result = await select_best_sense("Test", "word", entries, fake_llm)
 
         assert result.subsense_idx == 1
         assert result.definition == "sub2"

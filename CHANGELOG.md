@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Enhanced `service_diagram.drawio` with CQRS visual distinction** — all 31 edges now color-coded for architecture clarity (Issue #98)
+  - Red solid lines (13 edges): Command operations (Write operations)
+  - Green dashed lines (6 edges): Query operations (Read operations)
+  - Gray lines (12 edges): Infrastructure/utility connections
+- Added CQRS legend to diagram with 3 primary categories
+- Fixed 2 miscategorized edges during code review:
+  - `DictionaryPort → DictionaryService`: Reclassified from Write to Read (query operation)
+  - `processor → VocabularyRepository`: Reclassified from Write to Read (query operation)
+
+## [0.15.0] - 2026-02-16
+
+### Added
+- **DictionaryPort and LLMPort abstraction** — outbound ports for external API abstractions enabling provider-agnostic integration (Issue #100)
+- `FreeDictionaryAdapter` implementing `DictionaryPort` for Free Dictionary API lookups
+- `LiteLLMAdapter` implementing `LLMPort` for provider-agnostic LLM calls via LiteLLM
+- `FakeDictionaryAdapter` and `FakeLLMAdapter` for testing without external dependencies
+- FastAPI dependency injection functions: `get_dictionary_port()` and `get_llm_port()` in `api/dependencies.py`
+- `lemma_extraction.py` accepts injected `LLMPort` for language-specific lemma extraction (Stanza for German, LLM for others)
+- `sense_selection.py` accepts injected `LLMPort` for context-aware sense selection from dictionary entries
+- `SenseResult` dataclass for structured sense selection output
+
+### Changed
+- **Converted `DictionaryService` to module functions** — `lookup()` now orchestrates the hybrid pipeline with injected ports
+- **Eliminated request/response DTOs** — `LookupRequest`, `LookupResult`, `DictionaryAPIResult` removed, uses plain dicts for simplicity
+- Lemma extraction and sense selection modules now depend on `LLMPort` instead of direct `call_llm_with_tracking` imports
+- Dictionary routes inject `DictionaryPort` and `LLMPort` dependencies instead of calling service directly
+- `lemma_extraction.extract_lemma()` signature: accepts `llm: LLMPort` parameter for flexible LLM provider injection
+- `sense_selection.select_best_sense()` signature: accepts `llm: LLMPort` parameter for flexible LLM provider injection
+- FastAPI Depends pattern unified: all external services use port-based dependency injection
+
+### Fixed
+- Test mocking strategy simplified — replaced `@patch('...call_llm_with_tracking')` with concrete `FakeLLMAdapter` and `FakeDictionaryAdapter` instances
+
+### Technical Impact
+- **Testability**: Adapter injection enables deterministic testing without mocking framework dependencies
+- **Extensibility**: New dictionary providers (e.g., Merriam-Webster) can be added by implementing `DictionaryPort`
+- **Provider flexibility**: LLM provider swappable via `LiteLLMAdapter` configuration (OpenAI, Claude, Gemini, etc.)
+- **SOLID compliance**: Dependency Inversion Principle — business logic depends on abstractions (ports), not concrete implementations (adapters)
+- **Code reduction**: Eliminated verbose DTOs, test boilerplate reduced via concrete fake adapters
+- **All 504 tests passing** — comprehensive coverage across lemma extraction, sense selection, and dictionary service integration
+
 ## [0.14.0] - 2026-02-14
 
 ### Added

@@ -1,8 +1,26 @@
-"""Language-specific metadata for dictionary API processing.
+"""Language-specific metadata for dictionary and NLP processing.
 
-Pure data module — no logic, only constants.
-Each pipeline step owns its logic and references this data as needed.
+Provides language code mapping and constants used by adapters and services.
 """
+
+# Map full language names to ISO 639-1 codes
+LANGUAGE_CODE_MAP: dict[str, str] = {
+    "German": "de",
+    "English": "en",
+    "French": "fr",
+    "Spanish": "es",
+    "Italian": "it",
+    "Portuguese": "pt",
+    "Dutch": "nl",
+    "Polish": "pl",
+    "Russian": "ru",
+}
+
+
+def get_language_code(language: str) -> str | None:
+    """Convert full language name to ISO 639-1 code."""
+    return LANGUAGE_CODE_MAP.get(language)
+
 
 # Gender keyword → article mapping per language
 # Keys are lowercased for case-insensitive matching

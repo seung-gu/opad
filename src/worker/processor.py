@@ -28,14 +28,14 @@ sys.path.insert(0, str(_src_path))
 
 from crew.main import run as run_crew
 from api.job_queue import dequeue_job
-from utils.token_usage import save_crew_token_usage
+from services.token_usage_service import track_crew_usage
 from worker.context import JobContext, translate_error
 from crew.progress_listener import JobProgressListener
 from crew.models import ReviewedArticle
 from port.article_repository import ArticleRepository
 from port.token_usage_repository import TokenUsageRepository
 from port.vocabulary_repository import VocabularyRepository
-from services import vocabulary_service
+from domain.model.cefr import CEFRLevel
 from domain.model.article import ArticleStatus
 
 
@@ -78,16 +78,16 @@ def process_job(
 
             # Fetch vocabulary for personalized generation (always set default to avoid template error)
             # Filter by target level to avoid vocab too difficult for the article
-            vocab = None
+            vocab_list = None
             if ctx.user_id and ctx.inputs.get('language') and vocab_repo:
-                vocab = vocabulary_service.get_user_lemmas(
-                    vocab_repo,
+                levels = CEFRLevel.range(ctx.inputs.get('level'), max_above=1)
+                vocab_list = vocab_repo.find_lemmas(
                     user_id=ctx.user_id,
                     language=ctx.inputs['language'],
-                    target_level=ctx.inputs.get('level'),
+                    levels=levels,
                     limit=50,
                 )
-            ctx.inputs['vocabulary_list'] = vocab if vocab else ""
+            ctx.inputs['vocabulary_list'] = vocab_list if vocab_list else ""
 
             # Execute CrewAI
             logger.info("Executing CrewAI", extra=ctx.log_extra)
@@ -96,7 +96,7 @@ def process_job(
 
             # Save token usage for each agent (even if task failed - tokens were still consumed)
             if ctx.user_id:
-                save_crew_token_usage(result, ctx.user_id, ctx.article_id, ctx.job_id, repo=token_usage_repo)
+                track_crew_usage(token_usage_repo, result, ctx.user_id, ctx.article_id, ctx.job_id)
 
             # Check for task failures
             if listener.task_failed:

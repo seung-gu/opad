@@ -9,7 +9,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from utils.llm import TokenUsageStats, call_llm_with_tracking
+from port.llm import LLMPort
+from domain.model.token_usage import LLMCallResult
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ class SenseResult:
     subsense_idx: int = -1
     definition: str = ""
     examples: list[str] | None = None
-    stats: TokenUsageStats | None = None
+    stats: LLMCallResult | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -33,6 +34,7 @@ async def select_best_sense(
     sentence: str,
     word: str,
     entries: list[dict[str, Any]],
+    llm: LLMPort,
     model: str = "openai/gpt-4.1-mini",
 ) -> SenseResult:
     """Select the best sense from dictionary entries for a word in context.
@@ -41,6 +43,7 @@ async def select_best_sense(
         sentence: The sentence containing the word.
         word: The word being looked up.
         entries: All entries from the dictionary API.
+        llm: LLM port for API calls.
         model: LLM model identifier for sense selection.
 
     Returns:
@@ -50,7 +53,7 @@ async def select_best_sense(
         return SenseResult()
 
     # Select entry/sense/subsense via LLM (or skip if trivial)
-    ei, si, ssi, stats = await _select_entry_sense(sentence, word, entries, model)
+    ei, si, ssi, stats = await _select_entry_sense(sentence, word, entries, llm, model)
 
     # Extract definition and examples from the selected sense
     definition, selected_sense = _get_definition_from_selection(entries[ei], si, ssi)
@@ -74,8 +77,9 @@ async def _select_entry_sense(
     sentence: str,
     word: str,
     entries: list[dict[str, Any]],
+    llm: LLMPort,
     model: str,
-) -> tuple[int, int, int, TokenUsageStats | None]:
+) -> tuple[int, int, int, LLMCallResult | None]:
     """Select best entry/sense/subsense indices via LLM.
 
     Skips LLM if only one entry with one sense and no subsenses.
@@ -92,7 +96,7 @@ async def _select_entry_sense(
     prompt = _build_sense_prompt(sentence, word, entries)
 
     try:
-        content, stats = await call_llm_with_tracking(
+        content, stats = await llm.call(
             messages=[{"role": "user", "content": prompt}],
             model=model,
             temperature=0,

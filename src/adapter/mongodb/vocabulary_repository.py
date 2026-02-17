@@ -1,7 +1,6 @@
 """MongoDB implementation of VocabularyRepository."""
 
 import re
-import uuid
 from datetime import datetime, timezone
 from logging import getLogger
 
@@ -66,50 +65,53 @@ class MongoVocabularyRepository:
 
     # ── CRUD ──────────────────────────────────────────────────
 
-    def save(
-        self,
-        article_id: str,
-        word: str,
-        lemma: str,
-        definition: str,
-        sentence: str,
-        language: str,
-        related_words: list[str] | None = None,
-        span_id: str | None = None,
-        user_id: str | None = None,
-        grammar: GrammaticalInfo | None = None,
-    ) -> str | None:
-        """Save a new vocabulary entry."""
+    def find_duplicate(self, vocab: Vocabulary) -> Vocabulary | None:
+        """Find an existing entry with the same business identity."""
         try:
-            g = grammar or GrammaticalInfo()
-            normalized_span_id = span_id if span_id and span_id.strip() else None
-            now = datetime.now(timezone.utc)
+            doc = self.collection.find_one(vocab.identity)
+            return self._to_domain(doc) if doc else None
+        except PyMongoError as e:
+            logger.error("Failed to find duplicate", extra={"lemma": vocab.lemma, "error": str(e)})
+            return None
+
+    def save(self, vocab: Vocabulary) -> str | None:
+        """Save a vocabulary entry, skipping duplicates based on identity.
+
+        Uses vocab.identity to check for existing entries.
+        If duplicate found, updates span_id if changed and returns existing ID.
+        """
+        try:
+            existing = self.find_duplicate(vocab)
+            if existing:
+                return existing.id
+
+            g = vocab.grammar or GrammaticalInfo()
             doc = {
-                '_id': str(uuid.uuid4()),
-                'article_id': article_id,
-                'word': word,
-                'lemma': lemma,
-                'definition': definition,
-                'sentence': sentence,
-                'language': language,
-                'related_words': related_words or [],
-                'span_id': normalized_span_id,
-                'user_id': user_id,
+                '_id': vocab.id,
+                'article_id': vocab.article_id,
+                'word': vocab.word,
+                'lemma': vocab.lemma,
+                'definition': vocab.definition,
+                'sentence': vocab.sentence,
+                'language': vocab.language,
+                'related_words': vocab.related_words or [],
+                'span_id': vocab.span_id if vocab.span_id and vocab.span_id.strip() else None,
+                'user_id': vocab.user_id,
                 'pos': g.pos,
                 'gender': g.gender,
                 'phonetics': g.phonetics,
                 'conjugations': g.conjugations,
                 'level': g.level,
                 'examples': g.examples,
-                'created_at': now,
-                'updated_at': now,
+                'created_at': vocab.created_at,
+                'updated_at': vocab.created_at,
             }
 
             self.collection.insert_one(doc)
-            logger.info("Vocabulary saved", extra={"vocabularyId": doc['_id'], "lemma": lemma})
+            logger.info("Vocabulary saved", extra={"vocabularyId": doc['_id'], "lemma": vocab.lemma})
             return doc['_id']
         except PyMongoError as e:
-            logger.error("Failed to save vocabulary", extra={"lemma": lemma, "error": str(e)})
+            logger.error("Failed to save vocabulary", extra={"lemma": vocab.lemma, "error": str(e)})
             return None
 
     def get_by_id(self, vocabulary_id: str) -> Vocabulary | None:

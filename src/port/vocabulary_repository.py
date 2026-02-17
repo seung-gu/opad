@@ -2,26 +2,22 @@
 
 from typing import Protocol
 
-from domain.model.vocabulary import GrammaticalInfo, Vocabulary, VocabularyCount
+from domain.model.vocabulary import Vocabulary, VocabularyCount
 
 
 class VocabularyRepository(Protocol):
     """Protocol for individual vocabulary entry data access (CRUD + primitive queries)."""
 
-    def save(
-        self,
-        article_id: str,
-        word: str,
-        lemma: str,
-        definition: str,
-        sentence: str,
-        language: str,
-        related_words: list[str] | None = None,
-        span_id: str | None = None,
-        user_id: str | None = None,
-        grammar: GrammaticalInfo | None = None,
-    ) -> str | None:
-        """Save a new vocabulary entry. Returns inserted ID, or None on failure."""
+    def save(self, vocab: Vocabulary) -> str | None:
+        """Save a vocabulary entry, skipping duplicates based on identity.
+
+        Uses vocab.identity to check for existing entries.
+        Returns existing ID if duplicate, new ID if inserted, None on failure.
+        """
+        ...
+
+    def find_duplicate(self, vocab: Vocabulary) -> Vocabulary | None:
+        """Find an existing entry with the same business identity."""
         ...
 
     def get_by_id(self, vocabulary_id: str) -> Vocabulary | None:

@@ -1,7 +1,7 @@
 """Dictionary API routes for word definitions.
 
 This module handles HTTP concerns for dictionary endpoints.
-Business logic is delegated to DictionaryService.
+Business logic is delegated to dictionary_service module functions.
 
 Endpoints:
 - POST /dictionary/search: Search for word definition and lemma from sentence context
@@ -23,11 +23,11 @@ from api.models import (
     VocabularyResponse,
     VocabularyCount,
 )
-from services.dictionary_service import DictionaryService, LookupRequest
-from services import vocabulary_service
-from utils.llm import get_llm_error_response
-from api.dependencies import get_token_usage_repo, get_vocab_repo
-from port.token_usage_repository import TokenUsageRepository
+from services import dictionary_service, vocabulary_service
+from api.dependencies import get_dictionary_port, get_llm_port, get_token_usage_repo, get_vocab_repo
+from port.dictionary import DictionaryPort
+from port.llm import LLMPort, LLMTimeoutError, LLMRateLimitError, LLMAuthError, LLMError
+from port.token_usage_repository import TokenUsageRepository as TokenUsageRepo
 from port.vocabulary_repository import VocabularyRepository
 from domain.model.vocabulary import GrammaticalInfo
 
@@ -36,18 +36,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dictionary", tags=["dictionary"])
 
 
-# Dependency injection for service
-def get_dictionary_service() -> DictionaryService:
-    """Create DictionaryService instance for dependency injection."""
-    return DictionaryService()
-
-
 @router.post("/search", response_model=SearchResponse)
 async def search_word(
     request: SearchRequest,
     current_user: UserResponse = Depends(get_current_user_required),
-    service: DictionaryService = Depends(get_dictionary_service),
-    token_usage_repo: TokenUsageRepository = Depends(get_token_usage_repo),
+    dictionary: DictionaryPort = Depends(get_dictionary_port),
+    llm: LLMPort = Depends(get_llm_port),
+    token_usage_repo: TokenUsageRepo = Depends(get_token_usage_repo),
 ):
     """Search for word definition and lemma using hybrid approach.
 
@@ -60,59 +55,47 @@ async def search_word(
     Requires authentication to prevent API abuse.
     """
     try:
-        # Convert API request to service request
-        lookup_request = LookupRequest(
+        result = await dictionary_service.lookup(
             word=request.word,
             sentence=request.sentence,
             language=request.language,
-            article_id=request.article_id
+            dictionary=dictionary,
+            llm=llm,
+            token_usage_repo=token_usage_repo,
+            user_id=current_user.id,
+            article_id=request.article_id,
         )
 
-        # Perform lookup via service
-        result = await service.lookup(lookup_request)
-
-        # Track token usage
-        stats = service.last_token_stats
-        if stats:
-            token_usage_repo.save(
-                user_id=current_user.id,
-                operation="dictionary_search",
-                model=stats.model,
-                prompt_tokens=stats.prompt_tokens,
-                completion_tokens=stats.completion_tokens,
-                estimated_cost=stats.estimated_cost,
-                article_id=request.article_id,
-                metadata={
-                    "word": request.word,
-                    "language": request.language,
-                    "source": result.source,
-                    "phonetics": result.phonetics
-                }
-            )
-
-        # Convert service result to API response
         return SearchResponse(
-            lemma=result.lemma,
-            definition=result.definition,
-            related_words=result.related_words,
-            pos=result.pos,
-            gender=result.gender,
-            phonetics=result.phonetics,
-            conjugations=result.conjugations,
-            level=result.level,
-            examples=result.examples
+            lemma=result["lemma"],
+            definition=result["definition"],
+            related_words=result.get("related_words"),
+            pos=result.get("pos"),
+            gender=result.get("gender"),
+            phonetics=result.get("phonetics"),
+            conjugations=result.get("conjugations"),
+            level=result.get("level"),
+            examples=result.get("examples"),
         )
 
     except HTTPException:
         raise
+    except LLMTimeoutError as e:
+        logger.error("LLM timeout", extra={"word": request.word, "error": str(e)})
+        raise HTTPException(status_code=504, detail="LLM provider timeout")
+    except LLMRateLimitError as e:
+        logger.error("LLM rate limit", extra={"word": request.word, "error": str(e)})
+        raise HTTPException(status_code=429, detail="LLM provider rate limit exceeded")
+    except LLMAuthError as e:
+        logger.error("LLM auth error", extra={"word": request.word, "error": str(e)})
+        raise HTTPException(status_code=401, detail="LLM provider authentication failed")
+    except LLMError as e:
+        logger.error("LLM error", extra={"word": request.word, "error": str(e)})
+        raise HTTPException(status_code=502, detail="LLM provider error")
     except Exception as e:
-        status_code, detail = get_llm_error_response(e)
-        logger.error(
-            "Error in dictionary search",
-            extra={"error": str(e), "word": request.word},
-            exc_info=True
-        )
-        raise HTTPException(status_code=status_code, detail=detail)
+        logger.error("Unexpected error in dictionary search",
+                     extra={"error": str(e), "word": request.word}, exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/vocabulary", response_model=VocabularyResponse)
@@ -122,7 +105,7 @@ async def add_vocabulary(
     repo: VocabularyRepository = Depends(get_vocab_repo),
 ):
     """Add a word to vocabulary list."""
-    vocabulary_id = vocabulary_service.save_vocabulary(
+    vocab = vocabulary_service.save(
         repo,
         article_id=request.article_id,
         word=request.word,
@@ -143,15 +126,11 @@ async def add_vocabulary(
         ),
     )
 
-    if not vocabulary_id:
+    if not vocab:
         raise HTTPException(status_code=500, detail="Failed to save vocabulary")
 
-    vocab = repo.get_by_id(vocabulary_id)
-    if not vocab:
-        raise HTTPException(status_code=500, detail="Vocabulary saved but not found")
-
     logger.info("Vocabulary added", extra={
-        "vocabulary_id": vocabulary_id,
+        "vocabulary_id": vocab.id,
         "article_id": request.article_id,
         "lemma": request.lemma,
         "user_id": current_user.id
@@ -189,8 +168,8 @@ async def get_vocabularies_list(
     """Get aggregated vocabulary list grouped by lemma with counts."""
     limit = min(limit, 1000)
 
-    domain_counts = vocabulary_service.get_counts(
-        repo, language=language, user_id=current_user.id, skip=skip, limit=limit,
+    domain_counts = repo.count_by_lemma(
+        language=language, user_id=current_user.id, skip=skip, limit=limit,
     )
 
     result = []

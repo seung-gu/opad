@@ -1,0 +1,301 @@
+<mxfile host="65bd71144e">
+    <diagram name="OPAD Architecture" id="0">
+        <mxGraphModel dx="1226" dy="326" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0">
+            <root>
+                <mxCell id="0">
+                    <Object as="cells">
+                        <Object as="u">
+                            <Object geometry="&lt;mxGeometry x=&quot;330&quot; y=&quot;95&quot; width=&quot;210&quot; height=&quot;80&quot;/&gt;" as="svc-group"/>
+                            <Object geometry="&lt;mxGeometry x=&quot;345&quot; y=&quot;130&quot; width=&quot;130&quot; height=&quot;28&quot;/&gt;" as="dict_svc"/>
+                            <Object previous="dict_svc" as="jq"/>
+                            <Object target="" as="e-dictr-vocabsvc"/>
+                            <Object source="" as="e-vocabsvc-pvocab"/>
+                        </Object>
+                        <Array as="r">
+                            <add value="vocab_svc"/>
+                        </Array>
+                    </Object>
+                </mxCell>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="7" value="External" style="rounded=1;whiteSpace=wrap;fillColor=#f8f9fa;strokeColor=#adb5bd;fontStyle=1;fontSize=12;verticalAlign=top;spacingTop=5;" vertex="1" parent="1">
+                    <mxGeometry x="580" y="20" width="90" height="300" as="geometry"/>
+                </mxCell>
+                <mxCell id="api-group" value="API Service (FastAPI :8001)" style="rounded=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=14;verticalAlign=top;spacingTop=8;arcSize=6;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="20" width="530" height="300" as="geometry"/>
+                </mxCell>
+                <mxCell id="http" value="HTTP Request" style="shape=parallelogram;whiteSpace=wrap;fillColor=#fff;strokeColor=#6c8ebf;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="55" y="40" width="130" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="routes-group" value="Routes (Entrypoint)" style="rounded=1;whiteSpace=wrap;fillColor=#e8f0fe;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;verticalAlign=top;spacingTop=5;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="95" width="250" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="dict_r" value="dictionary.py" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="170" y="120" width="100" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="articles_r" value="articles.py" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="120" width="100" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="jobs_r" value="jobs.py" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="158" width="100" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="usage_r" value="usage.py" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="170" y="158" width="100" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc-group" value="Service Layer" style="rounded=1;whiteSpace=wrap;fillColor=#e8f0fe;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;verticalAlign=top;spacingTop=5;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="330" y="95" width="210" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="dict_svc" value="dictionary_service" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="345" y="120" width="130" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="token_usage_svc" value="token_usage_service" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+                    <mxGeometry x="345" y="155" width="130" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="vocab_svc" value="vocabulary_service" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#6c8ebf;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="345" y="190" width="130" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="jq" value="job_queue" style="rounded=1;whiteSpace=wrap;fillColor=#fff3cd;strokeColor=#f0ad4e;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="345" y="270" width="130" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-http-routes" style="strokeColor=#757575;strokeWidth=1;" parent="1" source="http" target="routes-group" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-dictr-dictsvc" style="strokeColor=#C62828;strokeWidth=2;" parent="1" source="dict_r" target="dict_svc" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-dictr-vocabsvc" style="strokeColor=#C62828;strokeWidth=2;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="dict_r" target="vocab_svc">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-articles-jq" style="strokeColor=#C62828;strokeWidth=2;" parent="1" source="articles_r" target="jq" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-jobs-jq" style="strokeColor=#2E7D32;strokeWidth=2;dashed=1;" parent="1" source="jobs_r" target="jq" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="worker-group" value="Worker Service" style="rounded=1;whiteSpace=wrap;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=14;verticalAlign=top;spacingTop=8;arcSize=6;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="20" width="520" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="blpop" value="Redis BLPOP" style="shape=parallelogram;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="778" y="50" width="110" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="proc" value="processor.py (Entrypoint)" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#b85450;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="735" y="110" width="190" height="45" as="geometry"/>
+                </mxCell>
+                <mxCell id="crew" value="CrewAI Pipeline" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="962.5" y="110" width="160" height="45" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-blpop-proc" style="strokeColor=#757575;strokeWidth=1;" parent="1" source="blpop" target="proc" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-proc-crew" style="strokeColor=#C62828;strokeWidth=2;" parent="1" source="proc" target="crew" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="domain-group" value="Domain" style="rounded=1;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=12;verticalAlign=top;spacingTop=5;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="230" width="510" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="d-cefr" value="CEFRLevel" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+                    <mxGeometry x="715" y="252" width="75" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="d-llm" value="LLMCallResult" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#9673a6;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="798" y="252" width="90" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="d-tokenusage" value="TokenUsage" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+                    <mxGeometry x="896" y="252" width="82" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="d-vocab" value="Vocabulary" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#9673a6;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="986" y="252" width="80" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="d-article" value="Article" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#9673a6;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1074" y="252" width="80" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="ports-group" value="Ports (Protocol)" style="rounded=1;whiteSpace=wrap;fillColor=#f5f5f5;strokeColor=#999;fontStyle=1;fontSize=12;verticalAlign=top;spacingTop=5;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="360" width="1190" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="p-llm" value="LLMPort" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#999;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="57.5" y="388" width="100" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p-dict" value="DictionaryPort" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#999;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="388" width="115" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p-article" value="ArticleRepository" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#999;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="978" y="388" width="130" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p-vocab" value="VocabularyRepository" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#999;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="627" y="388" width="145" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p-token" value="TokenUsageRepository" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#999;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="800" y="388" width="150" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-dictsvc-pllm" style="strokeColor=#C62828;strokeWidth=2;" parent="1" source="dict_svc" target="p-llm" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-dictsvc-pdict" style="strokeColor=#2E7D32;strokeWidth=2;dashed=1;" parent="1" source="dict_svc" target="p-dict" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-dictsvc-tokensvc" style="strokeColor=#C62828;strokeWidth=2;" edge="1" parent="1" source="dict_svc" target="token_usage_svc">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-tokensvc-ptoken" style="strokeColor=#C62828;strokeWidth=2;" edge="1" parent="1" source="token_usage_svc" target="p-token">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-proc-tokensvc" style="strokeColor=#C62828;strokeWidth=2;" edge="1" parent="1" source="proc" target="token_usage_svc">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-vocabsvc-pvocab" style="strokeColor=#C62828;strokeWidth=2;" edge="1" parent="1" source="vocab_svc" target="p-vocab">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-usager-ptoken" style="strokeColor=#2E7D32;strokeWidth=2;dashed=1;" parent="1" source="usage_r" target="p-token" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-proc-cefr" style="strokeColor=#C62828;strokeWidth=2;" edge="1" parent="1" source="proc" target="d-cefr">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-crew-particle" style="strokeColor=#C62828;strokeWidth=2;" parent="1" source="crew" target="p-article" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-proc-pvocab" style="strokeColor=#2E7D32;strokeWidth=2;dashed=1;" parent="1" source="proc" target="p-vocab" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="adapters-group" value="Adapters" style="rounded=1;whiteSpace=wrap;fillColor=#fff3cd;strokeColor=#f0ad4e;fontStyle=1;fontSize=12;verticalAlign=top;spacingTop=5;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="480" width="1190" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-litellm" value="LiteLLMAdapter" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#f0ad4e;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="508" width="115" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-freedict" value="FreeDictionaryAdapter" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#f0ad4e;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="185" y="508" width="145" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-mongoart" value="MongoArticleRepo" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#f0ad4e;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="980" y="508" width="125" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-mongovocab" value="MongoVocabRepo" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#f0ad4e;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="640" y="508" width="120" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-mongotoken" value="MongoTokenRepo" style="rounded=1;whiteSpace=wrap;fillColor=#fff;strokeColor=#f0ad4e;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="812.5" y="508" width="125" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-pllm-alite" style="dashed=1;strokeColor=#757575;" parent="1" source="p-llm" target="a-litellm" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-pdict-afree" style="dashed=1;strokeColor=#757575;" parent="1" source="p-dict" target="a-freedict" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-part-amart" style="dashed=1;strokeColor=#757575;" parent="1" source="p-article" target="a-mongoart" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-ptoken-amtoken" style="dashed=1;strokeColor=#757575;" parent="1" source="p-token" target="a-mongotoken" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="ext-group" value="External" style="rounded=1;whiteSpace=wrap;fillColor=#f8f9fa;strokeColor=#adb5bd;fontStyle=1;fontSize=12;verticalAlign=top;spacingTop=5;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="600" width="1190" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="x-redis" value="Redis" style="shape=cylinder3;whiteSpace=wrap;boundedLbl=1;size=8;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="590" y="158" width="70" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="x-mongo" value="MongoDB" style="shape=cylinder3;whiteSpace=wrap;boundedLbl=1;size=8;fillColor=#e3f2fd;strokeColor=#1976d2;fontSize=10;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="825" y="620" width="100" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="x-openai" value="LiteLLM API" style="shape=cylinder3;whiteSpace=wrap;boundedLbl=1;size=8;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="57.5" y="625" width="100" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="x-dictapi" value="Free Dictionary API" style="shape=cylinder3;whiteSpace=wrap;boundedLbl=1;size=8;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="192.5" y="625" width="130" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-alite-xopenai" style="strokeColor=#757575;strokeWidth=1;" parent="1" source="a-litellm" target="x-openai" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-afree-xdict" style="strokeColor=#757575;strokeWidth=1;" parent="1" source="a-freedict" target="x-dictapi" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-amart-xmongo" style="strokeColor=#757575;strokeWidth=1;" parent="1" source="a-mongoart" target="x-mongo" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-amvocab-xmongo" style="strokeColor=#757575;strokeWidth=1;" parent="1" source="a-mongovocab" target="x-mongo" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-amtoken-xmongo" style="strokeColor=#757575;strokeWidth=1;" parent="1" source="a-mongotoken" target="x-mongo" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-jq-redis" value="RPUSH" style="strokeColor=#C62828;strokeWidth=2;fontColor=#C62828;fontSize=9;" parent="1" source="jq" target="x-redis" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-redis-blpop" value="BLPOP" style="strokeColor=#2E7D32;strokeWidth=2;dashed=1;fontColor=#2E7D32;fontSize=9;" parent="1" source="x-redis" target="blpop" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-proc-redis" value="status update" style="strokeColor=#C62828;strokeWidth=2;fontColor=#C62828;fontSize=9;" parent="1" source="proc" target="x-redis" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="e-jobsr-redis" value="poll status" style="strokeColor=#2E7D32;strokeWidth=2;dashed=1;fontColor=#2E7D32;fontSize=9;" parent="1" source="jobs_r" target="x-redis" edge="1">
+                    <mxGeometry as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-box" value="" style="rounded=1;whiteSpace=wrap;fillColor=#FAFAFA;strokeColor=#999;dashed=1;" vertex="1" parent="1">
+                    <mxGeometry x="30" y="700" width="320" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-title" value="CQRS Pattern" style="text;fontSize=11;fontStyle=1;align=left;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="705" width="100" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-w-line" value="" style="endArrow=classic;strokeColor=#C62828;strokeWidth=2;" edge="1" parent="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="45" y="735" as="sourcePoint"/>
+                        <mxPoint x="90" y="735" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="legend-w-text" value="Command (Write)" style="text;fontSize=10;fontColor=#C62828;align=left;" vertex="1" parent="1">
+                    <mxGeometry x="95" y="726" width="240" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-r-line" value="" style="endArrow=classic;strokeColor=#2E7D32;strokeWidth=2;dashed=1;" edge="1" parent="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="45" y="755" as="sourcePoint"/>
+                        <mxPoint x="90" y="755" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="legend-r-text" value="Query (Read)" style="text;fontSize=10;fontColor=#2E7D32;align=left;" vertex="1" parent="1">
+                    <mxGeometry x="95" y="746" width="240" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-i-line" value="" style="endArrow=classic;strokeColor=#757575;strokeWidth=1;" edge="1" parent="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="45" y="775" as="sourcePoint"/>
+                        <mxPoint x="90" y="775" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="legend-i-text" value="Infrastructure (Entry, Impl, External)" style="text;fontSize=10;fontColor=#757575;align=left;" vertex="1" parent="1">
+                    <mxGeometry x="95" y="766" width="240" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="19" style="edgeStyle=none;html=1;entryX=0.072;entryY=0.812;entryDx=0;entryDy=0;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryPerimeter=0;" edge="1" parent="1" source="18" target="9">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="640.0000000000002" y="890" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="9" value="Core&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;Buisness logic&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;" vertex="1" parent="1">
+                    <mxGeometry x="680" y="774" width="160" height="154" as="geometry"/>
+                </mxCell>
+                <mxCell id="16" value="Adapter" style="rounded=0;whiteSpace=wrap;html=1;rotation=-75;" vertex="1" parent="1">
+                    <mxGeometry x="640" y="774" width="60" height="16" as="geometry"/>
+                </mxCell>
+                <mxCell id="17" value="OpenAI API" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="260" y="840" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="18" value="Agent" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="530" y="900" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="20" style="edgeStyle=none;html=1;entryX=0.08;entryY=0.13;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryPerimeter=0;" edge="1" parent="1" source="22" target="9">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="660" y="925" as="targetPoint"/>
+                        <mxPoint x="689" y="901" as="sourcePoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="22" value="Gemini API" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="530" y="744" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="23" value="Port" style="rounded=0;whiteSpace=wrap;html=1;rotation=-75;" vertex="1" parent="1">
+                    <mxGeometry x="836" y="768" width="60" height="16" as="geometry"/>
+                </mxCell>
+                <mxCell id="28" style="dashed=1;strokeColor=#757575;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="p-vocab" target="a-mongovocab">
+                    <mxGeometry as="geometry">
+                        <mxPoint x="687" y="433" as="sourcePoint"/>
+                        <mxPoint x="577" y="518" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

@@ -2,7 +2,7 @@
 
 Tests for:
 - calculate_cost() function with various models and token counts
-- save_crew_token_usage() function with CrewAI results
+- track_crew_usage() function with CrewAI results
 - Edge cases: unknown models, zero tokens, empty agent lists
 - Error handling and non-fatal exceptions
 """
@@ -10,7 +10,8 @@ Tests for:
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
-from utils.token_usage import calculate_cost, save_crew_token_usage
+from utils.token_usage import calculate_cost
+from services.token_usage_service import track_crew_usage
 
 
 class TestCalculateCost(unittest.TestCase):
@@ -172,8 +173,8 @@ class TestCalculateCost(unittest.TestCase):
             self.assertEqual(call_kwargs['completion_tokens'], -50)
 
 
-class TestSaveCrewTokenUsage(unittest.TestCase):
-    """Test cases for save_crew_token_usage function."""
+class TestTrackCrewUsage(unittest.TestCase):
+    """Test cases for track_crew_usage function."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -181,7 +182,7 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
         self.article_id = "article-456"
         self.job_id = "job-789"
 
-    def test_save_crew_token_usage_with_single_agent(self):
+    def test_track_crew_usage_with_single_agent(self):
         """Test saving token usage for single agent with agent_name."""
         # Create mock CrewResult
         mock_result = Mock()
@@ -196,37 +197,37 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger') as mock_logger:
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger') as mock_logger:
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
                 # Verify save_token_usage was called once
                 mock_repo.save.assert_called_once()
-                call_kwargs = mock_repo.save.call_args[1]
+                usage = mock_repo.save.call_args[0][0]
 
                 # Verify correct parameters
-                self.assertEqual(call_kwargs['user_id'], self.user_id)
-                self.assertEqual(call_kwargs['operation'], 'article_generation')
-                self.assertEqual(call_kwargs['model'], 'gpt-4.1-mini')
-                self.assertEqual(call_kwargs['prompt_tokens'], 100)
-                self.assertEqual(call_kwargs['completion_tokens'], 50)
-                self.assertEqual(call_kwargs['estimated_cost'], 0.001)
-                self.assertEqual(call_kwargs['article_id'], self.article_id)
-                self.assertEqual(call_kwargs['metadata']['job_id'], self.job_id)
+                self.assertEqual(usage.user_id, self.user_id)
+                self.assertEqual(usage.operation, 'article_generation')
+                self.assertEqual(usage.model, 'gpt-4.1-mini')
+                self.assertEqual(usage.prompt_tokens, 100)
+                self.assertEqual(usage.completion_tokens, 50)
+                self.assertEqual(usage.estimated_cost, 0.001)
+                self.assertEqual(usage.article_id, self.article_id)
+                self.assertEqual(usage.metadata['job_id'], self.job_id)
                 # agent_name should be used when available
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Article Search')
+                self.assertEqual(usage.metadata['agent_name'], 'Article Search')
 
                 # Verify logger was called twice (debug + final)
                 self.assertEqual(mock_logger.info.call_count, 2)
 
-    def test_save_crew_token_usage_with_multiple_agents(self):
+    def test_track_crew_usage_with_multiple_agents(self):
         """Test saving token usage for multiple agents with agent_name."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -256,16 +257,16 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost') as mock_calculate:
+        with patch('services.token_usage_service.calculate_cost') as mock_calculate:
             mock_calculate.side_effect = [0.001, 0.010, 0.0008]
-            with patch('utils.token_usage.logger') as mock_logger:
+            with patch('services.token_usage_service.logger') as mock_logger:
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
                 # Verify save_token_usage was called 3 times
@@ -278,11 +279,11 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
 
                 # Verify agent_name or fallback to agent_role in metadata
                 calls = mock_repo.save.call_args_list
-                self.assertEqual(calls[0][1]['metadata']['agent_name'], 'Article Search')
-                self.assertEqual(calls[1][1]['metadata']['agent_name'], 'Article Selection')
-                self.assertEqual(calls[2][1]['metadata']['agent_name'], 'Quality Reviewer')  # Falls back
+                self.assertEqual(calls[0][0][0].metadata['agent_name'], 'Article Search')
+                self.assertEqual(calls[1][0][0].metadata['agent_name'], 'Article Selection')
+                self.assertEqual(calls[2][0][0].metadata['agent_name'], 'Quality Reviewer')  # Falls back
 
-    def test_save_crew_token_usage_skips_zero_token_agents(self):
+    def test_track_crew_usage_skips_zero_token_agents(self):
         """Test that agents with zero tokens are skipped."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -309,15 +310,15 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger') as mock_logger:
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger') as mock_logger:
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
                 # Verify save_token_usage was called only 2 times (skipped zero-token agent)
@@ -327,20 +328,20 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
                 log_extra = mock_logger.info.call_args[1]['extra']
                 self.assertEqual(log_extra['agentCount'], 2)
 
-    def test_save_crew_token_usage_with_empty_agent_list(self):
+    def test_track_crew_usage_with_empty_agent_list(self):
         """Test saving token usage with empty agent list."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = []
 
-        with patch('utils.token_usage.calculate_cost'):
-            with patch('utils.token_usage.logger') as mock_logger:
+        with patch('services.token_usage_service.calculate_cost'):
+            with patch('services.token_usage_service.logger') as mock_logger:
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
                 # Verify save_token_usage was not called
@@ -351,7 +352,7 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
                 log_extra = mock_logger.info.call_args[1]['extra']
                 self.assertEqual(log_extra['agentCount'], 0)
 
-    def test_save_crew_token_usage_with_none_article_id(self):
+    def test_track_crew_usage_with_none_article_id(self):
         """Test saving token usage with None article_id."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -364,22 +365,22 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     None,  # article_id is None
                     self.job_id,
-                    repo=mock_repo
                 )
 
                 # Verify article_id is passed as None
-                call_kwargs = mock_repo.save.call_args[1]
-                self.assertIsNone(call_kwargs['article_id'])
+                usage = mock_repo.save.call_args[0][0]
+                self.assertIsNone(usage.article_id)
 
-    def test_save_crew_token_usage_calculates_cost_for_each_agent(self):
+    def test_track_crew_usage_calculates_cost_for_each_agent(self):
         """Test that cost is calculated for each agent's model and tokens."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -399,16 +400,16 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost') as mock_calculate:
+        with patch('services.token_usage_service.calculate_cost') as mock_calculate:
             mock_calculate.side_effect = [0.001, 0.01]
-            with patch('utils.token_usage.logger'):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
                 # Verify calculate_cost was called for each agent
@@ -424,7 +425,7 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
                 self.assertEqual(calls[1][1]['prompt_tokens'], 200)
                 self.assertEqual(calls[1][1]['completion_tokens'], 100)
 
-    def test_save_crew_token_usage_logs_job_metadata(self):
+    def test_track_crew_usage_logs_job_metadata(self):
         """Test that job metadata is logged correctly."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -437,15 +438,15 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger') as mock_logger:
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger') as mock_logger:
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
                 # Verify logger.info was called
@@ -461,20 +462,20 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
                 self.assertEqual(extra['articleId'], self.article_id)
                 self.assertEqual(extra['agentCount'], 1)
 
-    def test_save_crew_token_usage_exception_logged_as_warning(self):
+    def test_track_crew_usage_exception_logged_as_warning(self):
         """Test that exceptions during save are logged as warning (non-fatal)."""
         mock_result = Mock()
         mock_result.get_agent_usage.side_effect = RuntimeError("Failed to get agent usage")
 
-        with patch('utils.token_usage.logger') as mock_logger:
+        with patch('services.token_usage_service.logger') as mock_logger:
             mock_repo = MagicMock()
             # Should not raise exception
-            save_crew_token_usage(
+            track_crew_usage(
+                mock_repo,
                 mock_result,
                 self.user_id,
                 self.article_id,
                 self.job_id,
-                repo=mock_repo
             )
 
             # Verify warning was logged
@@ -489,7 +490,7 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             self.assertEqual(extra['jobId'], self.job_id)
             self.assertIn("RuntimeError", extra['errorType'])
 
-    def test_save_crew_token_usage_save_token_usage_exception_non_fatal(self):
+    def test_track_crew_usage_save_token_usage_exception_non_fatal(self):
         """Test that exception in save_token_usage doesn't crash function."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -502,17 +503,17 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger') as mock_logger:
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger') as mock_logger:
                 mock_repo = MagicMock()
                 mock_repo.save.side_effect = ValueError("DB error")
                 # Should not raise exception
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
                 # Verify warning was logged with error info
@@ -520,7 +521,7 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
                 extra = mock_logger.warning.call_args[1]['extra']
                 self.assertIn("ValueError", extra['errorType'])
 
-    def test_save_crew_token_usage_with_all_agents_zero_tokens(self):
+    def test_track_crew_usage_with_all_agents_zero_tokens(self):
         """Test when all agents have zero tokens."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -538,14 +539,14 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.logger') as mock_logger:
+        with patch('services.token_usage_service.logger') as mock_logger:
             mock_repo = MagicMock()
-            save_crew_token_usage(
+            track_crew_usage(
+                mock_repo,
                 mock_result,
                 self.user_id,
                 self.article_id,
                 self.job_id,
-                repo=mock_repo
             )
 
             # Verify no saves (all skipped)
@@ -555,7 +556,7 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             log_extra = mock_logger.info.call_args[1]['extra']
             self.assertEqual(log_extra['agentCount'], 0)
 
-    def test_save_crew_token_usage_mixed_zero_and_nonzero_tokens(self):
+    def test_track_crew_usage_mixed_zero_and_nonzero_tokens(self):
         """Test with mix of zero and non-zero token agents."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -593,15 +594,15 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger') as mock_logger:
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger') as mock_logger:
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
                 # Verify only non-zero agents were saved (2 out of 4)
@@ -611,7 +612,7 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
                 log_extra = mock_logger.info.call_args[1]['extra']
                 self.assertEqual(log_extra['agentCount'], 2)
 
-    def test_save_crew_token_usage_passes_job_id_in_metadata(self):
+    def test_track_crew_usage_passes_job_id_in_metadata(self):
         """Test that job_id is included in metadata passed to save_token_usage."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -625,22 +626,22 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
-                self.assertIn('metadata', call_kwargs)
-                self.assertEqual(call_kwargs['metadata']['job_id'], self.job_id)
+                usage = mock_repo.save.call_args[0][0]
+                self.assertIsNotNone(usage.metadata)
+                self.assertEqual(usage.metadata['job_id'], self.job_id)
 
-    def test_save_crew_token_usage_operation_type_is_article_generation(self):
+    def test_track_crew_usage_operation_type_is_article_generation(self):
         """Test that operation type is always 'article_generation'."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -654,21 +655,21 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
-                self.assertEqual(call_kwargs['operation'], 'article_generation')
+                usage = mock_repo.save.call_args[0][0]
+                self.assertEqual(usage.operation, 'article_generation')
 
-    def test_save_crew_token_usage_with_different_models(self):
+    def test_track_crew_usage_with_different_models(self):
         """Test saving usage with different model types."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -698,29 +699,29 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
                 # Verify all 3 were saved with correct models
                 self.assertEqual(mock_repo.save.call_count, 3)
                 models = [
-                    mock_repo.save.call_args_list[0][1]['model'],
-                    mock_repo.save.call_args_list[1][1]['model'],
-                    mock_repo.save.call_args_list[2][1]['model']
+                    mock_repo.save.call_args_list[0][0][0].model,
+                    mock_repo.save.call_args_list[1][0][0].model,
+                    mock_repo.save.call_args_list[2][0][0].model
                 ]
                 self.assertIn('gpt-4.1-mini', models)
                 self.assertIn('claude-3-sonnet-20240229', models)
                 self.assertIn('gemini-1.5-flash', models)
 
-    def test_save_crew_token_usage_agent_name_fallback_to_agent_role(self):
+    def test_track_crew_usage_agent_name_fallback_to_agent_role(self):
         """Test that agent_name falls back to agent_role when agent_name is None."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -734,22 +735,22 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
+                usage = mock_repo.save.call_args[0][0]
                 # Should fall back to agent_role
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Article Researcher')
+                self.assertEqual(usage.metadata['agent_name'], 'Article Researcher')
 
-    def test_save_crew_token_usage_agent_name_empty_string_fallback(self):
+    def test_track_crew_usage_agent_name_empty_string_fallback(self):
         """Test that empty string agent_name falls back to agent_role."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -763,22 +764,22 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
+                usage = mock_repo.save.call_args[0][0]
                 # Empty string is falsy, should fall back to agent_role
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Content Writer')
+                self.assertEqual(usage.metadata['agent_name'], 'Content Writer')
 
-    def test_save_crew_token_usage_agent_name_with_special_characters(self):
+    def test_track_crew_usage_agent_name_with_special_characters(self):
         """Test that agent_name with special characters is preserved."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -792,22 +793,22 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
+                usage = mock_repo.save.call_args[0][0]
                 # agent_name should be preserved as-is
-                self.assertEqual(call_kwargs['metadata']['agent_name'], 'Quality Check #2')
+                self.assertEqual(usage.metadata['agent_name'], 'Quality Check #2')
 
-    def test_save_crew_token_usage_metadata_includes_job_id_and_agent_name(self):
+    def test_track_crew_usage_metadata_includes_job_id_and_agent_name(self):
         """Test that metadata includes both job_id and agent_name."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -821,26 +822,26 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost', return_value=0.001):
-            with patch('utils.token_usage.logger'):
+        with patch('services.token_usage_service.calculate_cost', return_value=0.001):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
-                call_kwargs = mock_repo.save.call_args[1]
-                metadata = call_kwargs['metadata']
+                usage = mock_repo.save.call_args[0][0]
+                metadata = usage.metadata
                 # Verify both fields exist
                 self.assertIn('job_id', metadata)
                 self.assertIn('agent_name', metadata)
                 self.assertEqual(metadata['job_id'], self.job_id)
                 self.assertEqual(metadata['agent_name'], 'Article Search')
 
-    def test_save_crew_token_usage_logs_agent_names_in_usage_data(self):
+    def test_track_crew_usage_logs_agent_names_in_usage_data(self):
         """Test that agent usage logging includes agent role."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
@@ -862,16 +863,16 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
             }
         ]
 
-        with patch('utils.token_usage.calculate_cost') as mock_calculate:
+        with patch('services.token_usage_service.calculate_cost') as mock_calculate:
             mock_calculate.side_effect = [0.001, 0.01]
-            with patch('utils.token_usage.logger') as mock_logger:
+            with patch('services.token_usage_service.logger') as mock_logger:
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     self.user_id,
                     self.article_id,
                     self.job_id,
-                    repo=mock_repo
                 )
 
                 # Check that logger captured the agent roles in usageData
@@ -886,10 +887,10 @@ class TestSaveCrewTokenUsage(unittest.TestCase):
 
 
 class TestCalculateCostIntegration(unittest.TestCase):
-    """Integration tests between calculate_cost and save_crew_token_usage."""
+    """Integration tests between calculate_cost and track_crew_usage."""
 
-    def test_calculate_cost_integration_with_save_crew(self):
-        """Test full flow: calculate_cost called within save_crew_token_usage."""
+    def test_calculate_cost_integration_with_track_crew(self):
+        """Test full flow: calculate_cost called within track_crew_usage."""
         mock_result = Mock()
         mock_result.get_agent_usage.return_value = [
             {
@@ -904,19 +905,19 @@ class TestCalculateCostIntegration(unittest.TestCase):
 
         with patch('litellm.cost_per_token') as mock_cost:
             mock_cost.return_value = (0.001, 0.002)
-            with patch('utils.token_usage.logger'):
+            with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                save_crew_token_usage(
+                track_crew_usage(
+                    mock_repo,
                     mock_result,
                     "user-123",
                     "article-456",
                     "job-789",
-                    repo=mock_repo
                 )
 
                 # Verify cost was calculated correctly
-                call_kwargs = mock_repo.save.call_args[1]
-                self.assertEqual(call_kwargs['estimated_cost'], 0.003)
+                usage = mock_repo.save.call_args[0][0]
+                self.assertEqual(usage.estimated_cost, 0.003)
 
 
 if __name__ == '__main__':

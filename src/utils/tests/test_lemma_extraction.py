@@ -32,7 +32,8 @@ from utils.lemma_extraction import (
     preload_stanza,
     _get_stanza_pipeline,
 )
-from utils.llm import TokenUsageStats
+from adapter.fake.llm import FakeLLMAdapter
+from domain.model.token_usage import LLMCallResult
 
 
 class TestExtractLemmaDispatching(unittest.IsolatedAsyncioTestCase):
@@ -46,14 +47,14 @@ class TestExtractLemmaDispatching(unittest.IsolatedAsyncioTestCase):
             "lemma": "singen",
             "related_words": ["singt"]
         }
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=10, completion_tokens=2,
             total_tokens=12, estimated_cost=0.0001
         )
         mock_cefr.return_value = ("A1", stats)
 
         result, returned_stats = await extract_lemma(
-            "singt", "Er singt unter der Dusche", "German"
+            "singt", "Er singt unter der Dusche", "German", FakeLLMAdapter()
         )
 
         assert result is not None
@@ -65,7 +66,7 @@ class TestExtractLemmaDispatching(unittest.IsolatedAsyncioTestCase):
     @patch('utils.lemma_extraction._extract_with_llm')
     async def test_english_uses_llm_path(self, mock_llm):
         """Test English language uses LLM extraction."""
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=50, completion_tokens=5,
             total_tokens=55, estimated_cost=0.001
         )
@@ -76,7 +77,7 @@ class TestExtractLemmaDispatching(unittest.IsolatedAsyncioTestCase):
         }, stats)
 
         result, returned_stats = await extract_lemma(
-            "sang", "She sang beautifully", "English"
+            "sang", "She sang beautifully", "English", FakeLLMAdapter()
         )
 
         assert result is not None
@@ -88,7 +89,7 @@ class TestExtractLemmaDispatching(unittest.IsolatedAsyncioTestCase):
     async def test_stanza_failure_falls_back_to_llm(self, mock_llm, mock_stanza):
         """Test fallback to LLM when Stanza fails."""
         mock_stanza.return_value = None
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=50, completion_tokens=5,
             total_tokens=55, estimated_cost=0.001
         )
@@ -99,7 +100,7 @@ class TestExtractLemmaDispatching(unittest.IsolatedAsyncioTestCase):
         }, stats)
 
         result, returned_stats = await extract_lemma(
-            "singt", "Er singt", "German"
+            "singt", "Er singt", "German", FakeLLMAdapter()
         )
 
         assert result is not None
@@ -109,7 +110,7 @@ class TestExtractLemmaDispatching(unittest.IsolatedAsyncioTestCase):
     @patch('utils.lemma_extraction._extract_with_llm')
     async def test_french_uses_llm_path(self, mock_llm):
         """Test other languages (French) use LLM."""
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=50, completion_tokens=5,
             total_tokens=55, estimated_cost=0.001
         )
@@ -120,7 +121,7 @@ class TestExtractLemmaDispatching(unittest.IsolatedAsyncioTestCase):
         }, stats)
 
         result, returned_stats = await extract_lemma(
-            "chante", "Elle chante", "French"
+            "chante", "Elle chante", "French", FakeLLMAdapter()
         )
 
         assert result is not None
@@ -136,7 +137,7 @@ class TestExtractLemmaDispatching(unittest.IsolatedAsyncioTestCase):
             mock_llm.return_value = (None, None)
 
             result, stats = await extract_lemma(
-                "xyz", "test xyz", "German"
+                "xyz", "test xyz", "German", FakeLLMAdapter()
             )
 
             assert result is None
@@ -469,46 +470,44 @@ class TestBuildLemmaFromDepTree(unittest.TestCase):
 class TestEstimateCefr(unittest.IsolatedAsyncioTestCase):
     """Test CEFR estimation with LLM."""
 
-    @patch('utils.lemma_extraction.call_llm_with_tracking')
-    async def test_cefr_estimation_success(self, mock_llm):
+    async def test_cefr_estimation_success(self):
         """Test successful CEFR estimation."""
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=20, completion_tokens=2,
             total_tokens=22, estimated_cost=0.00005
         )
-        mock_llm.return_value = ('{"level": "B1"}', stats)
+        fake_llm = FakeLLMAdapter(response='{"level": "B1"}', stats=stats)
 
         level, returned_stats = await _estimate_cefr(
-            "beschäftigt", "Er beschäftigt sich", "beschäftigen", "gpt-4"
+            "beschäftigt", "Er beschäftigt sich", "beschäftigen", fake_llm, "gpt-4"
         )
 
         assert level == "B1"
         assert returned_stats == stats
 
-    @patch('utils.lemma_extraction.call_llm_with_tracking')
-    async def test_cefr_estimation_invalid_json(self, mock_llm):
+    async def test_cefr_estimation_invalid_json(self):
         """Test CEFR estimation with invalid JSON response."""
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=20, completion_tokens=2,
             total_tokens=22, estimated_cost=0.00005
         )
-        mock_llm.return_value = ('invalid json', stats)
+        fake_llm = FakeLLMAdapter(response='invalid json', stats=stats)
 
         level, returned_stats = await _estimate_cefr(
-            "word", "sentence", "lemma", "gpt-4"
+            "word", "sentence", "lemma", fake_llm, "gpt-4"
         )
 
         assert level is None
         # Stats are still returned even when JSON parse fails
         assert returned_stats is not None
 
-    @patch('utils.lemma_extraction.call_llm_with_tracking')
-    async def test_cefr_estimation_api_error(self, mock_llm):
+    async def test_cefr_estimation_api_error(self):
         """Test CEFR estimation returns None on API error."""
-        mock_llm.side_effect = Exception("API error")
+        failing_llm = MagicMock()
+        failing_llm.call = AsyncMock(side_effect=Exception("API error"))
 
         level, returned_stats = await _estimate_cefr(
-            "word", "sentence", "lemma", "gpt-4"
+            "word", "sentence", "lemma", failing_llm, "gpt-4"
         )
 
         assert level is None
@@ -518,20 +517,19 @@ class TestEstimateCefr(unittest.IsolatedAsyncioTestCase):
 class TestExtractWithLlm(unittest.IsolatedAsyncioTestCase):
     """Test LLM-based lemma extraction."""
 
-    @patch('utils.lemma_extraction.call_llm_with_tracking')
-    async def test_llm_extraction_success(self, mock_llm):
+    async def test_llm_extraction_success(self):
         """Test successful LLM-based extraction."""
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=50, completion_tokens=5,
             total_tokens=55, estimated_cost=0.001
         )
-        mock_llm.return_value = (
-            '{"lemma": "sing", "related_words": ["sang"], "level": "A1"}',
-            stats
+        fake_llm = FakeLLMAdapter(
+            response='{"lemma": "sing", "related_words": ["sang"], "level": "A1"}',
+            stats=stats,
         )
 
         result, returned_stats = await _extract_with_llm(
-            "sang", "She sang", "English", "gpt-4"
+            "sang", "She sang", "English", fake_llm, "gpt-4"
         )
 
         assert result is not None
@@ -540,28 +538,27 @@ class TestExtractWithLlm(unittest.IsolatedAsyncioTestCase):
         assert result["level"] == "A1"
         assert returned_stats == stats
 
-    @patch('utils.lemma_extraction.call_llm_with_tracking')
-    async def test_llm_extraction_invalid_json(self, mock_llm):
+    async def test_llm_extraction_invalid_json(self):
         """Test LLM extraction with invalid JSON response."""
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=50, completion_tokens=5,
             total_tokens=55, estimated_cost=0.001
         )
-        mock_llm.return_value = ("This is not JSON", stats)
+        fake_llm = FakeLLMAdapter(response="This is not JSON", stats=stats)
 
         result, returned_stats = await _extract_with_llm(
-            "word", "sentence", "English", "gpt-4"
+            "word", "sentence", "English", fake_llm, "gpt-4"
         )
 
         assert result is None
 
-    @patch('utils.lemma_extraction.call_llm_with_tracking')
-    async def test_llm_extraction_api_error(self, mock_llm):
+    async def test_llm_extraction_api_error(self):
         """Test LLM extraction returns None on API error."""
-        mock_llm.side_effect = Exception("API error")
+        failing_llm = MagicMock()
+        failing_llm.call = AsyncMock(side_effect=Exception("API error"))
 
         result, returned_stats = await _extract_with_llm(
-            "word", "sentence", "English", "gpt-4"
+            "word", "sentence", "English", failing_llm, "gpt-4"
         )
 
         assert result is None
@@ -642,12 +639,12 @@ class TestEdgeCases(unittest.IsolatedAsyncioTestCase):
 
     async def test_extract_lemma_with_empty_word(self):
         """Test extract_lemma with empty word string."""
-        result, stats = await extract_lemma("", "test sentence", "German")
+        result, stats = await extract_lemma("", "test sentence", "German", FakeLLMAdapter())
         # Should not crash, may return None or empty result
 
     async def test_extract_lemma_with_empty_sentence(self):
         """Test extract_lemma with empty sentence."""
-        result, stats = await extract_lemma("word", "", "German")
+        result, stats = await extract_lemma("word", "", "German", FakeLLMAdapter())
         # Should not crash
 
     @patch('utils.lemma_extraction._extract_with_stanza')
@@ -658,14 +655,14 @@ class TestEdgeCases(unittest.IsolatedAsyncioTestCase):
             "lemma": "singen",
             "related_words": ["singt"]
         }
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=10, completion_tokens=2,
             total_tokens=12, estimated_cost=0.0001
         )
         mock_cefr.return_value = (None, stats)
 
         result, returned_stats = await extract_lemma(
-            "singt", "Er singt", "German"
+            "singt", "Er singt", "German", FakeLLMAdapter()
         )
 
         assert result is not None
@@ -718,14 +715,14 @@ class TestIntegrationScenarios(unittest.IsolatedAsyncioTestCase):
             "lemma": "sich langweilen",
             "related_words": ["sich", "langweilt"]
         }
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=15, completion_tokens=2,
             total_tokens=17, estimated_cost=0.0001
         )
         mock_cefr.return_value = ("B1", stats)
 
         result, returned_stats = await extract_lemma(
-            "langweilt", "Ich glaube, dass er sich langweilt", "German"
+            "langweilt", "Ich glaube, dass er sich langweilt", "German", FakeLLMAdapter()
         )
 
         assert result is not None
@@ -741,14 +738,14 @@ class TestIntegrationScenarios(unittest.IsolatedAsyncioTestCase):
             "lemma": "zumachen",
             "related_words": ["macht", "zu"]
         }
-        stats = TokenUsageStats(
+        stats = LLMCallResult(
             model="gpt-4", prompt_tokens=15, completion_tokens=2,
             total_tokens=17, estimated_cost=0.0001
         )
         mock_cefr.return_value = ("A2", stats)
 
         result, returned_stats = await extract_lemma(
-            "macht", "Der Laden macht um 18 Uhr zu", "German"
+            "macht", "Der Laden macht um 18 Uhr zu", "German", FakeLLMAdapter()
         )
 
         assert result is not None

@@ -1,9 +1,10 @@
 """Tests for token usage API routes."""
 
 import unittest
+import uuid
 from pytest import approx
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
@@ -14,6 +15,26 @@ from api.dependencies import get_article_repo, get_token_usage_repo
 from adapter.fake.article_repository import FakeArticleRepository
 from adapter.fake.token_usage_repository import FakeTokenUsageRepository
 from domain.model.article import ArticleInputs, ArticleStatus
+from domain.model.token_usage import TokenUsage
+
+
+def _make_usage(**kwargs) -> TokenUsage:
+    """Create a TokenUsage domain object with defaults for testing."""
+    defaults = {
+        "id": str(uuid.uuid4()),
+        "user_id": "test-user-123",
+        "operation": "dictionary_search",
+        "model": "gpt-4.1-mini",
+        "prompt_tokens": 100,
+        "completion_tokens": 50,
+        "total_tokens": 150,
+        "estimated_cost": 0.001,
+        "created_at": datetime.now(timezone.utc),
+        "article_id": None,
+        "metadata": None,
+    }
+    defaults.update(kwargs)
+    return TokenUsage(**defaults)
 
 
 class TestGetMyUsage(unittest.TestCase):
@@ -49,22 +70,16 @@ class TestGetMyUsage(unittest.TestCase):
         """Test successful token usage summary retrieval."""
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         fake_repo = FakeTokenUsageRepository()
-        fake_repo.save(
-            user_id="test-user-123",
-            operation="dictionary_search",
-            model="gpt-4.1-mini",
-            prompt_tokens=2500,
-            completion_tokens=2500,
+        fake_repo.save(_make_usage(
+            prompt_tokens=2500, completion_tokens=2500, total_tokens=5000,
+            operation="dictionary_search", model="gpt-4.1-mini",
             estimated_cost=0.0075,
-        )
-        fake_repo.save(
-            user_id="test-user-123",
-            operation="article_generation",
-            model="gpt-4",
-            prompt_tokens=5000,
-            completion_tokens=5000,
+        ))
+        fake_repo.save(_make_usage(
+            prompt_tokens=5000, completion_tokens=5000, total_tokens=10000,
+            operation="article_generation", model="gpt-4",
             estimated_cost=0.0159,
-        )
+        ))
         app.dependency_overrides[get_token_usage_repo] = lambda: fake_repo
 
         response = self.client.get("/usage/me")
@@ -83,14 +98,10 @@ class TestGetMyUsage(unittest.TestCase):
         """Test token usage with custom days parameter."""
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         fake_repo = FakeTokenUsageRepository()
-        fake_repo.save(
-            user_id="test-user-123",
-            operation="dictionary_search",
-            model="gpt-4.1-mini",
-            prompt_tokens=500,
-            completion_tokens=500,
+        fake_repo.save(_make_usage(
+            prompt_tokens=500, completion_tokens=500, total_tokens=1000,
             estimated_cost=0.001,
-        )
+        ))
         app.dependency_overrides[get_token_usage_repo] = lambda: fake_repo
 
         response = self.client.get("/usage/me?days=7")
@@ -178,25 +189,17 @@ class TestGetArticleUsage(unittest.TestCase):
     def test_get_article_usage_success(self):
         """Test successful article usage retrieval."""
         self._setup_auth_and_repo()
-        self.usage_repo.save(
-            user_id="test-user-123",
-            operation="article_generation",
-            model="gpt-4.1",
-            prompt_tokens=2000,
-            completion_tokens=1500,
-            estimated_cost=0.0525,
-            article_id=self.article_id,
+        self.usage_repo.save(_make_usage(
+            operation="article_generation", model="gpt-4.1",
+            prompt_tokens=2000, completion_tokens=1500, total_tokens=3500,
+            estimated_cost=0.0525, article_id=self.article_id,
             metadata={'topic': 'technology'},
-        )
-        self.usage_repo.save(
-            user_id="test-user-123",
-            operation="article_generation",
-            model="gpt-4.1",
-            prompt_tokens=1000,
-            completion_tokens=800,
-            estimated_cost=0.027,
-            article_id=self.article_id,
-        )
+        ))
+        self.usage_repo.save(_make_usage(
+            operation="article_generation", model="gpt-4.1",
+            prompt_tokens=1000, completion_tokens=800, total_tokens=1800,
+            estimated_cost=0.027, article_id=self.article_id,
+        ))
         self._create_test_article()
 
         response = self.client.get(f"/usage/articles/{self.article_id}")
@@ -240,10 +243,14 @@ class TestGetArticleUsage(unittest.TestCase):
 
 
 class TestDictionarySearchTokenUsageIntegration(unittest.TestCase):
-    """Integration tests verifying dictionary search calls save_token_usage."""
+    """Integration tests verifying dictionary search passes token_usage_repo to lookup."""
 
     def setUp(self):
         """Set up test fixtures."""
+        from adapter.fake.dictionary import FakeDictionaryAdapter
+        from adapter.fake.llm import FakeLLMAdapter
+        from api.dependencies import get_dictionary_port, get_llm_port
+
         self.client = TestClient(app)
         self.mock_user = UserResponse(
             id="test-user-123",
@@ -253,43 +260,33 @@ class TestDictionarySearchTokenUsageIntegration(unittest.TestCase):
             updated_at=datetime.now(timezone.utc),
             provider="email"
         )
+        self._get_dictionary_port = get_dictionary_port
+        self._get_llm_port = get_llm_port
+        self._fake_dict = FakeDictionaryAdapter
+        self._fake_llm = FakeLLMAdapter
 
     def tearDown(self):
         """Clean up dependency overrides."""
         app.dependency_overrides.clear()
 
-    def _create_mock_service(self, lookup_result):
-        """Create a mock DictionaryService that returns the given result."""
-        from unittest.mock import AsyncMock
-        from services.dictionary_service import DictionaryService
-
-        mock_service = MagicMock(spec=DictionaryService)
-        mock_service.lookup = AsyncMock(return_value=lookup_result)
-        mock_service.last_token_stats = MagicMock(
-            model="gpt-4.1-mini",
-            prompt_tokens=100,
-            completion_tokens=50,
-            estimated_cost=0.0001
-        )
-        return mock_service
-
-    def test_dictionary_search_calls_save_token_usage(self):
-        """Test that dictionary search endpoint calls save_token_usage."""
-        from api.routes.dictionary import get_dictionary_service
-        from services.dictionary_service import LookupResult
-
+    def _setup_overrides(self):
+        """Set up common dependency overrides."""
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        app.dependency_overrides[self._get_dictionary_port] = lambda: self._fake_dict()
+        app.dependency_overrides[self._get_llm_port] = lambda: self._fake_llm()
 
-        result = LookupResult(
-            lemma="test",
-            definition="a procedure",
-            source="hybrid"
-        )
-        mock_service = self._create_mock_service(result)
-        app.dependency_overrides[get_dictionary_service] = lambda: mock_service
+    @patch('services.dictionary_service.lookup')
+    def test_dictionary_search_calls_lookup_with_token_repo(self, mock_lookup):
+        """Test that dictionary search passes token_usage_repo and user_id to lookup."""
+        self._setup_overrides()
+
+        mock_lookup.return_value = {
+            "lemma": "test", "definition": "a procedure", "source": "hybrid",
+            "related_words": None, "pos": None, "gender": None,
+            "phonetics": None, "conjugations": None, "level": None, "examples": None,
+        }
 
         mock_repo = MagicMock()
-        mock_repo.save.return_value = "usage-id-123"
         app.dependency_overrides[get_token_usage_repo] = lambda: mock_repo
 
         response = self.client.post(
@@ -303,35 +300,24 @@ class TestDictionarySearchTokenUsageIntegration(unittest.TestCase):
 
         assert response.status_code == 200
 
-        # Verify repo.save was called with correct parameters
-        mock_repo.save.assert_called_once()
-        call_kwargs = mock_repo.save.call_args[1]
+        # Verify lookup was called with token_usage_repo and user_id
+        mock_lookup.assert_called_once()
+        call_kwargs = mock_lookup.call_args[1]
+        assert call_kwargs['token_usage_repo'] == mock_repo
         assert call_kwargs['user_id'] == "test-user-123"
-        assert call_kwargs['operation'] == "dictionary_search"
-        assert call_kwargs['model'] == "gpt-4.1-mini"
-        assert call_kwargs['prompt_tokens'] == 100
-        assert call_kwargs['completion_tokens'] == 50
-        assert call_kwargs['estimated_cost'] == approx(0.0001)
-        assert call_kwargs['metadata']['word'] == "test"
-        assert call_kwargs['metadata']['language'] == "English"
 
-    def test_dictionary_search_token_usage_persists_on_success(self):
-        """Test that token usage is saved even with partial JSON response."""
-        from api.routes.dictionary import get_dictionary_service
-        from services.dictionary_service import LookupResult
+    @patch('services.dictionary_service.lookup')
+    def test_dictionary_search_passes_article_id_to_lookup(self, mock_lookup):
+        """Test that article_id from request is passed to lookup."""
+        self._setup_overrides()
 
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-
-        result = LookupResult(
-            lemma="word",
-            definition="meaning",
-            source="hybrid"
-        )
-        mock_service = self._create_mock_service(result)
-        app.dependency_overrides[get_dictionary_service] = lambda: mock_service
+        mock_lookup.return_value = {
+            "lemma": "word", "definition": "meaning", "source": "hybrid",
+            "related_words": None, "pos": None, "gender": None,
+            "phonetics": None, "conjugations": None, "level": None, "examples": None,
+        }
 
         mock_repo = MagicMock()
-        mock_repo.save.return_value = "usage-id-456"
         app.dependency_overrides[get_token_usage_repo] = lambda: mock_repo
 
         response = self.client.post(
@@ -339,32 +325,27 @@ class TestDictionarySearchTokenUsageIntegration(unittest.TestCase):
             json={
                 "word": "word",
                 "sentence": "A word.",
-                "language": "English"
+                "language": "English",
+                "article_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
             }
         )
 
         assert response.status_code == 200
-        # Verify repo.save was called even with minimal response
-        assert mock_repo.save.called
+        call_kwargs = mock_lookup.call_args[1]
+        assert call_kwargs['article_id'] == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
-    def test_dictionary_search_token_usage_with_german_language(self):
-        """Test that token usage correctly captures non-English language."""
-        from api.routes.dictionary import get_dictionary_service
-        from services.dictionary_service import LookupResult
+    @patch('services.dictionary_service.lookup')
+    def test_dictionary_search_returns_correct_response(self, mock_lookup):
+        """Test that lookup result is correctly mapped to SearchResponse."""
+        self._setup_overrides()
 
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-
-        result = LookupResult(
-            lemma="gehen",
-            definition="to go",
-            level="A1",
-            source="hybrid"
-        )
-        mock_service = self._create_mock_service(result)
-        app.dependency_overrides[get_dictionary_service] = lambda: mock_service
+        mock_lookup.return_value = {
+            "lemma": "gehen", "definition": "to go", "source": "hybrid",
+            "related_words": ["gehe"], "pos": "verb", "gender": None,
+            "phonetics": None, "conjugations": None, "level": "A1", "examples": None,
+        }
 
         mock_repo = MagicMock()
-        mock_repo.save.return_value = "usage-id-789"
         app.dependency_overrides[get_token_usage_repo] = lambda: mock_repo
 
         response = self.client.post(
@@ -377,10 +358,10 @@ class TestDictionarySearchTokenUsageIntegration(unittest.TestCase):
         )
 
         assert response.status_code == 200
-        mock_repo.save.assert_called_once()
-        call_kwargs = mock_repo.save.call_args[1]
-        assert call_kwargs['metadata']['language'] == "German"
-        assert call_kwargs['metadata']['word'] == "gehen"
+        data = response.json()
+        assert data["lemma"] == "gehen"
+        assert data["level"] == "A1"
+        assert data["related_words"] == ["gehe"]
 
 
 class TestTokenUsageResponseModel(unittest.TestCase):

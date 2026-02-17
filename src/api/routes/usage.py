@@ -6,7 +6,6 @@ This module handles token usage tracking and analytics:
 """
 
 import logging
-from dataclasses import asdict
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.dependencies import get_article_repo, get_token_usage_repo
@@ -43,11 +42,11 @@ async def get_my_usage(
     logger.info("Token usage summary retrieved", extra={
         "userId": current_user.id,
         "days": days,
-        "totalTokens": summary.total_tokens,
-        "totalCost": summary.total_cost
+        "totalTokens": summary.get("total_tokens", 0),
+        "totalCost": summary.get("total_cost", 0.0)
     })
 
-    return asdict(summary)
+    return summary
 
 
 @router.get("/articles/{article_id}", response_model=list[TokenUsageResponse])
@@ -85,4 +84,4 @@ async def get_article_usage(
         "recordCount": len(usage_records)
     })
 
-    return [asdict(record) for record in usage_records]
+    return usage_records

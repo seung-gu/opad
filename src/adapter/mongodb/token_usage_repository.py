@@ -1,13 +1,12 @@
 """MongoDB implementation of TokenUsageRepository."""
 
-import uuid
 from datetime import datetime, timedelta, timezone
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 from logging import getLogger
 
 from adapter.mongodb import TOKEN_USAGE_COLLECTION_NAME
-from domain.model.token_usage import TokenUsage, TokenUsageSummary, OperationUsage, DailyUsage
+from domain.model.token_usage import TokenUsage
 
 logger = getLogger(__name__)
 
@@ -30,99 +29,77 @@ class MongoTokenUsageRepository:
             logger.error("Failed to create token_usage indexes", extra={"error": str(e)})
             return False
 
-    def _to_domain(self, doc: dict) -> TokenUsage:
-        """Convert MongoDB document to TokenUsage domain model."""
-        return TokenUsage(
-            id=doc['_id'],
-            user_id=doc['user_id'],
-            operation=doc['operation'],
-            model=doc['model'],
-            prompt_tokens=doc['prompt_tokens'],
-            completion_tokens=doc['completion_tokens'],
-            total_tokens=doc['total_tokens'],
-            estimated_cost=doc['estimated_cost'],
-            article_id=doc.get('article_id'),
-            created_at=doc['created_at'],
-            metadata=doc.get('metadata', {}),
-        )
+    def _to_dict(self, doc: dict) -> dict:
+        """Convert MongoDB document to response dict."""
+        return {
+            'id': doc['_id'],
+            'user_id': doc['user_id'],
+            'operation': doc['operation'],
+            'model': doc['model'],
+            'prompt_tokens': doc['prompt_tokens'],
+            'completion_tokens': doc['completion_tokens'],
+            'total_tokens': doc['total_tokens'],
+            'estimated_cost': doc['estimated_cost'],
+            'article_id': doc.get('article_id'),
+            'created_at': doc['created_at'],
+            'metadata': doc.get('metadata', {}),
+        }
 
-    def save(
-        self,
-        user_id: str,
-        operation: str,
-        model: str,
-        prompt_tokens: int,
-        completion_tokens: int,
-        estimated_cost: float,
-        article_id: str | None = None,
-        metadata: dict | None = None,
-    ) -> str | None:
+    def save(self, usage: TokenUsage) -> str | None:
         """Save token usage record to MongoDB.
 
-        Records token usage for cost tracking and analytics.
-
         Args:
-            user_id: User ID who incurred the usage
-            operation: Operation type ("dictionary_search" | "article_generation")
-            model: Model name used (e.g., "gpt-4", "claude-3-opus")
-            prompt_tokens: Number of input tokens
-            completion_tokens: Number of output tokens
-            estimated_cost: Estimated cost in USD
-            article_id: Optional article ID if usage is associated with an article
-            metadata: Optional additional metadata (e.g., query, language)
+            usage: TokenUsage domain object with id and created_at set by service.
 
         Returns:
-            Inserted document ID if successful, None otherwise
+            Inserted document ID if successful, None otherwise.
         """
-        # Validate inputs
-        if not user_id or not user_id.strip():
+        if not usage.user_id or not usage.user_id.strip():
             logger.warning("Invalid user_id for token usage: empty or whitespace")
             return None
-        if prompt_tokens < 0 or completion_tokens < 0:
+        if usage.prompt_tokens < 0 or usage.completion_tokens < 0:
             logger.warning(
                 "Invalid token counts for token usage",
-                extra={"promptTokens": prompt_tokens, "completionTokens": completion_tokens}
+                extra={"promptTokens": usage.prompt_tokens, "completionTokens": usage.completion_tokens}
             )
             return None
 
         try:
-            now = datetime.now(timezone.utc)
             usage_doc = {
-                '_id': str(uuid.uuid4()),
-                'user_id': user_id,
-                'operation': operation,
-                'model': model,
-                'prompt_tokens': prompt_tokens,
-                'completion_tokens': completion_tokens,
-                'total_tokens': prompt_tokens + completion_tokens,
-                'estimated_cost': estimated_cost,
-                'article_id': article_id,
-                'metadata': metadata or {},
-                'created_at': now
+                '_id': usage.id,
+                'user_id': usage.user_id,
+                'operation': usage.operation,
+                'model': usage.model,
+                'prompt_tokens': usage.prompt_tokens,
+                'completion_tokens': usage.completion_tokens,
+                'total_tokens': usage.total_tokens,
+                'estimated_cost': usage.estimated_cost,
+                'article_id': usage.article_id,
+                'metadata': usage.metadata or {},
+                'created_at': usage.created_at,
             }
 
             self.collection.insert_one(usage_doc)
-            usage_id = usage_doc['_id']
 
             logger.info(
                 "Token usage saved",
                 extra={
-                    "usageId": usage_id,
-                    "userId": user_id,
-                    "operation": operation,
-                    "totalTokens": prompt_tokens + completion_tokens,
-                    "estimatedCost": estimated_cost
+                    "usageId": usage.id,
+                    "userId": usage.user_id,
+                    "operation": usage.operation,
+                    "totalTokens": usage.total_tokens,
+                    "estimatedCost": usage.estimated_cost,
                 }
             )
-            return usage_id
+            return usage.id
         except PyMongoError as e:
             logger.error(
                 "Failed to save token usage",
-                extra={"userId": user_id, "operation": operation, "error": str(e)}
+                extra={"userId": usage.user_id, "operation": usage.operation, "error": str(e)}
             )
             return None
 
-    def get_user_summary(self, user_id: str, days: int = 30) -> TokenUsageSummary:
+    def get_user_summary(self, user_id: str, days: int = 30) -> dict:
         """Get token usage summary for a user.
 
         Aggregates token usage data for the specified user within the time window.
@@ -225,25 +202,25 @@ class MongoTokenUsageRepository:
                 }
             )
 
-            return TokenUsageSummary(
-                total_tokens=total_tokens,
-                total_cost=round(total_cost, 6),
-                by_operation={k: OperationUsage(**v) for k, v in by_operation.items()},
-                daily_usage=[DailyUsage(**daily_usage) for daily_usage in daily_usages]
-            )
+            return {
+                'total_tokens': total_tokens,
+                'total_cost': round(total_cost, 6),
+                'by_operation': by_operation,
+                'daily_usage': daily_usages,
+            }
         except PyMongoError as e:
             logger.error(
                 "Failed to get token usage summary",
                 extra={"userId": user_id, "error": str(e)}
             )
-            return TokenUsageSummary(
-                total_tokens=0,
-                total_cost=0.0,
-                by_operation={},
-                daily_usage=[]
-            )
+            return {
+                'total_tokens': 0,
+                'total_cost': 0.0,
+                'by_operation': {},
+                'daily_usage': [],
+            }
 
-    def get_by_article(self, article_id: str) -> list[TokenUsage]:
+    def get_by_article(self, article_id: str) -> list[dict]:
         """Get all token usage records for an article.
 
         Retrieves all token usage records associated with a specific article,
@@ -263,7 +240,7 @@ class MongoTokenUsageRepository:
         try:
             result = []
             for doc in self.collection.find({'article_id': article_id}).sort('created_at', 1):
-                result.append(self._to_domain(doc))
+                result.append(self._to_dict(doc))
 
             logger.info(
                 "Article token usage retrieved",
