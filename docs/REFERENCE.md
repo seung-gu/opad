@@ -66,6 +66,8 @@ graph TB
         end
         subgraph Dictionary["Dictionary"]
             FastAPI__dictionary_search["POST /dictionary/search"]
+        end
+        subgraph Vocabulary["Vocabulary"]
             FastAPI__dictionary_vocab_post["POST /dictionary/vocabulary"]
             FastAPI__dictionary_vocab_get["GET /dictionary/vocabularies"]
             FastAPI__dictionary_vocab_delete["DELETE /dictionary/vocabularies/{vocabulary_id}"]
@@ -239,13 +241,13 @@ generateResponse.status === 409  ← Response handling!
 
 ### Summary
 - Total endpoints: 18
-- Tags: meta, health, jobs, stats, articles, dictionary, auth, usage
+- Tags: meta, health, jobs, stats, articles, dictionary, vocabulary, auth, usage
 
 ### Endpoints by Tag
 
 #### Articles
 
-> **Internal note**: All endpoints use hexagonal architecture (ports and adapters pattern) internally. All database access goes through Protocol-based repositories (`ArticleRepository`, `UserRepository`, `VocabularyRepository`, `TokenUsageRepository`), injected via `Depends()` from `api/dependencies.py`. See [ARCHITECTURE.md - Hexagonal Architecture](ARCHITECTURE.md#hexagonal-architecture-ports-and-adapters) for details.
+> **Internal note**: All endpoints use hexagonal architecture (ports and adapters pattern) internally. All database access goes through Protocol-based repositories (`ArticleRepository`, `UserRepository`, `VocabularyRepository`, `VocabularyPort`, `TokenUsageRepository`), and all external service calls go through Protocol-based ports (`DictionaryPort`, `LLMPort`, `NLPPort`), injected via `Depends()` from `api/dependencies.py`. See [ARCHITECTURE.md - Hexagonal Architecture](ARCHITECTURE.md#hexagonal-architecture-ports-and-adapters) for details.
 
 - **GET** `/articles` - List articles with filters (status, language, level) and pagination
 - **POST** `/articles/generate` - Create article and start generation (unified endpoint)
@@ -278,9 +280,14 @@ generateResponse.status === 409  ← Response handling!
 #### Dictionary
 
 - **POST** `/dictionary/search` - Search for word definition and lemma from sentence context
+
+#### Vocabulary
+
 - **POST** `/dictionary/vocabulary` - Add vocabulary word
 - **GET** `/dictionary/vocabularies` - Get aggregated vocabulary list (grouped by lemma with counts)
 - **DELETE** `/dictionary/vocabularies/{vocabulary_id}` - Delete vocabulary word
+
+Note: Dictionary search and Vocabulary CRUD share the `/dictionary` URL prefix but are implemented in separate routers (`api/routes/dictionary.py` and `api/routes/vocabulary.py`) with different tags (`dictionary` and `vocabulary`).
 
 #### Authentication
 
@@ -1422,9 +1429,10 @@ print(f"Response: {content}")
 **Integration Example** (Dictionary API):
 ```python
 from services import dictionary_service
-from api.dependencies import get_dictionary_port, get_llm_port, get_token_usage_repo
+from api.dependencies import get_dictionary_port, get_llm_port, get_nlp_port, get_token_usage_repo
 from port.dictionary import DictionaryPort
 from port.llm import LLMPort
+from port.nlp import NLPPort
 from port.token_usage_repository import TokenUsageRepository
 
 @router.post("/dictionary/search")
@@ -1433,32 +1441,35 @@ async def search_word(
     current_user: UserResponse = Depends(get_current_user_required),
     dictionary: DictionaryPort = Depends(get_dictionary_port),
     llm: LLMPort = Depends(get_llm_port),
-    token_usage_repo: TokenUsageRepository = Depends(get_token_usage_repo),
+    nlp: NLPPort = Depends(get_nlp_port),
+    token_usage_repo: TokenUsageRepo = Depends(get_token_usage_repo),
 ):
     # Perform hybrid lookup via module function (ports injected as parameters)
-    result, stats = await dictionary_service.lookup(
+    # Token usage is tracked per LLM call internally by the service
+    result = await dictionary_service.lookup(
         word=request.word,
         sentence=request.sentence,
         language=request.language,
         dictionary=dictionary,
         llm=llm,
+        nlp=nlp,
+        token_usage_repo=token_usage_repo,
+        user_id=current_user.id,
+        article_id=request.article_id,
     )
 
-    # Track accumulated token usage via injected repository
-    if stats:
-        token_usage_repo.save(
-            user_id=current_user.id,
-            operation="dictionary_search",
-            model=stats.model,
-            prompt_tokens=stats.prompt_tokens,
-            completion_tokens=stats.completion_tokens,
-            estimated_cost=stats.estimated_cost,
-            article_id=request.article_id,
-            metadata={"word": request.word, "language": request.language,
-                       "source": result["source"], "phonetics": result["phonetics"]}
-        )
-
-    return SearchResponse(...)
+    # result is a LookupResult domain object
+    return SearchResponse(
+        lemma=result.lemma,
+        definition=result.definition,
+        related_words=result.related_words,
+        pos=result.grammar.pos,
+        gender=result.grammar.gender,
+        phonetics=result.grammar.phonetics,
+        conjugations=result.grammar.conjugations,
+        level=result.level,
+        examples=result.grammar.examples,
+    )
 ```
 
 ---

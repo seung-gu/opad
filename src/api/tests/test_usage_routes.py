@@ -16,6 +16,7 @@ from adapter.fake.article_repository import FakeArticleRepository
 from adapter.fake.token_usage_repository import FakeTokenUsageRepository
 from domain.model.article import ArticleInputs, ArticleStatus
 from domain.model.token_usage import TokenUsage
+from domain.model.vocabulary import GrammaticalInfo, LookupResult
 
 
 def _make_usage(**kwargs) -> TokenUsage:
@@ -280,11 +281,9 @@ class TestDictionarySearchTokenUsageIntegration(unittest.TestCase):
         """Test that dictionary search passes token_usage_repo and user_id to lookup."""
         self._setup_overrides()
 
-        mock_lookup.return_value = {
-            "lemma": "test", "definition": "a procedure", "source": "hybrid",
-            "related_words": None, "pos": None, "gender": None,
-            "phonetics": None, "conjugations": None, "level": None, "examples": None,
-        }
+        mock_lookup.return_value = LookupResult(
+            lemma="test", definition="a procedure",
+        )
 
         mock_repo = MagicMock()
         app.dependency_overrides[get_token_usage_repo] = lambda: mock_repo
@@ -311,11 +310,9 @@ class TestDictionarySearchTokenUsageIntegration(unittest.TestCase):
         """Test that article_id from request is passed to lookup."""
         self._setup_overrides()
 
-        mock_lookup.return_value = {
-            "lemma": "word", "definition": "meaning", "source": "hybrid",
-            "related_words": None, "pos": None, "gender": None,
-            "phonetics": None, "conjugations": None, "level": None, "examples": None,
-        }
+        mock_lookup.return_value = LookupResult(
+            lemma="word", definition="meaning",
+        )
 
         mock_repo = MagicMock()
         app.dependency_overrides[get_token_usage_repo] = lambda: mock_repo
@@ -339,11 +336,11 @@ class TestDictionarySearchTokenUsageIntegration(unittest.TestCase):
         """Test that lookup result is correctly mapped to SearchResponse."""
         self._setup_overrides()
 
-        mock_lookup.return_value = {
-            "lemma": "gehen", "definition": "to go", "source": "hybrid",
-            "related_words": ["gehe"], "pos": "verb", "gender": None,
-            "phonetics": None, "conjugations": None, "level": "A1", "examples": None,
-        }
+        mock_lookup.return_value = LookupResult(
+            lemma="gehen", definition="to go",
+            related_words=["gehe"], level="A1",
+            grammar=GrammaticalInfo(pos="verb"),
+        )
 
         mock_repo = MagicMock()
         app.dependency_overrides[get_token_usage_repo] = lambda: mock_repo

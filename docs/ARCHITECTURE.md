@@ -112,7 +112,7 @@ sequenceDiagram
 **특징:**
 - **실시간 응답**: 사용자가 단어를 클릭하면 즉시 정의 반환 (비동기 큐 사용 안 함)
 - **프록시 패턴**: Next.js API route가 FastAPI로 요청을 프록시
-- **공통 유틸 사용**: `utils/lemma_extraction.py`, `utils/sense_selection.py`, `utils/llm.py`로 재사용 가능한 구조
+- **서비스 계층**: `services/lemma_extraction.py`, `services/sense_selection.py`에서 파이프라인 단계 처리, `utils/llm.py`로 LLM 호출
 - **Stanza NLP**: 독일어 lemma 추출에 Stanza NLP 사용 (로컬 처리, ~51ms), 기타 언어는 LLM 사용
 - **에러 처리**: `get_llm_error_response()`로 일관된 에러 응답
 
@@ -126,7 +126,7 @@ sequenceDiagram
 | **API** | **MongoDB** | (via Repository adapters) | 중복 체크, Article metadata 저장/조회 (ArticleRepository), Vocabulary 저장/조회 (VocabularyRepository), Token usage 저장/조회 (TokenUsageRepository), User 인증/조회 (UserRepository) |
 | **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
 | **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.job_queue` 사용) |
-| **API** | **Stanza NLP** | Local (via utils.lemma_extraction) | German lemma extraction (로컬 NLP, ~51ms) |
+| **API** | **Stanza NLP** | Local (via NLPPort / StanzaAdapter) | German lemma extraction (로컬 NLP, ~51ms) |
 | **API** | **LLM** | HTTP (via LLMPort / LiteLLMAdapter) | Dictionary API용 LLM 호출 (non-German lemma extraction + CEFR estimation + entry/sense selection) + Token tracking |
 | **API** | **API** | Internal | Token usage endpoints (`/usage/me`, `/usage/articles/{id}`) |
 | **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
@@ -134,7 +134,7 @@ sequenceDiagram
 | **Worker** | **CrewAI** | Function Call | Article 생성 |
 | **Worker** | **MongoDB** | (via Repository adapters) | Article content 저장 (ArticleRepository), Token usage 저장 (TokenUsageRepository) |
 
-**참고**: API와 Worker 모두 `api.job_queue` 모듈을 통해 Redis에 접근합니다. 모든 MongoDB 접근은 hexagonal architecture의 Repository 어댑터를 통해 합니다: `ArticleRepository`, `VocabularyRepository`, `TokenUsageRepository`, `UserRepository`. 외부 서비스 호출도 Port를 통해 합니다: `DictionaryPort` (Free Dictionary API), `LLMPort` (LLM 호출). 모든 Port/Repository는 `api/dependencies.py`(Composition Root)에서 생성되어 FastAPI `Depends()`로 주입됩니다.
+**참고**: API와 Worker 모두 `api.job_queue` 모듈을 통해 Redis에 접근합니다. 모든 MongoDB 접근은 hexagonal architecture의 Repository 어댑터를 통해 합니다: `ArticleRepository`, `VocabularyRepository` (CRUD), `VocabularyPort` (aggregate queries), `TokenUsageRepository`, `UserRepository`. 외부 서비스 호출도 Port를 통해 합니다: `DictionaryPort` (Free Dictionary API), `LLMPort` (LLM 호출), `NLPPort` (Stanza NLP). 모든 Port/Repository는 `api/dependencies.py`(Composition Root)에서 생성되어 FastAPI `Depends()`로 주입됩니다.
 
 ### Redis 데이터 구조
 
@@ -294,7 +294,7 @@ The diagram contains **31 edges**, each color-coded by CQRS (Command Query Respo
 | Color | Style | Category | Count | Description |
 |-------|-------|----------|-------|-------------|
 | Red `#C62828` | Solid, 2px | **Command (Write)** | 13 | State-changing operations (e.g., `articles_r` -> `job_queue` RPUSH, `dict_svc` -> `LLMPort` call, `token_usage_svc` -> `TokenUsageRepository` save, `proc` -> Redis status update) |
-| Green `#2E7D32` | Dashed, 2px | **Query (Read)** | 6 | Read-only operations (e.g., `usage_r` -> `TokenUsageRepository` read, `jobs_r` -> Redis poll status, `proc` -> `VocabularyRepository` find_lemmas, `dict_svc` -> `DictionaryPort` fetch) |
+| Green `#2E7D32` | Dashed, 2px | **Query (Read)** | 6 | Read-only operations (e.g., `usage_r` -> `TokenUsageRepository` read, `jobs_r` -> Redis poll status, `proc` -> `VocabularyPort` find_lemmas, `dict_svc` -> `DictionaryPort` fetch) |
 | Gray `#757575` | Solid or dashed, 1px | **Infrastructure** | 12 | Entry points (`HTTP` -> `Routes`), port-to-adapter bindings (`LLMPort` -> `LiteLLMAdapter`), and adapter-to-external connections (`MongoArticleRepo` -> `MongoDB`) |
 
 **Diagram layers (top to bottom):**
@@ -302,21 +302,24 @@ The diagram contains **31 edges**, each color-coded by CQRS (Command Query Respo
 ```
 API Service (FastAPI :8001)        Worker Service
   Routes (Entrypoint)                Redis BLPOP -> processor.py -> CrewAI Pipeline
+    dictionary.py (search)
+    vocabulary.py (CRUD + aggregates)
   Service Layer
     dictionary_service / token_usage_service / vocabulary_service
+    lemma_extraction / sense_selection
   job_queue -> Redis
 
 Domain
-  CEFRLevel / LLMCallResult / TokenUsage / Vocabulary / Article
+  CEFRLevel / LLMCallResult / TokenUsage / Vocabulary / Article / Errors
 
 Ports (Protocol)
-  LLMPort / DictionaryPort / VocabularyRepository / TokenUsageRepository / ArticleRepository
+  LLMPort / DictionaryPort / NLPPort / VocabularyRepository / VocabularyPort / TokenUsageRepository / ArticleRepository
 
 Adapters
-  LiteLLMAdapter / FreeDictionaryAdapter / MongoVocabRepo / MongoTokenRepo / MongoArticleRepo
+  LiteLLMAdapter / FreeDictionaryAdapter / StanzaAdapter / MongoVocabRepo / MongoTokenRepo / MongoArticleRepo
 
 External
-  OpenAI API / Free Dictionary API / MongoDB
+  OpenAI API / Free Dictionary API / Stanza NLP (local) / MongoDB
 ```
 
 A legend box at the bottom of the diagram summarizes the three edge categories.
@@ -381,8 +384,22 @@ class GrammaticalInfo:
     gender: str | None = None
     phonetics: str | None = None
     conjugations: dict | None = None
-    level: str | None = None
     examples: list[str] | None = None
+
+@dataclass
+class SenseResult:
+    """Selected sense from dictionary entries."""
+    definition: str = ""
+    examples: list[str] | None = None
+
+@dataclass(frozen=True)
+class LookupResult:
+    """Immutable result of a dictionary lookup (Value Object)."""
+    lemma: str
+    definition: str
+    related_words: list[str] | None = None
+    level: str | None = None
+    grammar: GrammaticalInfo = field(default_factory=GrammaticalInfo)
 
 @dataclass
 class Vocabulary:
@@ -395,6 +412,7 @@ class Vocabulary:
     language: str
     created_at: datetime
     related_words: list[str] | None = None
+    level: str | None = None
     span_id: str | None = None
     user_id: str | None = None
     grammar: GrammaticalInfo = field(default_factory=GrammaticalInfo)
@@ -435,8 +453,23 @@ class TokenUsageSummary:
 - `ArticleInputs` is `frozen=True` (immutable) because inputs never change after creation
 - `ArticleStatus` extends `str` for JSON serialization compatibility
 - `Article` is a mutable dataclass (status, content change during lifecycle)
-- `GrammaticalInfo` groups optional grammatical metadata for vocabulary entries
+- `GrammaticalInfo` groups optional grammatical metadata for vocabulary entries (no `level` -- level is on `Vocabulary`/`LookupResult`)
+- `SenseResult` holds the definition and examples selected from dictionary entries
+- `LookupResult` is `frozen=True` (immutable Value Object) returned by `dictionary_service.lookup()`
 - `VocabularyCount` is a composite model combining a vocabulary entry with its aggregated count
+- Domain errors (`NotFoundError`, `PermissionDeniedError`, etc.) are raised by services and caught by route handlers to map to HTTP status codes
+
+#### Domain Errors (`domain/model/errors.py`)
+
+```python
+class DomainError(Exception): ...          # Base class
+class NotFoundError(DomainError): ...       # -> 404
+class DuplicateError(DomainError): ...      # -> 409
+class PermissionDeniedError(DomainError): ... # -> 403
+class ValidationError(DomainError): ...     # -> 422
+```
+
+Services raise these exceptions; route handlers catch and map to HTTP status codes.
 
 ### Ports (`src/port/`)
 
@@ -446,9 +479,18 @@ Each port defines a contract using Python's `Protocol`. Repository ports define 
 
 ```python
 class DictionaryPort(Protocol):
-    """Port for fetching dictionary entries from an external source."""
+    """Port for fetching dictionary entries.
+
+    fetch() returns raw entry dicts from the dictionary source.
+    build_sense_listing() / get_sense() / extract_grammar()
+    encapsulate all entry-structure knowledge so that the service
+    layer only deals with domain types (SenseResult, GrammaticalInfo).
+    """
 
     async def fetch(self, word: str, language: str) -> list[dict] | None: ...
+    def build_sense_listing(self, entries: list[dict]) -> str | None: ...
+    def get_sense(self, entries: list[dict], label: str) -> SenseResult: ...
+    def extract_grammar(self, entries: list[dict], label: str, language: str) -> GrammaticalInfo: ...
 ```
 
 #### LLMPort (`port/llm.py`)
@@ -464,6 +506,22 @@ class LLMPort(Protocol):
         timeout: float = 30.0,
         **kwargs,
     ) -> tuple[str, TokenUsageStats]: ...
+```
+
+#### NLPPort (`port/nlp.py`)
+
+```python
+class NLPPort(Protocol):
+    """Port for extracting linguistic information from text.
+
+    Implementations wrap NLP libraries (e.g., Stanza, spaCy) and return
+    extracted word information as primitive dicts.
+
+    Returned dict keys:
+        text, lemma, pos, xpos, gender, prefix, reflexive, parts
+    """
+
+    async def extract(self, word: str, sentence: str) -> dict | None: ...
 ```
 
 #### ArticleRepository (`port/article_repository.py`)
@@ -491,16 +549,38 @@ class UserRepository(Protocol):
 
 #### VocabularyRepository (`port/vocabulary_repository.py`)
 
+CRUD operations for individual vocabulary entries:
+
 ```python
 class VocabularyRepository(Protocol):
-    def save(self, article_id, word, lemma, ...) -> str | None: ...
-    def get_by_id(self, vocabulary_id) -> Vocabulary | None: ...
+    """Protocol for individual vocabulary entry data access (CRUD + primitive queries)."""
+
+    def save(self, vocab: Vocabulary) -> str | None: ...
+    def find_duplicate(self, vocab: Vocabulary) -> Vocabulary | None: ...
+    def get_by_id(self, vocabulary_id: str) -> Vocabulary | None: ...
     def find(self, article_id, user_id, lemma) -> list[Vocabulary]: ...
-    def update_span_id(self, vocabulary_id, span_id) -> None: ...
-    def delete(self, vocabulary_id) -> bool: ...
+    def update_span_id(self, vocabulary_id: str, span_id: str) -> None: ...
+    def delete(self, vocabulary_id: str) -> bool: ...
+```
+
+#### VocabularyPort (`port/vocabulary.py`)
+
+Aggregate queries separated from CRUD to clarify intent:
+
+```python
+class VocabularyPort(Protocol):
+    """Protocol for vocabulary aggregate queries (read-only).
+
+    Separated from VocabularyRepository (CRUD) to clarify intent:
+    repository handles individual entry persistence,
+    this port handles cross-entry read queries.
+    """
+
     def count_by_lemma(self, language, user_id, skip, limit) -> list[VocabularyCount]: ...
     def find_lemmas(self, user_id, language, levels, limit) -> list[str]: ...
 ```
+
+`MongoVocabularyRepository` satisfies both protocols via duck typing (structural subtyping). The API vocabulary routes inject `VocabularyRepository` for CRUD operations and `VocabularyPort` for aggregate queries. The Worker uses `VocabularyPort` for `find_lemmas()` during vocabulary-aware article generation.
 
 #### TokenUsageRepository (`port/token_usage_repository.py`)
 
@@ -538,25 +618,34 @@ All MongoDB adapters follow the same pattern:
 - `stats.py`: `get_database_stats(db)` and `get_vocabulary_stats(db)` for the `/stats` endpoint
 - `connection.py`: MongoDB client singleton (`get_mongodb_client()`, `DATABASE_NAME`)
 
-#### External Service Adapters (`src/adapter/external/`)
+#### External Service Adapters (`src/adapter/external/`, `src/adapter/nlp/`)
 
-Adapters for outbound API calls (dictionary lookups, LLM calls). These implement the `DictionaryPort` and `LLMPort` protocols respectively.
+Adapters for outbound API calls (dictionary lookups, LLM calls) and local NLP processing. These implement the `DictionaryPort`, `LLMPort`, and `NLPPort` protocols respectively.
 
 | Adapter | File | Port | External Service |
 |---------|------|------|------------------|
-| `FreeDictionaryAdapter` | `free_dictionary.py` | `DictionaryPort` | Free Dictionary API |
-| `LiteLLMAdapter` | `litellm_adapter.py` | `LLMPort` | LLM providers via LiteLLM |
+| `FreeDictionaryAdapter` | `adapter/external/free_dictionary.py` | `DictionaryPort` | Free Dictionary API |
+| `LiteLLMAdapter` | `adapter/external/litellm.py` | `LLMPort` | LLM providers via LiteLLM |
+| `StanzaAdapter` | `adapter/nlp/stanza.py` | `NLPPort` | Stanza NLP (local) |
 
 **FreeDictionaryAdapter** (`adapter/external/free_dictionary.py`):
-- Implements `DictionaryPort.fetch()` -- fetches raw dictionary entries from the Free Dictionary API
-- Handles reflexive pronoun stripping, retry logic (3 attempts with exponential backoff), and error handling
-- Also provides `extract_entry_metadata()` utility for extracting POS, phonetics, forms, and gender from entries
-- Returns `list[dict] | None` (raw entries, not DTOs)
+- Implements all `DictionaryPort` methods: `fetch()`, `build_sense_listing()`, `get_sense()`, `extract_grammar()`
+- `fetch()`: Fetches raw dictionary entries from the Free Dictionary API with reflexive pronoun stripping, retry logic (3 attempts with exponential backoff), and error handling
+- `build_sense_listing()`: Formats entries into a numbered listing for LLM sense selection
+- `get_sense()`: Extracts definition and examples for the selected entry/sense/subsense by label (e.g., `"0.1.2"`)
+- `extract_grammar()`: Extracts POS, phonetics, forms, and gender from entries
+- Returns `list[dict] | None` from `fetch()` (raw entries, not DTOs)
 
-**LiteLLMAdapter** (`adapter/external/litellm_adapter.py`):
+**LiteLLMAdapter** (`adapter/external/litellm.py`):
 - Implements `LLMPort.call()` -- delegates to `call_llm_with_tracking()` from `utils/llm.py`
 - Thin wrapper that keeps the LiteLLM dependency behind the port boundary
 - Returns `tuple[str, TokenUsageStats]`
+
+**StanzaAdapter** (`adapter/nlp/stanza.py`):
+- Implements `NLPPort.extract()` -- runs Stanza German pipeline for dependency parsing
+- Returns a dict with linguistic primitives: `text`, `lemma`, `pos`, `xpos`, `gender`, `prefix`, `reflexive`, `parts`
+- Provides `preload()` method for eagerly loading the German pipeline (~349MB) at API startup
+- Singleton pattern via `get_nlp_port()` in `api/dependencies.py`
 
 #### Fake Adapters (`src/adapter/fake/`)
 
@@ -566,14 +655,17 @@ In-memory adapters for unit testing. No external dependencies required.
 |---------|------|------|
 | `FakeArticleRepository` | `article_repository.py` | `ArticleRepository` |
 | `FakeUserRepository` | `user_repository.py` | `UserRepository` |
-| `FakeVocabularyRepository` | `vocabulary_repository.py` | `VocabularyRepository` |
+| `FakeVocabularyRepository` | `vocabulary_repository.py` | `VocabularyRepository` + `VocabularyPort` |
 | `FakeTokenUsageRepository` | `token_usage_repository.py` | `TokenUsageRepository` |
-| `FakeDictionaryAdapter` | `dictionary_adapter.py` | `DictionaryPort` |
-| `FakeLLMAdapter` | `llm_adapter.py` | `LLMPort` |
+| `FakeDictionaryAdapter` | `dictionary.py` | `DictionaryPort` |
+| `FakeLLMAdapter` | `llm.py` | `LLMPort` |
+| `FakeNLPAdapter` | `nlp.py` | `NLPPort` |
 
-**FakeDictionaryAdapter**: Returns preconfigured `entries` list. Records `last_word` and `last_language` for assertion.
+**FakeDictionaryAdapter**: Returns preconfigured `entries` list. Implements all `DictionaryPort` methods (`fetch`, `build_sense_listing`, `get_sense`, `extract_grammar`). Records `last_word` and `last_language` for assertion.
 
 **FakeLLMAdapter**: Returns preconfigured `response` string and `TokenUsageStats`. Records all calls in `self.calls` list for assertion.
+
+**FakeNLPAdapter**: Returns preconfigured `result` dict. Records all calls in `self.calls` list for assertion.
 
 ### Composition Root (Dependency Injection)
 
@@ -601,12 +693,24 @@ def get_token_usage_repo() -> TokenUsageRepository:
 def get_vocab_repo() -> VocabularyRepository:
     return MongoVocabularyRepository(_get_db())
 
+def get_vocab_port() -> VocabularyPort:
+    return MongoVocabularyRepository(_get_db())
+
 def get_dictionary_port() -> DictionaryPort:
     return FreeDictionaryAdapter()
 
 def get_llm_port() -> LLMPort:
     return LiteLLMAdapter()
+
+def get_nlp_port() -> NLPPort:
+    """Get NLP port (Stanza adapter singleton for German lemma extraction)."""
+    global _stanza_adapter
+    if _stanza_adapter is None:
+        _stanza_adapter = StanzaAdapter()
+    return _stanza_adapter
 ```
+
+Note: `get_vocab_repo()` and `get_vocab_port()` both return `MongoVocabularyRepository`, which satisfies both protocols via duck typing. They are separate factory functions to make the dependency intent explicit at the injection site.
 
 Used by FastAPI route handlers via `Depends()`:
 
@@ -642,8 +746,11 @@ All database entities and external services use hexagonal architecture. Persiste
 |--------|------|--------------------|--------------|
 | Article | `ArticleRepository` | `MongoArticleRepository` | `FakeArticleRepository` |
 | User | `UserRepository` | `MongoUserRepository` | `FakeUserRepository` |
-| Vocabulary | `VocabularyRepository` | `MongoVocabularyRepository` | `FakeVocabularyRepository` |
+| Vocabulary (CRUD) | `VocabularyRepository` | `MongoVocabularyRepository` | `FakeVocabularyRepository` |
+| Vocabulary (Aggregates) | `VocabularyPort` | `MongoVocabularyRepository` | `FakeVocabularyRepository` |
 | Token Usage | `TokenUsageRepository` | `MongoTokenUsageRepository` | `FakeTokenUsageRepository` |
+
+Note: `MongoVocabularyRepository` (and its fake counterpart) satisfies both `VocabularyRepository` (CRUD) and `VocabularyPort` (aggregate queries) via duck typing.
 
 **External Service Ports:**
 
@@ -651,11 +758,16 @@ All database entities and external services use hexagonal architecture. Persiste
 |---------|------|--------------------|--------------|
 | Dictionary API | `DictionaryPort` | `FreeDictionaryAdapter` | `FakeDictionaryAdapter` |
 | LLM Provider | `LLMPort` | `LiteLLMAdapter` | `FakeLLMAdapter` |
+| NLP (Stanza) | `NLPPort` | `StanzaAdapter` | `FakeNLPAdapter` |
 
 **Additional components:**
 - `adapter/mongodb/indexes.py`: Centralized index management with `ensure_all_indexes(db)`
 - `adapter/mongodb/stats.py`: Database statistics for `/stats` endpoint
-- `services/vocabulary_service.py`: Business logic for vocabulary operations (duplicate detection, CEFR level filtering)
+- `services/vocabulary_service.py`: Business logic for vocabulary operations (save, delete with ownership verification)
+- `services/dictionary_service.py`: Dictionary lookup orchestrator (hybrid pipeline + full LLM fallback)
+- `services/lemma_extraction.py`: Step 1 of lookup pipeline (NLP for German, LLM for others)
+- `services/sense_selection.py`: Step 3 of lookup pipeline (LLM sense selection from dictionary entries)
+- `domain/model/errors.py`: Domain-level exceptions (`NotFoundError`, `PermissionDeniedError`, `DuplicateError`, `ValidationError`)
 
 ---
 
@@ -771,7 +883,7 @@ def get_by_article(self, article_id: str) -> list[TokenUsage]:
 
 #### Dictionary API (`src/api/routes/dictionary.py`)
 
-The route handler injects `DictionaryPort` and `LLMPort` directly via `Depends()` and passes them to `dictionary_service.lookup()` (a module function, not a class method):
+The route handler injects `DictionaryPort`, `LLMPort`, `NLPPort`, and `TokenUsageRepository` via `Depends()` and passes them to `dictionary_service.lookup()` (a module function, not a class method). Token usage tracking is handled internally by the service:
 
 ```python
 @router.post("/search", response_model=SearchResponse)
@@ -780,32 +892,61 @@ async def search_word(
     current_user: UserResponse = Depends(get_current_user_required),
     dictionary: DictionaryPort = Depends(get_dictionary_port),
     llm: LLMPort = Depends(get_llm_port),
-    token_usage_repo: TokenUsageRepository = Depends(get_token_usage_repo),
+    nlp: NLPPort = Depends(get_nlp_port),
+    token_usage_repo: TokenUsageRepo = Depends(get_token_usage_repo),
 ):
-    # Perform lookup via dictionary_service module function
-    result, stats = await dictionary_service.lookup(
+    result = await dictionary_service.lookup(
         word=request.word,
         sentence=request.sentence,
         language=request.language,
         dictionary=dictionary,
         llm=llm,
+        nlp=nlp,
+        token_usage_repo=token_usage_repo,
+        user_id=current_user.id,
+        article_id=request.article_id,
     )
 
-    # Track token usage via injected repository
-    if stats:
-        token_usage_repo.save(
-            user_id=current_user.id,
-            operation="dictionary_search",
-            model=stats.model,
-            prompt_tokens=stats.prompt_tokens,
-            completion_tokens=stats.completion_tokens,
-            estimated_cost=stats.estimated_cost,
-            article_id=request.article_id,
-            metadata={"word": request.word, "language": request.language,
-                       "source": result["source"], "phonetics": result["phonetics"]}
-        )
+    return SearchResponse(
+        lemma=result.lemma,
+        definition=result.definition,
+        related_words=result.related_words,
+        pos=result.grammar.pos,
+        gender=result.grammar.gender,
+        phonetics=result.grammar.phonetics,
+        conjugations=result.grammar.conjugations,
+        level=result.level,
+        examples=result.grammar.examples,
+    )
+```
 
-    return SearchResponse(...)
+Note: `dictionary_service.lookup()` returns a `LookupResult` domain object (not a tuple). Token usage is tracked per LLM call internally by the service via `token_usage_service.track_llm_usage()`.
+
+#### Vocabulary API (`src/api/routes/vocabulary.py`)
+
+Vocabulary CRUD endpoints are in a separate router from dictionary search. The router injects `VocabularyRepository` for write operations and `VocabularyPort` for aggregate read queries:
+
+```python
+router = APIRouter(prefix="/dictionary", tags=["vocabulary"])
+
+@router.post("/vocabulary", response_model=VocabularyResponse)
+async def add_vocabulary(
+    request: VocabularyRequest,
+    current_user: UserResponse = Depends(get_current_user_required),
+    repo: VocabularyRepository = Depends(get_vocab_repo),
+): ...
+
+@router.get("/vocabularies", response_model=list[VocabularyCountResponse])
+async def get_vocabularies_list(
+    ...,
+    port: VocabularyPort = Depends(get_vocab_port),
+): ...
+
+@router.delete("/vocabularies/{vocabulary_id}")
+async def delete_vocabulary_word(
+    ...,
+    repo: VocabularyRepository = Depends(get_vocab_repo),
+): ...
 ```
 
 #### Token Usage API Endpoints (`src/api/routes/usage.py`)
@@ -1140,9 +1281,10 @@ class GrammaticalInfo:
     gender: str | None = None
     phonetics: str | None = None
     conjugations: dict | None = None
-    level: str | None = None
     examples: list[str] | None = None
 ```
+
+Note: `level` (CEFR) is a top-level field on `Vocabulary` and `LookupResult`, not part of `GrammaticalInfo`.
 
 **Usage (via vocabulary_service)**:
 ```python
@@ -1154,11 +1296,10 @@ grammar = GrammaticalInfo(
     gender='der',
     phonetics='/hʊnt/',
     conjugations={'genitive': 'Hundes', 'plural': 'Hunde'},
-    level='A1',
     examples=['Der Hund bellt.', 'Ich habe einen Hund.'],
 )
 
-vocabulary_service.save_vocabulary(
+vocabulary_service.save(
     repo,
     article_id=article_id,
     word='Hunde',
@@ -1167,6 +1308,7 @@ vocabulary_service.save_vocabulary(
     sentence='Die Hunde spielen im Park.',
     language='German',
     user_id=user_id,
+    level='A1',
     grammar=grammar,
 )
 ```
@@ -1390,48 +1532,57 @@ opad/
 │   │   └── model/
 │   │       ├── article.py       # Article, ArticleInputs, ArticleStatus
 │   │       ├── user.py          # User
-│   │       ├── vocabulary.py    # Vocabulary, GrammaticalInfo, VocabularyCount
-│   │       └── token_usage.py   # TokenUsage, TokenUsageSummary, OperationUsage, DailyUsage
+│   │       ├── vocabulary.py    # Vocabulary, GrammaticalInfo, VocabularyCount, LookupResult, SenseResult
+│   │       ├── token_usage.py   # TokenUsage, TokenUsageSummary, OperationUsage, DailyUsage
+│   │       └── errors.py        # DomainError, NotFoundError, PermissionDeniedError, DuplicateError, ValidationError
 │   │
 │   ├── port/             # Port layer (hexagonal architecture)
 │   │   ├── article_repository.py       # ArticleRepository Protocol
 │   │   ├── user_repository.py          # UserRepository Protocol
-│   │   ├── vocabulary_repository.py    # VocabularyRepository Protocol
+│   │   ├── vocabulary_repository.py    # VocabularyRepository Protocol (CRUD)
+│   │   ├── vocabulary.py               # VocabularyPort Protocol (aggregate queries)
 │   │   ├── token_usage_repository.py   # TokenUsageRepository Protocol
-│   │   ├── dictionary.py               # DictionaryPort Protocol (external API)
-│   │   └── llm.py                      # LLMPort Protocol (LLM calls)
+│   │   ├── dictionary.py               # DictionaryPort Protocol (fetch + sense parsing + grammar extraction)
+│   │   ├── llm.py                      # LLMPort Protocol (LLM calls)
+│   │   └── nlp.py                      # NLPPort Protocol (NLP extraction)
 │   │
 │   ├── adapter/          # Adapter layer (hexagonal architecture)
 │   │   ├── mongodb/
 │   │   │   ├── connection.py              # MongoDB client (get_mongodb_client)
 │   │   │   ├── article_repository.py      # MongoArticleRepository
 │   │   │   ├── user_repository.py         # MongoUserRepository
-│   │   │   ├── vocabulary_repository.py   # MongoVocabularyRepository
+│   │   │   ├── vocabulary_repository.py   # MongoVocabularyRepository (satisfies both VocabularyRepository + VocabularyPort)
 │   │   │   ├── token_usage_repository.py  # MongoTokenUsageRepository
 │   │   │   ├── indexes.py                 # Shared index management (ensure_all_indexes)
 │   │   │   └── stats.py                   # Database statistics (get_database_stats)
 │   │   ├── external/
 │   │   │   ├── free_dictionary.py         # FreeDictionaryAdapter (DictionaryPort)
-│   │   │   └── litellm_adapter.py         # LiteLLMAdapter (LLMPort)
+│   │   │   └── litellm.py                # LiteLLMAdapter (LLMPort)
+│   │   ├── nlp/
+│   │   │   └── stanza.py                 # StanzaAdapter (NLPPort)
 │   │   └── fake/
 │   │       ├── article_repository.py      # FakeArticleRepository (testing)
 │   │       ├── user_repository.py         # FakeUserRepository (testing)
-│   │       ├── vocabulary_repository.py   # FakeVocabularyRepository (testing)
+│   │       ├── vocabulary_repository.py   # FakeVocabularyRepository (testing, satisfies both ports)
 │   │       ├── token_usage_repository.py  # FakeTokenUsageRepository (testing)
-│   │       ├── dictionary_adapter.py     # FakeDictionaryAdapter (testing)
-│   │       └── llm_adapter.py            # FakeLLMAdapter (testing)
+│   │       ├── dictionary.py              # FakeDictionaryAdapter (testing)
+│   │       ├── llm.py                     # FakeLLMAdapter (testing)
+│   │       └── nlp.py                     # FakeNLPAdapter (testing)
 │   │
 │   ├── api/              # API 서비스 (FastAPI)
 │   │   ├── __init__.py
 │   │   ├── main.py       # FastAPI 앱 진입점 (lifespan pattern)
-│   │   ├── dependencies.py  # Composition root (all repository factories)
+│   │   ├── dependencies.py  # Composition root (all repository + port factories)
 │   │   ├── models.py     # Pydantic 모델 (Article, Job)
 │   │   ├── routes/       # API 엔드포인트
 │   │   │   ├── articles.py
 │   │   │   ├── jobs.py
 │   │   │   ├── health.py
 │   │   │   ├── stats.py
-│   │   │   └── dictionary.py  # Dictionary API (word definition)
+│   │   │   ├── auth.py        # Authentication (register, login, me)
+│   │   │   ├── usage.py       # Token usage endpoints
+│   │   │   ├── dictionary.py  # Dictionary search (POST /dictionary/search)
+│   │   │   └── vocabulary.py  # Vocabulary CRUD (POST/GET/DELETE /dictionary/vocabularies)
 │   │   └── job_queue.py  # Redis 큐 관리
 │   │
 │   ├── worker/           # Worker 서비스 (Python)
@@ -1479,18 +1630,19 @@ opad/
 │   │       └── tasks.yaml   # 태스크 정의 (find_news_articles, pick_best_article, adapt_news_article, review_article_quality)
 │   │
 │   ├── services/         # 서비스 계층 (business logic)
-│   │   ├── dictionary_service.py  # Dictionary lookup orchestrator (module functions, accepts DictionaryPort + LLMPort)
-│   │   └── vocabulary_service.py  # Vocabulary business logic (save, counts, CEFR filtering)
+│   │   ├── dictionary_service.py  # Dictionary lookup orchestrator (hybrid pipeline + full LLM fallback)
+│   │   ├── vocabulary_service.py  # Vocabulary business logic (save, delete with ownership)
+│   │   ├── lemma_extraction.py    # Step 1: Lemma extraction (NLP for German, LLM for others)
+│   │   ├── sense_selection.py     # Step 3: Sense selection from dictionary entries via LLM
+│   │   ├── auth_service.py        # Authentication business logic
+│   │   └── token_usage_service.py # Token usage tracking helper
 │   │
 │   └── utils/            # 공통 유틸리티 (공유)
 │       ├── logging.py    # Structured logging 설정
-│       ├── llm.py        # OpenAI API 공통 함수
+│       ├── llm.py        # LLM API 공통 함수 (call_llm_with_tracking, parse_json_from_content)
 │       ├── prompts.py    # Full LLM fallback 프롬프트만 포함
-│       ├── lemma_extraction.py  # Step 1: Lemma extraction (Stanza for German, LLM for others)
-│       ├── sense_selection.py   # Step 3: Sense selection from dictionary entries via LLM
-│       ├── dictionary_api.py    # Free Dictionary API wrapper (uses language_metadata for gender/reflexive/phonetics data)
 │       ├── language_metadata.py # Pure data constants (GENDER_MAP, REFLEXIVE_PREFIXES, REFLEXIVE_SUFFIXES, PHONETICS_SUPPORTED)
-│       └── token_usage.py # Token usage calculation and tracking
+│       └── token_usage.py # Token usage calculation and tracking (CrewAI)
 │
 └── Dockerfile.*          # 서비스별 Dockerfile (이슈 #9)
 ```
@@ -1499,7 +1651,7 @@ opad/
 | 폴더 | 역할 | 런타임 | 포트 |
 |------|------|--------|------|
 | `src/domain/` | Domain models (Article, User, Vocabulary, TokenUsage) | - | - |
-| `src/port/` | Port definitions (ArticleRepository, UserRepository, VocabularyRepository, TokenUsageRepository, DictionaryPort, LLMPort) | - | - |
+| `src/port/` | Port definitions (ArticleRepository, UserRepository, VocabularyRepository, VocabularyPort, TokenUsageRepository, DictionaryPort, LLMPort, NLPPort) | - | - |
 | `src/adapter/` | Infrastructure adapters (MongoDB, External APIs, Fake) | - | - |
 | `src/services/` | Business logic (vocabulary_service, dictionary_service) | - | - |
 | `src/api/` | CRUD + Job enqueue + Dictionary API | Python (FastAPI) | 8001 (default) |
@@ -1512,7 +1664,7 @@ opad/
 | 파일 | 역할 | 의존성 |
 |------|------|--------|
 | `worker/main.py` | Worker 진입점 + composition root (MongoArticleRepository 생성) | `processor.py`, `adapter/mongodb/` |
-| `worker/processor.py` | Job 처리 로직 (process_job) -- `ArticleRepository` 주입 받음 | `crew/main.py`, `utils/token_usage.py`, `port/article_repository.py` |
+| `worker/processor.py` | Job 처리 로직 (process_job) -- `ArticleRepository` + `VocabularyPort` 주입 받음 | `crew/main.py`, `utils/token_usage.py`, `port/article_repository.py`, `port/vocabulary.py` |
 | `worker/context.py` | JobContext helper (job data validation) -- `ArticleRepository` 주입 받음 | `api/job_queue.py`, `port/article_repository.py` |
 | `crew/progress_listener.py` | JobProgressListener (CrewAI event listener) | `api/job_queue.py` |
 
@@ -1569,14 +1721,14 @@ result = parse_json_from_content(content)
 
 ### Dictionary Lookup Pipeline Modules
 
-The dictionary lookup uses a 3-step pipeline, split across dedicated modules:
+The dictionary lookup uses a 3-step pipeline, split across dedicated modules in the services layer:
 
-#### Step 1: Lemma Extraction (`utils/lemma_extraction.py`)
+#### Step 1: Lemma Extraction (`services/lemma_extraction.py`)
 Extracts lemma + related_words + CEFR level from a word in context.
 
-- **`extract_lemma()`**: Main entry point. German uses Stanza NLP (local, ~51ms); other languages use LLM reduced prompt (~800ms).
-- **`preload_stanza()`**: Eagerly loads the Stanza German pipeline at API startup (~349MB).
-- **Stanza path (German)**: Dependency parsing for lemma + related_words, then a tiny LLM call for CEFR level estimation (max_tokens=10).
+- **`extract_lemma()`**: Main entry point. German uses `NLPPort` (Stanza, ~51ms); other languages use LLM reduced prompt (~800ms).
+- **`resolve_lemma()`**: Applies German grammar rules to determine lemma and related_words from NLP output.
+- **NLP path (German)**: `NLPPort.extract()` for dependency parsing, then a tiny LLM call for CEFR level estimation (max_tokens=10).
 - **LLM path (other languages)**: Language-specific reduced prompts (`_build_reduced_prompt_en`, `_build_reduced_prompt_de` fallback, `_build_reduced_prompt_generic`).
 
 **사용 예시:**
@@ -1600,32 +1752,34 @@ result, stats = await extract_lemma(
 # result = {"lemma": "give up", "related_words": ["gave", "up"], "level": "B1"}
 ```
 
-#### Step 2: Sense Selection (`utils/sense_selection.py`)
+#### Step 3: Sense Selection (`services/sense_selection.py`)
 Selects the best entry/sense/subsense from Free Dictionary API entries using LLM.
 
-- **`select_best_sense()`**: Given dictionary entries, selects the best sense matching the word usage in context.
-- **Trivial skip**: If only 1 entry with 1 sense and no subsenses, skips LLM call entirely.
+- **`select_best_sense()`**: Given dictionary entries, selects the best sense matching the word usage in context. Uses `DictionaryPort.build_sense_listing()` to format entries and `DictionaryPort.get_sense()` to extract the selected sense.
+- **Trivial skip**: If `build_sense_listing()` returns `None` (single entry, single sense, no subsenses), skips LLM call entirely.
 - **X.Y.Z format**: LLM responds with entry.sense.subsense index (max_tokens=10).
-- **`SenseResult`**: Dataclass with `entry_idx`, `sense_idx`, `subsense_idx`, `definition`, `examples`, `stats`.
+- **`SenseResult`**: Dataclass with `definition` and `examples` fields.
 
 **사용 예시:**
 ```python
-from utils.sense_selection import select_best_sense
+from services.sense_selection import select_best_sense
 
-sense = await select_best_sense(
+sense, label, stats = await select_best_sense(
     sentence="I saw the dog in the park.",
     word="saw",
     entries=api_entries,  # from Free Dictionary API
+    dictionary=dictionary_port,
+    llm=llm_port,
 )
-# sense.entry_idx = 0, sense.definition = "past tense of see"
+# sense.definition = "past tense of see"
 ```
 
 #### Full LLM Fallback (`utils/prompts.py`)
 Only contains the full LLM fallback prompt (used when hybrid pipeline fails).
 
 - **`build_word_definition_prompt()`**: Full LLM fallback prompt generating all fields (lemma, definition, pos, gender, conjugations, level).
-- Reduced prompts (lemma extraction) have moved to `utils/lemma_extraction.py`.
-- Sense selection prompts have moved to `utils/sense_selection.py`.
+- Reduced prompts (lemma extraction) live in `services/lemma_extraction.py`.
+- Sense selection prompts live in `services/sense_selection.py`.
 
 **사용 예시:**
 ```python
@@ -1640,7 +1794,7 @@ full_prompt = build_word_definition_prompt(
 ```
 
 #### Language Metadata (`utils/language_metadata.py`)
-Pure data module containing language-specific constants used by `adapter/external/free_dictionary.py` and `utils/dictionary_api.py`. No logic -- only data definitions.
+Pure data module containing language-specific constants used by `adapter/external/free_dictionary.py`. No logic -- only data definitions.
 
 - **`GENDER_MAP`**: Maps gender keywords to grammatical articles per language (e.g., `"masculine"` -> `"der"` for German, `"le"` for French, `"el"` for Spanish).
 - **`REFLEXIVE_PREFIXES`**: Reflexive pronoun prefixes to strip before API lookup (e.g., `"sich "` for German, `"se "` / `"s'"` for French).
@@ -1671,7 +1825,7 @@ REFLEXIVE_PREFIXES["de"]  # ["sich ", "mich ", "dich ", "uns ", "euch "]
 
 ### Hybrid Dictionary Lookup Architecture
 
-The dictionary search uses a 3-step pipeline combining Stanza NLP (German), LLM capabilities, and the Free Dictionary API. The pipeline is split across dedicated modules: `utils/lemma_extraction.py` (Step 1), `utils/sense_selection.py` (Step 3), and `services/dictionary_service.py` (orchestrator, module functions). External dependencies are injected via `DictionaryPort` (dictionary lookups) and `LLMPort` (LLM calls).
+The dictionary search uses a 3-step pipeline combining NLP (German via `NLPPort`), LLM capabilities (via `LLMPort`), and the Free Dictionary API (via `DictionaryPort`). The pipeline is split across dedicated modules in the services layer: `services/lemma_extraction.py` (Step 1), `services/sense_selection.py` (Step 2), and `services/dictionary_service.py` (orchestrator). All external dependencies are injected via ports.
 
 #### Overview
 
@@ -1762,28 +1916,29 @@ sequenceDiagram
 
 | Module | File | Responsibility | Output |
 |--------|------|----------------|--------|
-| **Lemma Extraction** | `utils/lemma_extraction.py` | Step 1: Extract lemma + related_words + CEFR level. German uses Stanza NLP (~51ms), others use LLM reduced prompt (~800ms). Accepts `LLMPort` for LLM calls. | `{"lemma", "related_words", "level"}` + `TokenUsageStats` |
-| **Sense Selection** | `utils/sense_selection.py` | Step 3: Select best entry/sense/subsense from dictionary entries via LLM (X.Y.Z format, max_tokens=10). Accepts `LLMPort`. | `SenseResult(entry_idx, sense_idx, subsense_idx, definition, examples, stats)` |
-| **Dictionary Port** | `port/dictionary.py` | Protocol defining `fetch(word, language) -> list[dict] | None` for dictionary entry retrieval | Raw entry dicts |
+| **Lemma Extraction** | `services/lemma_extraction.py` | Step 1: Extract lemma + related_words + CEFR level. German uses `NLPPort` (Stanza, ~51ms), others use LLM reduced prompt (~800ms). Accepts `LLMPort` and `NLPPort`. | `LemmaResult{"lemma", "related_words", "level"}` + `LLMCallResult` |
+| **Sense Selection** | `services/sense_selection.py` | Step 3: Select best entry/sense/subsense from dictionary entries via LLM (X.Y.Z format, max_tokens=10). Uses `DictionaryPort.build_sense_listing()` and `DictionaryPort.get_sense()`. | `(SenseResult, label, LLMCallResult)` |
+| **Dictionary Port** | `port/dictionary.py` | Protocol: `fetch()`, `build_sense_listing()`, `get_sense()`, `extract_grammar()` -- encapsulates entry-structure knowledge | Raw entry dicts / `SenseResult` / `GrammaticalInfo` |
 | **LLM Port** | `port/llm.py` | Protocol defining `call(messages, model, timeout) -> (str, TokenUsageStats)` for LLM API calls | `(content, TokenUsageStats)` |
-| **Free Dictionary Adapter** | `adapter/external/free_dictionary.py` | Implements `DictionaryPort`; HTTP calls to Free Dictionary API with retry logic. Also provides `extract_entry_metadata()` for POS, phonetics, forms, gender extraction. | `list[dict] | None` |
-| **LiteLLM Adapter** | `adapter/external/litellm_adapter.py` | Implements `LLMPort`; delegates to `call_llm_with_tracking()` from `utils/llm.py` | `(str, TokenUsageStats)` |
-| **Dictionary API (legacy)** | `utils/dictionary_api.py` | Free Dictionary API wrapper with `DictionaryAPIResult` DTO and `extract_entry_metadata()`. Entry metadata extraction is also available in `adapter/external/free_dictionary.py`. | `DictionaryAPIResult` |
+| **NLP Port** | `port/nlp.py` | Protocol defining `extract(word, sentence) -> dict | None` for NLP analysis | Dict with `text`, `lemma`, `pos`, `xpos`, `gender`, `prefix`, `reflexive`, `parts` |
+| **Free Dictionary Adapter** | `adapter/external/free_dictionary.py` | Implements all `DictionaryPort` methods; HTTP calls to Free Dictionary API with retry logic. `extract_grammar()` extracts POS, phonetics, forms, gender. | `list[dict]`, `SenseResult`, `GrammaticalInfo` |
+| **LiteLLM Adapter** | `adapter/external/litellm.py` | Implements `LLMPort`; delegates to `call_llm_with_tracking()` from `utils/llm.py` | `(str, TokenUsageStats)` |
+| **Stanza Adapter** | `adapter/nlp/stanza.py` | Implements `NLPPort`; German dependency parsing via Stanza | Dict with linguistic primitives |
 | **Language Metadata** | `utils/language_metadata.py` | Pure data constants: `GENDER_MAP`, `REFLEXIVE_PREFIXES`, `REFLEXIVE_SUFFIXES`, `PHONETICS_SUPPORTED` | Data only (no logic) |
-| **Dictionary Service** | `services/dictionary_service.py` | Orchestrator (module functions): `lookup()` wires Step 1 -> API -> Step 3, handles fallback. Accepts `DictionaryPort` and `LLMPort` as parameters. | `(result_dict, TokenUsageStats)` |
+| **Dictionary Service** | `services/dictionary_service.py` | Orchestrator (module functions): `lookup()` wires Step 1 -> API -> Step 2, handles fallback. Accepts `DictionaryPort`, `LLMPort`, and `NLPPort` as parameters. | `LookupResult` |
 | **Full LLM Fallback** | `utils/prompts.py` | Fallback prompt when hybrid pipeline fails (max_tokens=2000) | All fields except `phonetics` and `examples` |
 
 #### Components
 
 | Component | Responsibility | Output Fields |
 |-----------|----------------|---------------|
-| **Stanza NLP (German)** | Local dependency parsing for lemma + related_words (~51ms, ~349MB model) | `lemma`, `related_words` |
-| **LLM (CEFR Estimation)** | Tiny LLM call for CEFR level on Stanza path (max_tokens=10) | `level` |
+| **NLP (German via NLPPort)** | Local dependency parsing for lemma + related_words (~51ms, ~349MB model) | `lemma`, `related_words` |
+| **LLM (CEFR Estimation)** | Tiny LLM call for CEFR level on NLP path (max_tokens=10) | `level` |
 | **LLM (Reduced Prompt)** | Context-aware lemma extraction for non-German languages (max_tokens=200) | `lemma`, `related_words`, `level` |
-| **Free Dictionary API** | Returns all dictionary entries with senses and subsenses | `all_entries` (containing `pos`, `senses`, `phonetics`, `forms` per entry) |
+| **Free Dictionary API (via DictionaryPort)** | Returns all dictionary entries with senses and subsenses | `all_entries` (containing `pos`, `senses`, `phonetics`, `forms` per entry) |
 | **LLM (Sense Selection)** | Selects best entry+sense+subsense using X.Y.Z format based on sentence context (max_tokens=10) | `definition`, `examples` (from selected sense/subsense) |
-| **Metadata Extraction** | Extracts POS, phonetics, forms, gender from the selected entry (not always entries[0]). Logic lives in `adapter/external/free_dictionary.py` (port-based flow) and `utils/dictionary_api.py` (legacy). Data constants in `language_metadata.py`. | `pos`, `phonetics`, `forms`, `gender` |
-| **Merge Function** | Combines results, converts `forms` to `conjugations` format, accumulates token stats | All fields |
+| **Grammar Extraction (via DictionaryPort)** | Extracts POS, phonetics, forms, gender from the selected entry (not always entries[0]). Logic in `adapter/external/free_dictionary.py`. Data constants in `language_metadata.py`. | `GrammaticalInfo` (pos, phonetics, conjugations, gender) |
+| **Result Building** | Combines lemma data, grammar, and sense into `LookupResult` domain object | All fields |
 | **Full LLM Fallback** | Complete definition when hybrid fails (max_tokens=2000) | All fields except `phonetics` and `examples` |
 
 #### Supported Languages
@@ -1947,11 +2102,11 @@ Token usage is tracked for all dictionary searches:
 - **복합어 처리**: 단어가 복합어의 일부인 경우 전체 형태 반환
 - **related_words**: 문장에서 같은 lemma에 속하는 모든 단어들을 배열로 반환 (예: 분리 동사의 경우 모든 부분 포함)
 - **문법적 메타데이터**: 품사(pos), 성(gender), 동사 활용형(conjugations), CEFR 레벨(level), IPA 발음(phonetics), 예문(examples) 추출
-- **모듈 구성**: `utils/lemma_extraction.py` (Step 1), `utils/sense_selection.py` (Step 3), `services/dictionary_service.py` (오케스트레이터), `utils/prompts.py` (폴백만 포함)
+- **모듈 구성**: `services/lemma_extraction.py` (Step 1), `services/sense_selection.py` (Step 3), `services/dictionary_service.py` (오케스트레이터), `utils/prompts.py` (폴백만 포함)
 - **보안**: Regex injection 방지를 위한 `re.escape()` 적용
 
 **흐름**: 위 [Hybrid Dictionary Lookup Architecture](#hybrid-dictionary-lookup-architecture) 섹션의 Data Flow 참조.
-Frontend -> Next.js API(`/api/dictionary/search`) -> FastAPI(`/dictionary/search`) -> `dictionary_service.lookup()` (orchestrator, module function) -> Step 1 (`lemma_extraction` via `LLMPort`) -> Step 2 (`DictionaryPort.fetch()`) -> Step 3 (`sense_selection` via `LLMPort`) 순으로 처리됨.
+Frontend -> Next.js API(`/api/dictionary/search`) -> FastAPI(`/dictionary/search`) -> `dictionary_service.lookup()` (orchestrator, module function) -> Step 1 (`lemma_extraction` via `LLMPort` + `NLPPort`) -> Step 2 (`DictionaryPort.fetch()`) -> Step 3 (`sense_selection` via `LLMPort` + `DictionaryPort`) 순으로 처리됨.
 
 ---
 

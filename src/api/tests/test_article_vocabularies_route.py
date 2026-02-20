@@ -1,6 +1,7 @@
 """Unit tests for article vocabularies route."""
 
 import unittest
+import uuid
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
@@ -16,7 +17,7 @@ from api.dependencies import get_article_repo, get_vocab_repo
 from adapter.fake.article_repository import FakeArticleRepository
 from adapter.fake.vocabulary_repository import FakeVocabularyRepository
 from domain.model.article import ArticleInputs, ArticleStatus
-from domain.model.vocabulary import GrammaticalInfo
+from domain.model.vocabulary import GrammaticalInfo, Vocabulary
 
 
 class TestGetArticleVocabularies(unittest.TestCase):
@@ -61,15 +62,17 @@ class TestGetArticleVocabularies(unittest.TestCase):
         """Test successful retrieval of article vocabularies."""
         self._setup_auth_and_repo()
         self._create_test_article()
-        self.vocab_repo.save(
+        self.vocab_repo.save(Vocabulary(
+            id=str(uuid.uuid4()),
             article_id=self.article_id,
             word='testing',
             lemma='test',
             definition='a procedure',
             sentence='This is a test.',
             language='English',
+            created_at=datetime.now(timezone.utc),
             user_id='test-user-123',
-        )
+        ))
 
         response = self.client.get(f"/articles/{self.article_id}/vocabularies")
 

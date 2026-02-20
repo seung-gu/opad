@@ -1,58 +1,44 @@
 <mxfile host="65bd71144e">
     <diagram id="cosmic-python-style" name="OPAD Layered Architecture">
-        <mxGraphModel dx="363" dy="303" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+        <mxGraphModel dx="981" dy="336" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="1000" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
-
-                <!-- ===== External Client (Cloud) ===== -->
                 <mxCell id="cloud1" value="Client&#xa;(Browser)" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#E6F3FF;strokeColor=#4A90D9;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="40" y="10" width="120" height="60" as="geometry"/>
                 </mxCell>
-
-                <!-- ===== External Message Broker (Redis) ===== -->
                 <mxCell id="redis_top" value="Redis (Job Queue)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B5E6CC;strokeColor=#28A745;fontStyle=1;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="400" y="20" width="200" height="40" as="geometry"/>
+                    <mxGeometry x="440" y="20" width="200" height="40" as="geometry"/>
                 </mxCell>
-
-                <!-- ===== Entrypoints ===== -->
                 <mxCell id="api" value="API&#xa;(FastAPI :8001)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B5D8F7;strokeColor=#4A90D9;fontStyle=1;fontSize=12;" parent="1" vertex="1">
                     <mxGeometry x="60" y="120" width="140" height="50" as="geometry"/>
                 </mxCell>
                 <mxCell id="worker" value="Worker&#xa;(Redis Consumer)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B5D8F7;strokeColor=#4A90D9;fontStyle=1;fontSize=12;" parent="1" vertex="1">
-                    <mxGeometry x="400" y="120" width="160" height="50" as="geometry"/>
+                    <mxGeometry x="460" y="120" width="160" height="50" as="geometry"/>
                 </mxCell>
-
-                <!-- Client → API -->
                 <mxCell id="e_client_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeColor=#666;" parent="1" source="cloud1" target="api" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-
-                <!-- Redis top → Worker -->
                 <mxCell id="e_redis_worker" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeColor=#28A745;" parent="1" source="redis_top" target="worker" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="lbl_blpop" value="BLPOP" style="text;html=1;fontSize=9;fillColor=none;strokeColor=none;fontColor=#28A745;" parent="1" vertex="1">
-                    <mxGeometry x="520" y="80" width="40" height="20" as="geometry"/>
+                    <mxGeometry x="580" y="80" width="40" height="20" as="geometry"/>
                 </mxCell>
-
-                <!-- API → Redis (RPUSH) -->
                 <mxCell id="e_api_redis" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeColor=#28A745;exitX=1;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" target="redis_top" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="245" y="120"/>
-                            <mxPoint x="245" y="40"/>
+                            <mxPoint x="300" y="120"/>
+                            <mxPoint x="300" y="40"/>
                         </Array>
-                        <mxPoint x="175" y="120" as="sourcePoint"/>
+                        <mxPoint x="200" y="120" as="sourcePoint"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="lbl_rpush" value="RPUSH" style="text;html=1;fontSize=9;fillColor=none;strokeColor=none;fontColor=#28A745;" parent="1" vertex="1">
-                    <mxGeometry x="310" y="40" width="40" height="20" as="geometry"/>
+                    <mxGeometry x="355" y="40" width="40" height="20" as="geometry"/>
                 </mxCell>
-
-                <!-- ===== Bootstrap (Diamond) ===== -->
-                <mxCell id="bootstrap" value="DI&#xa;(Dependencies)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#B5D8F7;strokeColor=#4A90D9;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="230" y="110" width="120" height="70" as="geometry"/>
+                <mxCell id="bootstrap" value="DI&#xa;(dependencies.py)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#B5D8F7;strokeColor=#4A90D9;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="265" y="105" width="140" height="75" as="geometry"/>
                 </mxCell>
                 <mxCell id="e_api_boot" style="rounded=0;strokeColor=#666;" parent="1" source="api" target="bootstrap" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
@@ -60,32 +46,39 @@
                 <mxCell id="e_worker_boot" style="rounded=0;strokeColor=#666;" parent="1" source="worker" target="bootstrap" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-
-                <!-- ===== Routes ===== -->
                 <mxCell id="routes_label" value="Routes" style="text;html=1;fontSize=10;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#4A90D9;" parent="1" vertex="1">
-                    <mxGeometry x="60" y="175" width="50" height="20" as="geometry"/>
+                    <mxGeometry x="55" y="185" width="50" height="20" as="geometry"/>
                 </mxCell>
                 <mxCell id="route_dict" value="dictionary.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="60" y="195" width="90" height="25" as="geometry"/>
+                    <mxGeometry x="55" y="205" width="80" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="route_vocab" value="vocabulary.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="140" y="205" width="85" height="25" as="geometry"/>
                 </mxCell>
                 <mxCell id="route_articles" value="articles.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="160" y="195" width="80" height="25" as="geometry"/>
+                    <mxGeometry x="230" y="205" width="75" height="25" as="geometry"/>
                 </mxCell>
                 <mxCell id="route_jobs" value="jobs.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="60" y="225" width="90" height="25" as="geometry"/>
+                    <mxGeometry x="310" y="205" width="55" height="25" as="geometry"/>
                 </mxCell>
                 <mxCell id="route_usage" value="usage.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="160" y="225" width="80" height="25" as="geometry"/>
+                    <mxGeometry x="55" y="235" width="70" height="25" as="geometry"/>
                 </mxCell>
-
-                <!-- Worker internals -->
+                <mxCell id="route_auth" value="auth.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="135" y="235" width="60" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="route_stats" value="stats.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="205" y="235" width="60" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="route_health" value="health.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="275" y="235" width="65" height="25" as="geometry"/>
+                </mxCell>
                 <mxCell id="processor" value="processor.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E74C3C;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="440" y="207" width="90" height="25" as="geometry"/>
+                    <mxGeometry x="485" y="215" width="90" height="25" as="geometry"/>
                 </mxCell>
                 <mxCell id="crew" value="CrewAI Pipeline" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E74C3C;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="545" y="207" width="100" height="25" as="geometry"/>
+                    <mxGeometry x="590" y="215" width="100" height="25" as="geometry"/>
                 </mxCell>
-
                 <mxCell id="e_api_routes" style="rounded=0;strokeColor=#4A90D9;dashed=1;" parent="1" source="api" target="route_dict" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
@@ -95,175 +88,230 @@
                 <mxCell id="e_proc_crew" style="rounded=0;strokeColor=#E74C3C;" parent="1" source="processor" target="crew" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-
-                <!-- ===== Service Layer ===== -->
                 <mxCell id="svc_layer" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#4A90D9;dashed=1;dashPattern=8 4;strokeWidth=2;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="270" width="620" height="100" as="geometry"/>
+                    <mxGeometry x="40" y="280" width="710" height="140" as="geometry"/>
                 </mxCell>
                 <mxCell id="svc_label" value="Service Layer" style="text;html=1;fontSize=12;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#4A90D9;align=right;" parent="1" vertex="1">
-                    <mxGeometry x="550" y="345" width="100" height="20" as="geometry"/>
+                    <mxGeometry x="630" y="395" width="110" height="20" as="geometry"/>
                 </mxCell>
-
-                <mxCell id="dict_svc" value="dictionary_service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="60" y="290" width="140" height="35" as="geometry"/>
+                <mxCell id="dict_svc" value="dictionary_service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=10;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="300" width="140" height="35" as="geometry"/>
                 </mxCell>
-                <mxCell id="vocab_svc" value="save_vocabulary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="220" y="290" width="120" height="35" as="geometry"/>
+                <mxCell id="lemma_svc" value="lemma_extraction" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;fontStyle=2;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="345" width="120" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="sense_svc" value="sense_selection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;fontStyle=2;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="380" width="120" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_dsvc_lemma" style="rounded=0;strokeColor=#82b366;dashed=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0;entryDx=0;entryDy=0;" parent="1" source="dict_svc" target="lemma_svc" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_dsvc_sense" style="rounded=0;strokeColor=#82b366;dashed=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0;entryDx=0;entryDy=0;" parent="1" source="lemma_svc" target="sense_svc" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="vocab_svc" value="vocabulary_service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="230" y="300" width="130" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="token_svc" value="token_usage_service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="390" y="300" width="140" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="auth_svc" value="auth_service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="230" y="350" width="110" height="28" as="geometry"/>
                 </mxCell>
                 <mxCell id="job_queue" value="job_queue" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3CD;strokeColor=#F0AD4E;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="360" y="290" width="100" height="35" as="geometry"/>
+                    <mxGeometry x="560" y="300" width="100" height="35" as="geometry"/>
                 </mxCell>
-
-                <!-- Routes → Services -->
                 <mxCell id="e_rdict_dsvc" style="rounded=0;strokeColor=#666;" parent="1" source="route_dict" target="dict_svc" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_rdict_vsvc" style="rounded=0;strokeColor=#666;" parent="1" source="route_dict" target="vocab_svc" edge="1">
+                <mxCell id="e_rvocab_vsvc" style="rounded=0;strokeColor=#666;" parent="1" source="route_vocab" target="vocab_svc" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="e_rart_jq" style="rounded=0;strokeColor=#666;" parent="1" source="route_articles" target="job_queue" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-
-                <!-- ===== Domain ===== -->
+                <mxCell id="e_rauth_asvc" style="rounded=0;strokeColor=#666;" parent="1" source="route_auth" target="auth_svc" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_asvc_user" style="rounded=0;strokeColor=#666;" parent="1" source="auth_svc" target="d_user" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_dsvc_token" style="rounded=0;strokeColor=#666;" parent="1" source="dict_svc" target="token_svc" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_proc_token_svc" style="rounded=0;strokeColor=#666;" parent="1" source="processor" target="token_svc" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
                 <mxCell id="domain" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999;dashed=1;dashPattern=8 4;strokeWidth=2;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="400" width="430" height="90" as="geometry"/>
+                    <mxGeometry x="40" y="450" width="710" height="100" as="geometry"/>
                 </mxCell>
                 <mxCell id="domain_label" value="Domain" style="text;html=1;fontSize=12;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#666;" parent="1" vertex="1">
-                    <mxGeometry x="50" y="400" width="60" height="20" as="geometry"/>
+                    <mxGeometry x="50" y="452" width="60" height="20" as="geometry"/>
                 </mxCell>
-
+                <mxCell id="d_llmresult" value="LLMCall&#xa;Result" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#999;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="67.5" y="478" width="80" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="d_cefr" value="CEFRLevel" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#999;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="160" y="478" width="75" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="d_vocab" value="Vocabulary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#999;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="480" width="90" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="d_token_usage" value="TokenUsage" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#999;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="418" y="478" width="90" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="d_user" value="User" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#999;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="525" y="478" width="60" height="40" as="geometry"/>
+                </mxCell>
                 <mxCell id="d_article" value="Article" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#999;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="60" y="430" width="80" height="40" as="geometry"/>
+                    <mxGeometry x="605" y="478" width="80" height="40" as="geometry"/>
                 </mxCell>
-                <mxCell id="d_vocab" value="Vocabulary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#999;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="155" y="430" width="90" height="40" as="geometry"/>
-                </mxCell>
-                <mxCell id="d_llmresult" value="LLMCallResult" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#999;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="260" y="430" width="100" height="40" as="geometry"/>
-                </mxCell>
-                <mxCell id="d_cefr" value="CEFRLevel" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#999;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="375" y="430" width="80" height="40" as="geometry"/>
-                </mxCell>
-
-                <!-- Service → Domain -->
-                <mxCell id="e_dsvc_domain" style="rounded=0;strokeColor=#999;dashed=1;" parent="1" source="dict_svc" target="d_llmresult" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-
-                <!-- Worker → Domain (CEFRLevel) -->
-                <mxCell id="e_proc_cefr" style="rounded=0;strokeColor=#999;dashed=1;" parent="1" source="processor" target="d_cefr" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-
-                <!-- ===== Ports ===== -->
                 <mxCell id="ports" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#4A90D9;dashed=1;dashPattern=8 4;strokeWidth=2;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="520" width="620" height="80" as="geometry"/>
+                    <mxGeometry x="40" y="575" width="710" height="90" as="geometry"/>
                 </mxCell>
                 <mxCell id="ports_label" value="Ports (Protocol)" style="text;html=1;fontSize=12;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#4A90D9;align=right;" parent="1" vertex="1">
-                    <mxGeometry x="530" y="575" width="120" height="20" as="geometry"/>
+                    <mxGeometry x="620" y="640" width="120" height="20" as="geometry"/>
                 </mxCell>
-
-                <mxCell id="p_llm" value="LLMPort" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=10;strokeWidth=1.5;" parent="1" vertex="1">
-                    <mxGeometry x="55" y="540" width="90" height="35" as="geometry"/>
+                <mxCell id="p_llm" value="LLMPort" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;strokeWidth=1.5;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="65" y="600" width="85" height="35" as="geometry"/>
                 </mxCell>
-                <mxCell id="p_dict" value="DictionaryPort" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=10;strokeWidth=1.5;" parent="1" vertex="1">
-                    <mxGeometry x="160" y="540" width="105" height="35" as="geometry"/>
+                <mxCell id="p_dict" value="Dictionary&#xa;Port" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;strokeWidth=1.5;" parent="1" vertex="1">
+                    <mxGeometry x="190" y="600" width="80" height="35" as="geometry"/>
                 </mxCell>
-                <mxCell id="p_vocab" value="VocabularyRepository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=10;strokeWidth=1.5;" parent="1" vertex="1">
-                    <mxGeometry x="285" y="540" width="130" height="35" as="geometry"/>
+                <mxCell id="p_nlp" value="NLPPort" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=10;strokeWidth=1.5;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="600" width="80" height="35" as="geometry"/>
                 </mxCell>
-                <mxCell id="p_token" value="TokenUsageRepository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=10;strokeWidth=1.5;" parent="1" vertex="1">
-                    <mxGeometry x="425" y="540" width="95" height="35" as="geometry"/>
+                <mxCell id="p_vocab" value="Vocabulary&#xa;Repository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;strokeWidth=1.5;" parent="1" vertex="1">
+                    <mxGeometry x="370" y="600" width="75" height="35" as="geometry"/>
                 </mxCell>
-                <mxCell id="p_article" value="ArticleRepository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=10;strokeWidth=1.5;" parent="1" vertex="1">
-                    <mxGeometry x="530" y="540" width="115" height="35" as="geometry"/>
+                <mxCell id="p_vocab_port" value="Vocabulary&#xa;Port" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;strokeWidth=1.5;" parent="1" vertex="1">
+                    <mxGeometry x="450" y="600" width="70" height="35" as="geometry"/>
                 </mxCell>
-
-                <!-- Service → Ports -->
-                <mxCell id="e_dsvc_llm" style="rounded=0;strokeColor=#666;" parent="1" source="dict_svc" target="p_llm" edge="1">
+                <mxCell id="p_token" value="TokenUsage&#xa;Repository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;strokeWidth=1.5;" parent="1" vertex="1">
+                    <mxGeometry x="525" y="600" width="75" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p_user" value="User&#xa;Repository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;strokeWidth=1.5;" parent="1" vertex="1">
+                    <mxGeometry x="605" y="600" width="60" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="p_article" value="Article&#xa;Repository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=9;strokeWidth=1.5;" parent="1" vertex="1">
+                    <mxGeometry x="670" y="600" width="65" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_pllm_llmresult" style="rounded=0;strokeColor=#999;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="p_llm" target="d_llmresult" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_dsvc_dict" style="rounded=0;strokeColor=#666;" parent="1" source="dict_svc" target="p_dict" edge="1">
+                <mxCell id="e_pdict_grammar" style="rounded=0;strokeColor=#999;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="p_dict" target="d_vocab" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="185.5" y="518" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_pvocab_vocab" style="rounded=0;strokeColor=#999;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="p_vocab" target="d_vocab" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_vsvc_vrepo" style="rounded=0;strokeColor=#666;" parent="1" source="vocab_svc" target="p_vocab" edge="1">
+                <mxCell id="e_pvport_vocab" style="rounded=0;strokeColor=#999;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="p_vocab_port" target="d_vocab" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-
-                <!-- Route → Repo (direct, bypassing service) -->
-                <mxCell id="e_rdict_vrepo" style="rounded=0;strokeColor=#666;dashed=1;dashPattern=4 4;" parent="1" source="route_dict" target="p_vocab" edge="1">
+                <mxCell id="e_ptoken_tokenusage" style="rounded=0;strokeColor=#999;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="p_token" target="d_token_usage" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-
-                <!-- Worker → Ports -->
+                <mxCell id="e_puser_user" style="rounded=0;strokeColor=#999;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="p_user" target="d_user" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_particle_article" style="rounded=0;strokeColor=#999;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="p_article" target="d_article" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_dsvc_llmresult" style="rounded=0;strokeColor=#666;" parent="1" source="dict_svc" target="d_llmresult" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_dsvc_grammar" style="rounded=0;strokeColor=#666;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="dict_svc" target="d_vocab" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="179.45110188748367" y="478.20360617721917" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_vsvc_vocab" style="rounded=0;strokeColor=#666;" parent="1" source="vocab_svc" target="d_vocab" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_tsvc_tokenusage" style="rounded=0;strokeColor=#666;" parent="1" source="token_svc" target="d_token_usage" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
                 <mxCell id="e_crew_art" style="rounded=0;strokeColor=#666;" parent="1" source="crew" target="p_article" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_proc_token" style="rounded=0;strokeColor=#666;" parent="1" source="processor" target="p_token" edge="1">
+                <mxCell id="e_tsvc_llmport" value="estimate_cost()" style="rounded=0;strokeColor=#4A90D9;dashed=1;dashPattern=4 4;fontSize=8;fontColor=#4A90D9;" parent="1" source="token_svc" target="p_llm" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_proc_vrepo" style="rounded=0;strokeColor=#666;" parent="1" source="processor" target="p_vocab" edge="1">
+                <mxCell id="e_proc_llm" value="llm: LLMPort" style="rounded=0;strokeColor=#E74C3C;dashed=1;dashPattern=4 4;fontSize=8;fontColor=#E74C3C;" parent="1" source="processor" target="p_llm" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-
-                <!-- ===== Adapters ===== -->
                 <mxCell id="adapters" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#F0AD4E;dashed=1;dashPattern=8 4;strokeWidth=2;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="630" width="620" height="80" as="geometry"/>
+                    <mxGeometry x="40" y="690" width="710" height="90" as="geometry"/>
                 </mxCell>
                 <mxCell id="adapters_label" value="Adapters" style="text;html=1;fontSize=12;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#856404;align=right;" parent="1" vertex="1">
-                    <mxGeometry x="550" y="685" width="100" height="20" as="geometry"/>
+                    <mxGeometry x="640" y="755" width="100" height="20" as="geometry"/>
                 </mxCell>
-
-                <mxCell id="a_litellm" value="LiteLLMAdapter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F0AD4E;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="55" y="650" width="100" height="35" as="geometry"/>
+                <mxCell id="a_litellm" value="&lt;font style=&quot;font-size: 9px;&quot;&gt;LiteLLM&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 9px;&quot;&gt;Adapter&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F0AD4E;fontSize=8;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="65" y="710" width="90" height="35" as="geometry"/>
                 </mxCell>
                 <mxCell id="a_freedict" value="FreeDictionary&#xa;Adapter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F0AD4E;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="168" y="650" width="95" height="35" as="geometry"/>
+                    <mxGeometry x="185" y="710" width="90" height="35" as="geometry"/>
                 </mxCell>
-                <mxCell id="a_mongovocab" value="MongoVocabRepo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F0AD4E;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="290" y="650" width="110" height="35" as="geometry"/>
+                <mxCell id="a_stanza" value="Stanza&#xa;Adapter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F0AD4E;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="282.5" y="710" width="75" height="35" as="geometry"/>
                 </mxCell>
-                <mxCell id="a_mongotoken" value="MongoTokenRepo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F0AD4E;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="415" y="650" width="110" height="35" as="geometry"/>
+                <mxCell id="a_mongovocab" value="MongoVocab&#xa;Repo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F0AD4E;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="370" y="710" width="80" height="35" as="geometry"/>
                 </mxCell>
-                <mxCell id="a_mongoart" value="MongoArticleRepo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F0AD4E;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="535" y="650" width="110" height="35" as="geometry"/>
+                <mxCell id="a_mongotoken" value="MongoToken&#xa;Repo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F0AD4E;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="520" y="710" width="80" height="35" as="geometry"/>
                 </mxCell>
-
-                <!-- Port → Adapter (DI) -->
+                <mxCell id="a_mongouser" value="MongoUser&#xa;Repo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F0AD4E;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="605" y="710" width="60" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="a_mongoart" value="MongoArticle&#xa;Repo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F0AD4E;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="672.5" y="710" width="60" height="35" as="geometry"/>
+                </mxCell>
                 <mxCell id="e_p_llm_a" style="rounded=0;strokeColor=#999;dashed=1;" parent="1" source="p_llm" target="a_litellm" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="e_p_dict_a" style="rounded=0;strokeColor=#999;dashed=1;" parent="1" source="p_dict" target="a_freedict" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
+                <mxCell id="e_p_nlp_a" style="rounded=0;strokeColor=#999;dashed=1;" parent="1" source="p_nlp" target="a_stanza" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
                 <mxCell id="e_p_vocab_a" style="rounded=0;strokeColor=#999;dashed=1;" parent="1" source="p_vocab" target="a_mongovocab" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_p_vport_a" style="rounded=0;strokeColor=#999;dashed=1;" parent="1" source="p_vocab_port" target="a_mongovocab" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="e_p_token_a" style="rounded=0;strokeColor=#999;dashed=1;" parent="1" source="p_token" target="a_mongotoken" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
+                <mxCell id="e_p_user_a" style="rounded=0;strokeColor=#999;dashed=1;" parent="1" source="p_user" target="a_mongouser" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
                 <mxCell id="e_p_art_a" style="rounded=0;strokeColor=#999;dashed=1;" parent="1" source="p_article" target="a_mongoart" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-
-                <!-- ===== External ===== -->
-                <mxCell id="ext_openai" value="OpenAI API" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#4CAF50;fontSize=10;size=8;" parent="1" vertex="1">
-                    <mxGeometry x="65" y="750" width="80" height="50" as="geometry"/>
+                <mxCell id="ext_openai" value="OpenAI API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#adb5bd;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="810" width="80" height="40" as="geometry"/>
                 </mxCell>
-                <mxCell id="ext_dictapi" value="Free Dictionary&#xa;API" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#4CAF50;fontSize=9;size=8;" parent="1" vertex="1">
-                    <mxGeometry x="175" y="750" width="85" height="50" as="geometry"/>
+                <mxCell id="ext_dictapi" value="Free Dictionary&#xa;API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#adb5bd;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="187.5" y="810" width="85" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="ext_stanza" value="Stanza&#xa;(local NLP)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#adb5bd;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="282.5" y="810" width="80" height="50" as="geometry"/>
                 </mxCell>
                 <mxCell id="ext_mongodb" value="MongoDB" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1976D2;fontSize=11;fontStyle=1;size=8;" parent="1" vertex="1">
-                    <mxGeometry x="370" y="750" width="100" height="50" as="geometry"/>
+                    <mxGeometry x="500" y="810" width="100" height="50" as="geometry"/>
                 </mxCell>
-
-                <!-- Adapter → External -->
                 <mxCell id="e_a_llm_ext" style="rounded=0;strokeColor=#adb5bd;" parent="1" source="a_litellm" target="ext_openai" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="e_a_dict_ext" style="rounded=0;strokeColor=#adb5bd;" parent="1" source="a_freedict" target="ext_dictapi" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_a_stanza_ext" style="rounded=0;strokeColor=#adb5bd;" parent="1" source="a_stanza" target="ext_stanza" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="e_a_art_ext" style="rounded=0;strokeColor=#adb5bd;" parent="1" source="a_mongoart" target="ext_mongodb" edge="1">
@@ -275,42 +323,63 @@
                 <mxCell id="e_a_token_ext" style="rounded=0;strokeColor=#adb5bd;" parent="1" source="a_mongotoken" target="ext_mongodb" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-
-                <!-- ===== Legend ===== -->
+                <mxCell id="e_a_user_ext" style="rounded=0;strokeColor=#adb5bd;" parent="1" source="a_mongouser" target="ext_mongodb" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
                 <mxCell id="legend_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#DDD;strokeWidth=1;" parent="1" vertex="1">
-                    <mxGeometry x="700" y="120" width="200" height="160" as="geometry"/>
+                    <mxGeometry x="760" y="120" width="220" height="230" as="geometry"/>
                 </mxCell>
                 <mxCell id="legend_title" value="Legend" style="text;html=1;fontSize=11;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#333;" parent="1" vertex="1">
-                    <mxGeometry x="710" y="125" width="50" height="20" as="geometry"/>
+                    <mxGeometry x="770" y="125" width="50" height="20" as="geometry"/>
                 </mxCell>
                 <mxCell id="leg1a" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B5D8F7;strokeColor=#4A90D9;fontSize=8;" parent="1" vertex="1">
-                    <mxGeometry x="715" y="150" width="30" height="15" as="geometry"/>
+                    <mxGeometry x="775" y="150" width="30" height="15" as="geometry"/>
                 </mxCell>
                 <mxCell id="leg1b" value="Entrypoint" style="text;html=1;fontSize=9;fillColor=none;strokeColor=none;" parent="1" vertex="1">
-                    <mxGeometry x="750" y="148" width="70" height="18" as="geometry"/>
+                    <mxGeometry x="810" y="148" width="70" height="18" as="geometry"/>
                 </mxCell>
                 <mxCell id="leg2a" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4A90D9;fontSize=8;" parent="1" vertex="1">
-                    <mxGeometry x="715" y="172" width="30" height="15" as="geometry"/>
+                    <mxGeometry x="775" y="172" width="30" height="15" as="geometry"/>
                 </mxCell>
                 <mxCell id="leg2b" value="Port (Protocol)" style="text;html=1;fontSize=9;fillColor=none;strokeColor=none;" parent="1" vertex="1">
-                    <mxGeometry x="750" y="170" width="80" height="18" as="geometry"/>
+                    <mxGeometry x="810" y="170" width="80" height="18" as="geometry"/>
                 </mxCell>
                 <mxCell id="leg3a" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F0AD4E;fontSize=8;" parent="1" vertex="1">
-                    <mxGeometry x="715" y="194" width="30" height="15" as="geometry"/>
+                    <mxGeometry x="775" y="194" width="30" height="15" as="geometry"/>
                 </mxCell>
                 <mxCell id="leg3b" value="Adapter" style="text;html=1;fontSize=9;fillColor=none;strokeColor=none;" parent="1" vertex="1">
-                    <mxGeometry x="750" y="192" width="60" height="18" as="geometry"/>
+                    <mxGeometry x="810" y="192" width="60" height="18" as="geometry"/>
                 </mxCell>
                 <mxCell id="leg4a" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#999;fontSize=8;" parent="1" vertex="1">
-                    <mxGeometry x="715" y="216" width="30" height="15" as="geometry"/>
+                    <mxGeometry x="775" y="216" width="30" height="15" as="geometry"/>
                 </mxCell>
                 <mxCell id="leg4b" value="Domain Model" style="text;html=1;fontSize=9;fillColor=none;strokeColor=none;" parent="1" vertex="1">
-                    <mxGeometry x="750" y="214" width="80" height="18" as="geometry"/>
+                    <mxGeometry x="810" y="214" width="80" height="18" as="geometry"/>
                 </mxCell>
-                <mxCell id="leg5" value="── direct dependency&#xa;- - implements (DI)" style="text;html=1;fontSize=9;fillColor=none;strokeColor=none;align=left;" parent="1" vertex="1">
-                    <mxGeometry x="710" y="240" width="140" height="30" as="geometry"/>
+                <mxCell id="leg5a" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=8;" parent="1" vertex="1">
+                    <mxGeometry x="775" y="238" width="30" height="15" as="geometry"/>
                 </mxCell>
-
+                <mxCell id="leg5b" value="Sub-service" style="text;html=1;fontSize=9;fillColor=none;strokeColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="810" y="236" width="80" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg6a" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#adb5bd;fontSize=8;" parent="1" vertex="1">
+                    <mxGeometry x="775" y="260" width="30" height="15" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg6b" value="External Service" style="text;html=1;fontSize=9;fillColor=none;strokeColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="810" y="258" width="90" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg7" value="── dependency&#xa;- - implements (DI)" style="text;html=1;fontSize=9;fillColor=none;strokeColor=none;align=left;" parent="1" vertex="1">
+                    <mxGeometry x="770" y="285" width="160" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="leg8line" value="" style="endArrow=classic;html=1;strokeColor=#999;dashed=1;dashPattern=4 4;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="775" y="325" as="sourcePoint"/>
+                        <mxPoint x="810" y="325" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="leg8b" value="route → repo (query)" style="text;html=1;fontSize=9;fillColor=none;strokeColor=none;align=left;" parent="1" vertex="1">
+                    <mxGeometry x="815" y="316" width="130" height="18" as="geometry"/>
+                </mxCell>
             </root>
         </mxGraphModel>
     </diagram>

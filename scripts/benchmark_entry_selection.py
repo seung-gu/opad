@@ -34,12 +34,12 @@ from litellm import acompletion, cost_per_token
 sys.path.insert(0, "scripts")
 from test_cases import TEST_CASES_DE, TEST_CASES_EN
 
-from utils.dictionary_api import (
+from adapter.external.free_dictionary import (
     FREE_DICTIONARY_API_BASE_URL,
     API_TIMEOUT_SECONDS,
-    LANGUAGE_CODE_MAP,
+    _strip_reflexive_pronoun,
 )
-from utils.dictionary_api import _strip_reflexive_pronoun
+from utils.language_metadata import LANGUAGE_CODE_MAP
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
