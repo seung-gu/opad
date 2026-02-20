@@ -33,8 +33,9 @@ from worker.context import JobContext, translate_error
 from crew.progress_listener import JobProgressListener
 from crew.models import ReviewedArticle
 from port.article_repository import ArticleRepository
+from port.llm import LLMPort
 from port.token_usage_repository import TokenUsageRepository
-from port.vocabulary_repository import VocabularyRepository
+from port.vocabulary import VocabularyPort
 from domain.model.cefr import CEFRLevel
 from domain.model.article import ArticleStatus
 
@@ -46,7 +47,8 @@ def process_job(
     job_data: dict,
     repo: ArticleRepository,
     token_usage_repo: TokenUsageRepository | None = None,
-    vocab_repo: VocabularyRepository | None = None,
+    vocab: VocabularyPort | None = None,
+    llm: LLMPort | None = None,
 ) -> bool:
     """Process a single job from the queue.
 
@@ -79,9 +81,9 @@ def process_job(
             # Fetch vocabulary for personalized generation (always set default to avoid template error)
             # Filter by target level to avoid vocab too difficult for the article
             vocab_list = None
-            if ctx.user_id and ctx.inputs.get('language') and vocab_repo:
+            if ctx.user_id and ctx.inputs.get('language') and vocab:
                 levels = CEFRLevel.range(ctx.inputs.get('level'), max_above=1)
-                vocab_list = vocab_repo.find_lemmas(
+                vocab_list = vocab.find_lemmas(
                     user_id=ctx.user_id,
                     language=ctx.inputs['language'],
                     levels=levels,
@@ -95,8 +97,8 @@ def process_job(
             logger.info("CrewAI completed", extra=ctx.log_extra)
 
             # Save token usage for each agent (even if task failed - tokens were still consumed)
-            if ctx.user_id:
-                track_crew_usage(token_usage_repo, result, ctx.user_id, ctx.article_id, ctx.job_id)
+            if ctx.user_id and token_usage_repo:
+                track_crew_usage(token_usage_repo, result, ctx.user_id, ctx.article_id, ctx.job_id, llm=llm)
 
             # Check for task failures
             if listener.task_failed:
@@ -135,7 +137,8 @@ def process_job(
 def run_worker_loop(
     repo: ArticleRepository,
     token_usage_repo: TokenUsageRepository | None = None,
-    vocab_repo: VocabularyRepository | None = None,
+    vocab: VocabularyPort | None = None,
+    llm: LLMPort | None = None,
 ):
     """Main worker loop - continuously processes jobs from Redis queue."""
     logger.info("Worker started, waiting for jobs...")
@@ -147,7 +150,7 @@ def run_worker_loop(
             if job_data:
                 job_id = job_data.get('job_id')
                 logger.info("Received job", extra={"jobId": job_id})
-                process_job(job_data, repo, token_usage_repo, vocab_repo)
+                process_job(job_data, repo, token_usage_repo, vocab, llm)
             else:
                 import time
                 time.sleep(5)

@@ -328,7 +328,7 @@ async def get_article_vocabularies(
             'gender': v.grammar.gender if v.grammar else None,
             'phonetics': v.grammar.phonetics if v.grammar else None,
             'conjugations': v.grammar.conjugations if v.grammar else None,
-            'level': v.grammar.level if v.grammar else None,
+            'level': v.level,
             'examples': v.grammar.examples if v.grammar else None,
         }
         for v in vocabs

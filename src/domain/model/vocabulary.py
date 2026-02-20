@@ -11,8 +11,28 @@ class GrammaticalInfo:
     gender: str | None = None
     phonetics: str | None = None
     conjugations: dict | None = None
-    level: str | None = None
     examples: list[str] | None = None
+
+
+@dataclass
+class SenseResult:
+    """Selected sense from dictionary entries."""
+    definition: str = ""
+    examples: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class LookupResult:
+    """Immutable result of a dictionary lookup (Value Object).
+
+    Returned by dictionary_service.lookup() to provide a typed contract
+    instead of a raw dict.
+    """
+    lemma: str
+    definition: str
+    related_words: list[str] | None = None
+    level: str | None = None
+    grammar: GrammaticalInfo = field(default_factory=GrammaticalInfo)
 
 
 @dataclass
@@ -30,6 +50,7 @@ class Vocabulary:
     language: str
     created_at: datetime
     related_words: list[str] | None = None
+    level: str | None = None
     span_id: str | None = None
     user_id: str | None = None
     grammar: GrammaticalInfo = field(default_factory=GrammaticalInfo)
@@ -44,7 +65,7 @@ class Vocabulary:
 class VocabularyCount:
     """Aggregated vocabulary grouped by language + lemma.
 
-    Represents the result of get_vocabulary_counts() — the most recent
+    Represents the result of count_by_lemma() — the most recent
     entry for each unique (language, lemma) pair, plus occurrence count
     and list of article IDs where this lemma appeared.
     """

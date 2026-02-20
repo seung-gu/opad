@@ -16,6 +16,7 @@ from adapter.mongodb.article_repository import MongoArticleRepository
 from adapter.mongodb.token_usage_repository import MongoTokenUsageRepository
 from adapter.mongodb.vocabulary_repository import MongoVocabularyRepository
 from adapter.mongodb.connection import get_mongodb_client, DATABASE_NAME
+from adapter.external.litellm import LiteLLMAdapter
 
 # Set up structured JSON logging
 setup_structured_logging()
@@ -37,7 +38,8 @@ def main():
         repo = MongoArticleRepository(db)
         token_usage_repo = MongoTokenUsageRepository(db)
         vocab_repo = MongoVocabularyRepository(db)
-        run_worker_loop(repo, token_usage_repo, vocab_repo)
+        llm = LiteLLMAdapter()
+        run_worker_loop(repo, token_usage_repo, vocab_repo, llm)
     except KeyboardInterrupt:
         logger.info("Worker stopped")
     except Exception as e:

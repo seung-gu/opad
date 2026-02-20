@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from domain.model.vocabulary import Vocabulary, VocabularyCount
+from domain.model.vocabulary import Vocabulary
 
 
 class VocabularyRepository(Protocol):
@@ -42,24 +42,4 @@ class VocabularyRepository(Protocol):
 
     def delete(self, vocabulary_id: str) -> bool:
         """Delete a vocabulary entry. Returns True if deleted, False if not found."""
-        ...
-
-    def count_by_lemma(
-        self,
-        language: str | None = None,
-        user_id: str | None = None,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> list[VocabularyCount]:
-        """Aggregate vocabulary counts grouped by language + lemma, sorted by count descending."""
-        ...
-
-    def find_lemmas(
-        self,
-        user_id: str,
-        language: str,
-        levels: list[str] | None = None,
-        limit: int = 50,
-    ) -> list[str]:
-        """Get distinct lemmas sorted by frequency (desc) then recency (desc)."""
         ...

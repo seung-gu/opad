@@ -36,3 +36,9 @@ class FakeLLMAdapter:
             estimated_cost=0.0001,
         )
         return self.response, stats
+
+    def estimate_cost(
+        self, model: str, prompt_tokens: int, completion_tokens: int,
+    ) -> float:
+        """Fake cost estimation — always returns 0.0."""
+        return 0.0

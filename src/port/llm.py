@@ -27,7 +27,13 @@ class LLMPort(Protocol):
     async def call(
         self,
         messages: list[dict[str, str]],
-        model: str = "openai/gpt-4.1-mini",
+        model: str,
         timeout: float = 30.0,
         **kwargs,
     ) -> tuple[str, LLMCallResult]: ...
+
+    def estimate_cost(
+        self, model: str, prompt_tokens: int, completion_tokens: int,
+    ) -> float:
+        """Estimate LLM call cost."""
+        ...
