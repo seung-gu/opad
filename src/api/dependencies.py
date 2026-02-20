@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from fastapi import HTTPException
 
 from adapter.external.free_dictionary import FreeDictionaryAdapter
@@ -54,12 +56,7 @@ def get_llm_port() -> LLMPort:
     return LiteLLMAdapter()
 
 
-_stanza_adapter: StanzaAdapter | None = None
-
-
+@lru_cache(maxsize=1)
 def get_nlp_port() -> NLPPort:
     """Get NLP port (Stanza adapter singleton for German lemma extraction)."""
-    global _stanza_adapter
-    if _stanza_adapter is None:
-        _stanza_adapter = StanzaAdapter()
-    return _stanza_adapter
+    return StanzaAdapter()
