@@ -1,9 +1,6 @@
 """In-memory implementation of VocabularyRepository for testing."""
 
-import uuid
-from datetime import datetime, timezone
-
-from domain.model.vocabulary import GrammaticalInfo, Vocabulary, VocabularyCount
+from domain.model.vocabulary import Vocabulary, VocabularyCount
 
 
 class FakeVocabularyRepository:
@@ -12,37 +9,20 @@ class FakeVocabularyRepository:
 
     # ── CRUD ──────────────────────────────────────────────────
 
-    def save(
-        self,
-        article_id: str,
-        word: str,
-        lemma: str,
-        definition: str,
-        sentence: str,
-        language: str,
-        related_words: list[str] | None = None,
-        span_id: str | None = None,
-        user_id: str | None = None,
-        grammar: GrammaticalInfo | None = None,
-    ) -> str | None:
-        """Save a new vocabulary entry."""
-        normalized_span_id = span_id if span_id and span_id.strip() else None
-        vocab_id = str(uuid.uuid4())
-        self.store[vocab_id] = Vocabulary(
-            id=vocab_id,
-            article_id=article_id,
-            word=word,
-            lemma=lemma,
-            definition=definition,
-            sentence=sentence,
-            language=language,
-            created_at=datetime.now(timezone.utc),
-            related_words=related_words or [],
-            span_id=normalized_span_id,
-            user_id=user_id,
-            grammar=grammar or GrammaticalInfo(),
-        )
-        return vocab_id
+    def find_duplicate(self, vocab: Vocabulary) -> Vocabulary | None:
+        """Find an existing entry with the same business identity."""
+        for existing in self.store.values():
+            if existing.identity == vocab.identity:
+                return existing
+        return None
+
+    def save(self, vocab: Vocabulary) -> str | None:
+        """Save a vocabulary entry, skipping duplicates based on identity."""
+        existing = self.find_duplicate(vocab)
+        if existing:
+            return existing.id
+        self.store[vocab.id] = vocab
+        return vocab.id
 
     def get_by_id(self, vocabulary_id: str) -> Vocabulary | None:
         return self.store.get(vocabulary_id)
@@ -121,7 +101,7 @@ class FakeVocabularyRepository:
             if v.user_id == user_id and v.language == language
         ]
         if levels:
-            filtered = [v for v in filtered if v.grammar and v.grammar.level in levels]
+            filtered = [v for v in filtered if v.level in levels]
 
         # Group by lemma: count + max created_at
         lemma_stats: dict[str, dict] = {}

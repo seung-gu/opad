@@ -1,4 +1,4 @@
-"""Utility for parsing JSON from LLM response content."""
+"""JSON parsing utilities for LLM responses."""
 
 import json
 import logging
@@ -6,19 +6,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def parse_json_from_content(content: str) -> dict | None:
+def parse_json_content(content: str) -> dict | None:
     """Parse JSON from LLM response content.
 
-    Handles various formats:
-    - Plain JSON: {"key": "value"}
-    - JSON in markdown code blocks: ```json {...} ```
-    - JSON with surrounding text
-
-    Args:
-        content: Raw content string from LLM
-
-    Returns:
-        Parsed JSON dict, or None if parsing fails
+    Handles plain JSON, markdown code blocks, and JSON with surrounding text.
     """
     try:
         if "```json" in content:

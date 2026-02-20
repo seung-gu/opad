@@ -1,51 +1,30 @@
 """Lemma extraction module — Step 1 of the dictionary lookup pipeline.
 
 Extracts lemma + related_words + CEFR level from a word in context.
-German uses Stanza NLP (local, ~51ms); other languages use LLM (~800ms).
+German uses NLP adapter (Stanza, ~51ms); other languages use LLM (~800ms).
 Both paths return the same dict format: {"lemma", "related_words", "level"}.
 """
 
-import asyncio
 import logging
-import threading
-from typing import Any
+from typing import Any, TypedDict
 
 from port.llm import LLMPort
+from port.nlp import NLPPort
 from domain.model.token_usage import LLMCallResult
-from utils.llm import parse_json_from_content
+from utils.json_parsing import parse_json_content
 
 logger = logging.getLogger(__name__)
+
+
+class LemmaResult(TypedDict):
+    """Typed result of lemma extraction (Step 1 of lookup pipeline)."""
+    lemma: str
+    related_words: list[str] | None
+    level: str | None
 
 # Token limits
 _REDUCED_PROMPT_MAX_TOKENS = 200
 _CEFR_PROMPT_MAX_TOKENS = 10
-
-# ---------------------------------------------------------------------------
-# Stanza singleton
-# ---------------------------------------------------------------------------
-_stanza_pipeline = None
-_stanza_lock = threading.Lock()
-
-
-def _get_stanza_pipeline():
-    """Lazy-load Stanza German pipeline (singleton, ~349MB). Thread-safe."""
-    global _stanza_pipeline
-    if _stanza_pipeline is None:
-        with _stanza_lock:
-            if _stanza_pipeline is None:  # Double-check after acquiring lock
-                import stanza
-                _stanza_pipeline = stanza.Pipeline(
-                    "de",
-                    processors="tokenize,mwt,pos,lemma,depparse",
-                    logging_level="WARN",
-                )
-                logger.info("Stanza German pipeline loaded")
-    return _stanza_pipeline
-
-
-def preload_stanza() -> None:
-    """Eagerly load Stanza pipeline (call at service startup)."""
-    _get_stanza_pipeline()
 
 
 # ---------------------------------------------------------------------------
@@ -57,138 +36,70 @@ async def extract_lemma(
     sentence: str,
     language: str,
     llm: LLMPort,
+    nlp: NLPPort | None = None,
     model: str = "openai/gpt-4.1-mini",
-) -> tuple[dict[str, Any] | None, LLMCallResult | None]:
+) -> tuple[LemmaResult | None, LLMCallResult | None]:
     """Extract lemma, related_words, and CEFR level for a word in context.
 
-    German uses Stanza NLP with a small LLM call for CEFR.
+    German uses NLP adapter with a small LLM call for CEFR.
     Other languages use LLM reduced prompt.
 
-    Args:
-        word: The clicked word.
-        sentence: Full sentence containing the word.
-        language: Language name (e.g., "German", "English").
-        llm: LLM port for API calls.
-        model: LLM model identifier for reduced prompt / CEFR calls.
-
     Returns:
-        Tuple of (result_dict, token_stats).
-        result_dict has keys: "lemma", "related_words", "level".
+        Tuple of (LemmaResult, token_stats).
         Returns (None, None) on failure.
     """
-    if language == "German":
-        result = await _extract_with_stanza(word, sentence)
-        if result is not None:
-            # Stanza doesn't know CEFR — ask LLM with a tiny prompt
-            level, stats = await _estimate_cefr(
-                word, sentence, result["lemma"], llm, model
-            )
-            result["level"] = level
-            logger.info("Lemma extracted (Stanza)", extra={
-                "word": word, "lemma": result["lemma"],
-                "related_words": result["related_words"],
-                "level": level,
+    if language == "German" and nlp is not None:
+        word_info = await nlp.extract(word, sentence)
+        if word_info is not None:
+            lemma, related_words = resolve_lemma(word_info, word)
+            level, stats = await _estimate_cefr(word, sentence, lemma, llm, model)
+            logger.info("Lemma extracted (NLP)", extra={
+                "word": word, "lemma": lemma,
+                "related_words": related_words, "level": level,
             })
-            return result, stats
-        # Stanza failed — fall through to LLM path
-        logger.info("Stanza extraction failed, falling back to LLM",
+            return LemmaResult(
+                lemma=lemma,
+                related_words=related_words,
+                level=level,
+            ), stats
+        # NLP failed — fall through to LLM path
+        logger.info("NLP extraction failed, falling back to LLM",
                      extra={"word": word})
 
     return await _extract_with_llm(word, sentence, language, llm, model)
 
 
 # ---------------------------------------------------------------------------
-# Stanza extraction (German)
+# Business rules (no external library access)
 # ---------------------------------------------------------------------------
 
-async def _extract_with_stanza(word: str, sentence: str) -> dict[str, Any] | None:
-    """Extract lemma + related_words using Stanza dependency parsing.
+def resolve_lemma(info: dict[str, Any], original_word: str) -> tuple[str, list[str]]:
+    """Determine lemma and related_words from extracted word info.
 
-    Runs the pipeline in a thread to avoid blocking the event loop.
-
-    Returns:
-        {"lemma": str, "related_words": list[str]} or None on failure.
+    Applies German grammar rules:
+    - Articles (ART): lowercase text
+    - Past-participle adjectives (ending in -en/-ern/-eln): lowercase text
+    - Non-verbs: use NLP lemma directly
+    - Verbs: combine base lemma with separable prefix and/or reflexive
     """
-    try:
-        pipeline = _get_stanza_pipeline()
-        doc = await asyncio.to_thread(pipeline, sentence)
-    except Exception as e:
-        logger.warning("Stanza pipeline error", extra={"error": str(e)})
-        return None
+    if info["xpos"] == "ART":
+        return info["text"].lower(), [original_word]
 
-    # Find the target token (returns token and its sentence)
-    target, target_sent = _find_target_token(doc, word)
-    if target is None:
-        return None
+    if info["pos"] == "adj" and info["lemma"].endswith(("en", "ern", "eln")):
+        return info["text"].lower(), [original_word]
 
-    # Build lemma and related_words from dependency tree
-    lemma, related_words = _build_lemma_from_dep_tree(target_sent, target, word)
-    return {"lemma": lemma, "related_words": related_words}
+    if info["pos"] != "verb":
+        return info["lemma"], [original_word]
+
+    # Verb: combine prefix + reflexive
+    lemma = _combine_verb_lemma(info["lemma"], info["prefix"], info["reflexive"])
+    return lemma, info["parts"]
 
 
-def _find_target_token(doc, word: str) -> tuple[Any, Any]:
-    """Find the Stanza token matching the clicked word.
-
-    Returns:
-        Tuple of (token, sentence) or (None, None) if not found.
-    """
-    for sent in doc.sentences:
-        for token in sent.words:
-            if token.text == word:
-                return token, sent
-    # Case-insensitive fallback
-    word_lower = word.lower()
-    for sent in doc.sentences:
-        for token in sent.words:
-            if token.text.lower() == word_lower:
-                return token, sent
-    return None, None
-
-
-def _build_lemma_from_dep_tree(sent, target, word: str) -> tuple[str, list[str]]:
-    """Build lemma and related_words from Stanza dependency tree.
-
-    Handles: separable verbs (compound:prt), reflexive verbs (sich),
-    articles (ART normalization), past-participle adjectives.
-
-    Args:
-        sent: The Stanza sentence containing the target token.
-        target: The target Stanza token.
-        word: The original clicked word.
-
-    Returns:
-        Tuple of (lemma_string, related_words_list).
-    """
-    # Non-verb early returns
-    if target.xpos == "ART":
-        return target.text.lower(), [word]
-    if target.upos == "ADJ" and target.lemma.endswith(("en", "ern", "eln")):
-        return target.text.lower(), [word]
-    if target.upos != "VERB":
-        return target.lemma, [word]
-
-    # --- Verb handling ---
-    prefix_text = _find_dep_child(sent, target.id, deprel="compound:prt")
-    reflexive_text = _find_dep_child(sent, target.id, xpos="PRF")
-
-    base_lemma = _combine_verb_lemma(target.lemma, prefix_text, reflexive_text)
-    related = _collect_related_words(sent, target, word)
-    return base_lemma, related
-
-
-def _find_dep_child(sent, head_id: int, *, deprel: str | None = None, xpos: str | None = None) -> str | None:
-    """Find first child token matching deprel or xpos."""
-    for w in sent.words:
-        if w.head == head_id:
-            if deprel and w.deprel == deprel:
-                return w.text
-            if xpos and w.xpos == xpos:
-                return w.text
-    return None
-
-
-def _combine_verb_lemma(base: str, prefix: str | None, reflexive: str | None) -> str:
-    """Combine verb lemma with prefix and/or reflexive pronoun."""
+def _combine_verb_lemma(
+    base: str, prefix: str | None, reflexive: str | None,
+) -> str:
+    """Combine verb lemma with separable prefix and/or reflexive pronoun."""
     if reflexive:
         return f"sich {prefix}{base}" if prefix else f"sich {base}"
     if prefix:
@@ -196,24 +107,8 @@ def _combine_verb_lemma(base: str, prefix: str | None, reflexive: str | None) ->
     return base
 
 
-def _collect_related_words(sent, target, word: str) -> list[str]:
-    """Collect related words (verb + prefix + reflexive) sorted by position."""
-    parts = []
-    for w in sent.words:
-        if w.id == target.id:
-            parts.append((w.id, w.text))
-        elif w.head == target.id and w.deprel == "compound:prt":
-            parts.append((w.id, w.text))
-        elif w.head == target.id and w.xpos == "PRF":
-            parts.append((w.id, w.text))
-
-    parts.sort(key=lambda x: x[0])
-    related = [text for _, text in parts]
-    return related if related else [word]
-
-
 # ---------------------------------------------------------------------------
-# CEFR estimation (small LLM call for Stanza path)
+# CEFR estimation (small LLM call for NLP path)
 # ---------------------------------------------------------------------------
 
 async def _estimate_cefr(
@@ -234,7 +129,7 @@ async def _estimate_cefr(
             temperature=0,
             timeout=10,
         )
-        result = parse_json_from_content(content)
+        result = parse_json_content(content)
         level = result.get("level") if result else None
         return level, stats
     except Exception as e:
@@ -248,7 +143,7 @@ async def _estimate_cefr(
 
 async def _extract_with_llm(
     word: str, sentence: str, language: str, llm: LLMPort, model: str,
-) -> tuple[dict[str, Any] | None, LLMCallResult | None]:
+) -> tuple[LemmaResult | None, LLMCallResult | None]:
     """Extract lemma using LLM reduced prompt."""
     try:
         prompt = _build_reduced_prompt(language, sentence, word)
@@ -260,14 +155,19 @@ async def _extract_with_llm(
             temperature=0,
         )
 
-        result = parse_json_from_content(content)
-        if result is None:
+        parsed = parse_json_content(content)
+        if parsed is None:
             logger.warning(
                 "Failed to parse JSON from LLM reduced prompt",
                 extra={"word": word, "language": language,
                         "content_preview": content[:200] if content else None},
             )
-        return result, stats
+            return None, stats
+        return LemmaResult(
+            lemma=parsed.get("lemma", word),
+            related_words=parsed.get("related_words"),
+            level=parsed.get("level"),
+        ), stats
 
     except Exception as e:
         logger.error(
@@ -279,7 +179,7 @@ async def _extract_with_llm(
 
 
 # ---------------------------------------------------------------------------
-# Prompt templates (moved from prompts.py)
+# Prompt templates
 # ---------------------------------------------------------------------------
 
 def _build_reduced_prompt(language: str, sentence: str, word: str) -> str:

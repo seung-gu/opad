@@ -5,17 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.16.0] - 2026-02-19
+
+### Added
+- **VocabularyPort protocol** — new port for vocabulary aggregate queries (count_by_lemma, find_lemmas) separated from VocabularyRepository CRUD to clarify intent (Issue #100)
+- **NLPPort protocol** — outbound port for NLP extraction (Stanza, spaCy) enabling language-agnostic linguistic feature extraction
+- **Separate vocabulary routes** (`api/routes/vocabulary.py`) for vocabulary CRUD operations (add, list, delete) distinct from dictionary search
+- **Seven comprehensive vocabulary route tests** covering:
+  - GET /dictionary/vocabularies endpoint with language filter, pagination, and max limit enforcement
+  - POST /dictionary/vocabulary endpoint for adding words with full metadata
+  - DELETE /dictionary/vocabularies/{id} endpoint with permission checks and ownership validation
+  - Authentication requirement for all vocabulary operations
+  - Error handling (404 NotFound, 403 PermissionDenied, 500 SaveFailure)
+- **LemmaResult and NLPPort extraction** — modular lemma extraction module as service function with NLP adapter injection
 
 ### Changed
-- **Enhanced `service_diagram.drawio` with CQRS visual distinction** — all 31 edges now color-coded for architecture clarity (Issue #98)
-  - Red solid lines (13 edges): Command operations (Write operations)
-  - Green dashed lines (6 edges): Query operations (Read operations)
-  - Gray lines (12 edges): Infrastructure/utility connections
-- Added CQRS legend to diagram with 3 primary categories
-- Fixed 2 miscategorized edges during code review:
-  - `DictionaryPort → DictionaryService`: Reclassified from Write to Read (query operation)
-  - `processor → VocabularyRepository`: Reclassified from Write to Read (query operation)
+- **Router split**: Dictionary routes refactored to handle search only (`/dictionary/search`), vocabulary operations moved to separate routes (`/dictionary/vocabulary`, `/dictionary/vocabularies`)
+- **Lemma extraction moved to services**: `services/lemma_extraction.py` as module-level functions accepting injected NLPPort and LLMPort
+- **Sense selection moved to services**: `services/sense_selection.py` as module-level functions accepting injected LLMPort
+- **DictionaryPort methods expanded** — added `build_sense_listing()`, `get_sense()`, and `extract_grammar()` methods to encapsulate entry-structure knowledge
+- **Dependency injection**: Routes now inject VocabularyPort for aggregate queries and NLPPort for linguistic extraction
+- Refactored `vocabulary_service` to use module-level functions (`save`, `delete`) accepting injected VocabularyRepository
+- Architecture diagrams updated: `service_diagram_layers.drawio` with 4 new port nodes (DictionaryPort, LLMPort, NLPPort, VocabularyPort) and consistent color scheme
+
+### Removed
+- `utils/dictionary_api.py` — entry structure knowledge moved to DictionaryPort implementation
+- `utils/lemma_extraction.py` from utils (moved to services layer)
+- `utils/sense_selection.py` from utils (moved to services layer)
+- Corresponding unit tests in `utils/tests/` for lemma_extraction and sense_selection (tests moved to api/tests)
+
+### Technical Impact
+- **API clarity**: Separate routes for search (stateless) vs vocabulary management (stateful) improves cognitive load
+- **Port consolidation**: 4 focused ports (Dictionary, LLM, NLP, TokenUsageRepository) replace ad-hoc utility imports
+- **Testability**: Service-layer extraction enables testing without MockLibrary patterns — use FakeVocabularyRepository, FakeNLPAdapter directly
+- **Extensibility**: NLPPort enables pluggable NLP backends (Stanza for German, spaCy for English, etc.)
+- **Layer separation**: Services own business logic (vocabulary deduplication, lemma extraction logic), routes handle HTTP concerns only
 
 ## [0.15.0] - 2026-02-16
 
@@ -48,6 +72,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SOLID compliance**: Dependency Inversion Principle — business logic depends on abstractions (ports), not concrete implementations (adapters)
 - **Code reduction**: Eliminated verbose DTOs, test boilerplate reduced via concrete fake adapters
 - **All 504 tests passing** — comprehensive coverage across lemma extraction, sense selection, and dictionary service integration
+
+## [Unreleased]
+
+### Changed
+- **Enhanced `service_diagram.drawio` with CQRS visual distinction** — all 31 edges now color-coded for architecture clarity (Issue #98)
+  - Red solid lines (13 edges): Command operations (Write operations)
+  - Green dashed lines (6 edges): Query operations (Read operations)
+  - Gray lines (12 edges): Infrastructure/utility connections
+- Added CQRS legend to diagram with 3 primary categories
+- Fixed 2 miscategorized edges during code review:
+  - `DictionaryPort → DictionaryService`: Reclassified from Write to Read (query operation)
+  - `processor → VocabularyRepository`: Reclassified from Write to Read (query operation)
 
 ## [0.14.0] - 2026-02-14
 

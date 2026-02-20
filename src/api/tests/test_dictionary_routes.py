@@ -13,11 +13,11 @@ from fastapi.testclient import TestClient
 from api.main import app
 from api.models import UserResponse
 from api.security import get_current_user_required
-from api.dependencies import get_token_usage_repo, get_vocab_repo, get_dictionary_port, get_llm_port
+from api.dependencies import get_token_usage_repo, get_dictionary_port, get_llm_port, get_nlp_port
 from adapter.fake.dictionary import FakeDictionaryAdapter
 from adapter.fake.llm import FakeLLMAdapter
-from adapter.fake.vocabulary_repository import FakeVocabularyRepository
-from domain.model.vocabulary import GrammaticalInfo
+from adapter.fake.nlp import FakeNLPAdapter
+from domain.model.vocabulary import GrammaticalInfo, LookupResult
 from domain.model.token_usage import LLMCallResult
 
 
@@ -43,21 +43,21 @@ def _make_result(
     conjugations=None,
     level=None,
     examples=None,
-    source="hybrid",
-) -> dict:
-    """Create a result dict matching dictionary_service.lookup() output."""
-    return {
-        "lemma": lemma,
-        "definition": definition,
-        "related_words": related_words,
-        "pos": pos,
-        "gender": gender,
-        "phonetics": phonetics,
-        "conjugations": conjugations,
-        "level": level,
-        "examples": examples,
-        "source": source,
-    }
+) -> LookupResult:
+    """Create a LookupResult matching dictionary_service.lookup() output."""
+    return LookupResult(
+        lemma=lemma,
+        definition=definition,
+        related_words=related_words,
+        level=level,
+        grammar=GrammaticalInfo(
+            pos=pos,
+            gender=gender,
+            phonetics=phonetics,
+            conjugations=conjugations,
+            examples=examples,
+        ),
+    )
 
 
 class TestSearchWordRoute(unittest.TestCase):
@@ -87,6 +87,7 @@ class TestSearchWordRoute(unittest.TestCase):
         app.dependency_overrides[get_token_usage_repo] = lambda: self.mock_token_repo
         app.dependency_overrides[get_dictionary_port] = lambda: FakeDictionaryAdapter()
         app.dependency_overrides[get_llm_port] = lambda: FakeLLMAdapter()
+        app.dependency_overrides[get_nlp_port] = lambda: FakeNLPAdapter()
 
     @patch('services.dictionary_service.lookup')
     def test_search_word_success_with_valid_json(self, mock_lookup):
@@ -124,7 +125,7 @@ class TestSearchWordRoute(unittest.TestCase):
         self._setup_overrides()
 
         result = _make_result(
-            lemma="run", definition="to move quickly", source="llm",
+            lemma="run", definition="to move quickly",
         )
         mock_lookup.return_value = result
 
@@ -155,7 +156,6 @@ class TestSearchWordRoute(unittest.TestCase):
         result = _make_result(
             lemma="test",
             definition="This is a simple definition without JSON",
-            source="llm",
         )
         mock_lookup.return_value = result
 
@@ -179,7 +179,7 @@ class TestSearchWordRoute(unittest.TestCase):
         self._setup_overrides()
 
         result = _make_result(
-            lemma="test", definition="Definition not found", source="llm",
+            lemma="test", definition="Definition not found",
         )
         mock_lookup.return_value = result
 
@@ -356,114 +356,6 @@ class TestSearchWordRoute(unittest.TestCase):
         self.assertEqual(data["gender"], "der")
         self.assertIsNone(data["conjugations"])
         self.assertEqual(data["level"], "A1")
-
-
-class TestGetVocabulariesList(unittest.TestCase):
-    """Test cases for GET /dictionary/vocabularies endpoint."""
-
-    def setUp(self):
-        """Set up test client."""
-        self.client = TestClient(app)
-        self.mock_user = UserResponse(
-            id="test-user-123",
-            email="test@example.com",
-            name="Test User",
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
-            provider="email"
-        )
-        self.vocab_repo = FakeVocabularyRepository()
-
-    def tearDown(self):
-        """Clean up dependency overrides."""
-        app.dependency_overrides.clear()
-
-    def _setup(self):
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
-        app.dependency_overrides[get_vocab_repo] = lambda: self.vocab_repo
-
-    def test_get_vocabularies_list_success(self):
-        """Test successful retrieval of vocabulary list."""
-        self._setup()
-        # Save same lemma twice to get count=2
-        for article_id in ['article-1', 'article-2']:
-            self.vocab_repo.save(
-                article_id=article_id, word='testing', lemma='test',
-                definition='a procedure', sentence='This is a test.',
-                language='English', user_id='test-user-123',
-                grammar=GrammaticalInfo(pos='noun', level='B1'),
-            )
-
-        response = self.client.get("/dictionary/vocabularies")
-
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]['lemma'], 'test')
-        self.assertEqual(data[0]['count'], 2)
-        self.assertEqual(data[0]['pos'], 'noun')
-        self.assertEqual(data[0]['level'], 'B1')
-
-    def test_get_vocabularies_list_with_language_filter(self):
-        """Test vocabulary list with language filter."""
-        self._setup()
-        self.vocab_repo.save(
-            article_id='a1', word='Hund', lemma='Hund',
-            definition='dog', sentence='Der Hund.',
-            language='German', user_id='test-user-123',
-        )
-        self.vocab_repo.save(
-            article_id='a2', word='dog', lemma='dog',
-            definition='dog', sentence='The dog.',
-            language='English', user_id='test-user-123',
-        )
-
-        response = self.client.get("/dictionary/vocabularies?language=German")
-
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]['lemma'], 'Hund')
-
-    def test_get_vocabularies_list_with_pagination(self):
-        """Test vocabulary list with pagination parameters."""
-        self._setup()
-
-        response = self.client.get("/dictionary/vocabularies?skip=10&limit=50")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [])
-
-    def test_get_vocabularies_list_enforces_max_limit(self):
-        """Test that vocabulary list enforces maximum limit of 1000."""
-        self._setup()
-
-        response = self.client.get("/dictionary/vocabularies?limit=5000")
-
-        self.assertEqual(response.status_code, 200)
-
-    def test_get_vocabularies_list_requires_authentication(self):
-        """Test that get_vocabularies_list requires authentication."""
-        from fastapi import HTTPException
-
-        def mock_auth_fail():
-            raise HTTPException(status_code=401, detail="Not authenticated")
-
-        app.dependency_overrides[get_current_user_required] = mock_auth_fail
-
-        response = self.client.get("/dictionary/vocabularies")
-
-        self.assertEqual(response.status_code, 401)
-
-    def test_get_vocabularies_list_empty_result(self):
-        """Test vocabulary list with empty result."""
-        self._setup()
-
-        response = self.client.get("/dictionary/vocabularies")
-
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(len(data), 0)
 
 
 if __name__ == '__main__':

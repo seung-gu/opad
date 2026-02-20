@@ -51,6 +51,7 @@ class MongoVocabularyRepository:
             language=doc['language'],
             created_at=doc['created_at'],
             related_words=doc.get('related_words'),
+            level=doc.get('level'),
             span_id=doc.get('span_id'),
             user_id=doc.get('user_id'),
             grammar=GrammaticalInfo(
@@ -58,7 +59,6 @@ class MongoVocabularyRepository:
                 gender=doc.get('gender'),
                 phonetics=doc.get('phonetics'),
                 conjugations=doc.get('conjugations'),
-                level=doc.get('level'),
                 examples=doc.get('examples'),
             )
         )
@@ -101,7 +101,7 @@ class MongoVocabularyRepository:
                 'gender': g.gender,
                 'phonetics': g.phonetics,
                 'conjugations': g.conjugations,
-                'level': g.level,
+                'level': vocab.level,
                 'examples': g.examples,
                 'created_at': vocab.created_at,
                 'updated_at': vocab.created_at,
@@ -228,6 +228,7 @@ class MongoVocabularyRepository:
                     language=doc['_id']['language'],
                     created_at=doc.get('created_at', datetime.now(timezone.utc)),
                     related_words=doc.get('related_words'),
+                    level=doc.get('level'),
                     span_id=doc.get('span_id'),
                     user_id=doc.get('user_id'),
                     grammar=GrammaticalInfo(
@@ -235,7 +236,6 @@ class MongoVocabularyRepository:
                         gender=doc.get('gender'),
                         phonetics=doc.get('phonetics'),
                         conjugations=doc.get('conjugations'),
-                        level=doc.get('level'),
                         examples=doc.get('examples'),
                     ),
                 )

@@ -154,7 +154,7 @@ class VocabularyResponse(BaseModel):
     examples: Optional[list[str]] = Field(None, description="Example sentences from dictionary")
 
 
-class VocabularyCount(BaseModel):
+class VocabularyCountResponse(BaseModel):
     """Response model for vocabulary with count (grouped by lemma)."""
     id: str = Field(..., description="Most recent vocabulary ID")
     article_id: str = Field(..., description="Most recent article ID")

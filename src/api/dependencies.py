@@ -2,6 +2,7 @@ from fastapi import HTTPException
 
 from adapter.external.free_dictionary import FreeDictionaryAdapter
 from adapter.external.litellm import LiteLLMAdapter
+from adapter.nlp.stanza import StanzaAdapter
 from adapter.mongodb.connection import get_mongodb_client, DATABASE_NAME
 from adapter.mongodb.article_repository import MongoArticleRepository
 from adapter.mongodb.token_usage_repository import MongoTokenUsageRepository
@@ -10,9 +11,11 @@ from adapter.mongodb.vocabulary_repository import MongoVocabularyRepository
 from port.article_repository import ArticleRepository
 from port.dictionary import DictionaryPort
 from port.llm import LLMPort
+from port.nlp import NLPPort
 from port.token_usage_repository import TokenUsageRepository
 from port.user_repository import UserRepository
 from port.vocabulary_repository import VocabularyRepository
+from port.vocabulary import VocabularyPort
 
 
 def _get_db():
@@ -39,9 +42,24 @@ def get_vocab_repo() -> VocabularyRepository:
     return MongoVocabularyRepository(_get_db())
 
 
+def get_vocab_port() -> VocabularyPort:
+    return MongoVocabularyRepository(_get_db())
+
+
 def get_dictionary_port() -> DictionaryPort:
     return FreeDictionaryAdapter()
 
 
 def get_llm_port() -> LLMPort:
     return LiteLLMAdapter()
+
+
+_stanza_adapter: StanzaAdapter | None = None
+
+
+def get_nlp_port() -> NLPPort:
+    """Get NLP port (Stanza adapter singleton for German lemma extraction)."""
+    global _stanza_adapter
+    if _stanza_adapter is None:
+        _stanza_adapter = StanzaAdapter()
+    return _stanza_adapter

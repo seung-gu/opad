@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from domain.model.token_usage import LLMCallResult, TokenUsage
 from port.token_usage_repository import TokenUsageRepository
-from utils.token_usage import calculate_cost
+from port.llm import LLMPort
 
 if TYPE_CHECKING:
     from crew.main import CrewResult
@@ -55,6 +55,7 @@ def track_crew_usage(
     user_id: str,
     article_id: str | None,
     job_id: str,
+    llm: LLMPort | None = None,
 ) -> None:
     """Track token usage for each CrewAI agent.
 
@@ -88,11 +89,11 @@ def track_crew_usage(
                 prompt_tokens=agent['prompt_tokens'],
                 completion_tokens=agent['completion_tokens'],
                 total_tokens=agent['total_tokens'],
-                estimated_cost=calculate_cost(
+                estimated_cost=llm.estimate_cost(
                     model=agent['model'],
                     prompt_tokens=agent['prompt_tokens'],
                     completion_tokens=agent['completion_tokens'],
-                ),
+                ) if llm else 0.0,
             )
             result_id = track_llm_usage(
                 repo, stats, user_id,

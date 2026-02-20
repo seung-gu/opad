@@ -8,6 +8,8 @@ Supported languages: German (de), English (en), French (fr), Spanish (es)
 """
 
 import logging
+import re
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
@@ -19,6 +21,7 @@ from tenacity import (
     retry_if_exception_type,
 )
 
+from domain.model.vocabulary import GrammaticalInfo, SenseResult
 from utils.language_metadata import (
     GENDER_MAP, REFLEXIVE_PREFIXES, REFLEXIVE_SUFFIXES, PHONETICS_SUPPORTED,
     get_language_code,
@@ -30,11 +33,57 @@ FREE_DICTIONARY_API_BASE_URL = "https://freedictionaryapi.com/api/v1/entries"
 API_TIMEOUT_SECONDS = 5.0
 
 
+# ── Internal sense addressing ────────────────────────────────
+
+
+@dataclass(frozen=True)
+class _SenseIndex:
+    """Adapter-internal addressing for Free Dictionary entry/sense/subsense."""
+    entry: int = 0
+    sense: int = 0
+    subsense: int = -1
+
+    @classmethod
+    def from_label(cls, text: str) -> "_SenseIndex":
+        match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", text)
+        if not match:
+            return cls()
+        return cls(
+            entry=int(match.group(1)),
+            sense=int(match.group(2)),
+            subsense=int(match.group(3)) if match.group(3) else -1,
+        )
+
+
 # ── Adapter ──────────────────────────────────────────────────
 
 
 class FreeDictionaryAdapter:
     """Adapter that fetches dictionary entries from the Free Dictionary API."""
+
+    def build_sense_listing(self, entries: list[dict[str, Any]]) -> str | None:
+        if _is_trivial(entries):
+            return None
+        return _format_sense_listing(entries)
+
+    def get_sense(
+        self, entries: list[dict[str, Any]], label: str,
+    ) -> SenseResult:
+        index = _SenseIndex.from_label(label)
+        clamped = _clamp_index(entries, index)
+        definition, sense_dict = _read_definition(entries[clamped.entry], clamped.sense, clamped.subsense)
+        examples = _read_examples(sense_dict) if sense_dict else None
+        return SenseResult(definition=definition, examples=examples)
+
+    def extract_grammar(
+        self, entries: list[dict[str, Any]], label: str, language: str,
+    ) -> GrammaticalInfo:
+        language_code = get_language_code(language)
+        if not language_code:
+            return GrammaticalInfo()
+        index = _SenseIndex.from_label(label)
+        ei = max(0, min(index.entry, len(entries) - 1))
+        return extract_entry_metadata(entries[ei], language_code)
 
     async def fetch(self, word: str, language: str) -> list[dict] | None:
         """Fetch dictionary entries for a word.
@@ -94,18 +143,6 @@ class FreeDictionaryAdapter:
                 )
                 return entries
 
-        except httpx.TimeoutException:
-            logger.warning(
-                "Free Dictionary API timeout after retries",
-                extra={"word": word, "language": language},
-            )
-            return None
-        except httpx.ConnectError:
-            logger.warning(
-                "Free Dictionary API connection error after retries",
-                extra={"word": word, "language": language},
-            )
-            return None
         except httpx.HTTPStatusError as e:
             logger.warning(
                 "Free Dictionary API HTTP error",
@@ -115,7 +152,7 @@ class FreeDictionaryAdapter:
         except httpx.RequestError as e:
             logger.warning(
                 "Free Dictionary API request error",
-                extra={"word": word, "language": language, "error": str(e)},
+                extra={"word": word, "language": language, "error_type": type(e).__name__},
             )
             return None
         except Exception as e:
@@ -156,32 +193,31 @@ def _strip_reflexive_pronoun(word: str, language_code: str) -> str:
 # ── Entry metadata extraction ────────────────────────────────
 
 
-def extract_entry_metadata(entry: dict[str, Any], language_code: str) -> dict[str, Any]:
-    """Extract metadata from a single dictionary entry.
+def extract_entry_metadata(entry: dict[str, Any], language_code: str) -> GrammaticalInfo:
+    """Extract grammatical metadata from a single dictionary entry.
 
     Args:
         entry: A single entry dict from API response.
         language_code: ISO 639-1 language code.
 
     Returns:
-        Dict with keys: pos, phonetics, forms, gender, senses.
+        GrammaticalInfo domain object with pos, gender, phonetics, conjugations.
     """
     pos = entry.get("partOfSpeech")
     phonetics = _extract_phonetics(entry) if language_code in PHONETICS_SUPPORTED else None
     forms = _extract_forms(entry)
-    senses = entry.get("senses", [])
+    conjugations = _extract_conjugations(forms)
 
     gender = _extract_gender_from_senses(entry, language_code)
     if gender is None and pos:
         gender = _extract_gender_from_pos(pos, language_code)
 
-    return {
-        "pos": pos,
-        "phonetics": phonetics,
-        "forms": forms,
-        "gender": gender,
-        "senses": senses,
-    }
+    return GrammaticalInfo(
+        pos=pos,
+        phonetics=phonetics,
+        conjugations=conjugations,
+        gender=gender,
+    )
 
 
 # ── Gender extraction ────────────────────────────────────────
@@ -314,3 +350,105 @@ def _extract_forms(entry: dict[str, Any]) -> dict[str, str] | None:
         result["auxiliary"] = " / ".join(auxiliaries)
 
     return result if result else None
+
+
+def _extract_conjugations(forms: dict[str, str] | None) -> dict[str, str] | None:
+    """Filter relevant conjugation/declension forms from raw forms dict."""
+    if not forms:
+        return None
+    conjugations: dict[str, str] = {}
+    for key in ("present", "past", "participle", "auxiliary", "genitive", "plural"):
+        if forms.get(key):
+            conjugations[key] = forms[key]
+    return conjugations or None
+
+
+# ── Entry reading utilities ─────────────────────────────────
+# These functions read from the entries/senses/subsenses structure
+# returned by fetch().  They contain no business logic — only
+# structure traversal and serialization.
+
+
+def _format_sense_listing(entries: list[dict[str, Any]]) -> str:
+    """Serialize entries/senses/subsenses into a numbered listing.
+
+    Produces an X.Y / X.Y.Z indexed listing.  Does NOT include any
+    prompt instructions — that is the caller's responsibility.
+    """
+    lines: list[str] = []
+    for i, entry in enumerate(entries):
+        pos = entry.get("partOfSpeech", "unknown")
+        lines.append(f"entries[{i}] ({pos}):")
+        for j, sense in enumerate(entry.get("senses", [])):
+            lines.append(f"  {i}.{j} {sense.get('definition', '')}")
+            for k, sub in enumerate(sense.get("subsenses", [])):
+                lines.append(f"    {i}.{j}.{k} {sub.get('definition', '')}")
+    return "\n".join(lines)
+
+
+def _is_trivial(entries: list[dict[str, Any]]) -> bool:
+    """Check if entries have a single sense with no subsenses.
+
+    When trivial, sense selection can skip the LLM call entirely.
+    """
+    if len(entries) != 1:
+        return False
+    senses = entries[0].get("senses", [])
+    if len(senses) > 1:
+        return False
+    if senses and senses[0].get("subsenses"):
+        return False
+    return True
+
+
+def _clamp_index(entries: list[dict[str, Any]], index: _SenseIndex) -> _SenseIndex:
+    """Clamp a SenseIndex to valid ranges within entries."""
+    ei = max(0, min(index.entry, len(entries) - 1))
+    senses = entries[ei].get("senses", [])
+    si = max(0, min(index.sense, len(senses) - 1)) if senses else 0
+
+    ssi = -1
+    if index.subsense >= 0 and senses:
+        subsenses = senses[si].get("subsenses", [])
+        ssi = max(0, min(index.subsense, len(subsenses) - 1)) if subsenses else -1
+
+    return _SenseIndex(entry=ei, sense=si, subsense=ssi)
+
+
+def _read_definition(
+    entry: dict[str, Any],
+    sense_idx: int,
+    subsense_idx: int,
+) -> tuple[str, dict[str, Any] | None]:
+    """Read definition string from selected entry/sense/subsense indices.
+
+    Returns:
+        Tuple of (definition_string, selected_sense_dict_or_None).
+    """
+    senses = entry.get("senses", [])
+    if sense_idx >= len(senses):
+        return "", None
+
+    sense = senses[sense_idx]
+    subsenses = sense.get("subsenses", [])
+    if 0 <= subsense_idx < len(subsenses):
+        subsense = subsenses[subsense_idx]
+        return subsense.get("definition", ""), subsense
+    return sense.get("definition", ""), sense
+
+
+def _read_examples(
+    sense: dict[str, Any],
+    max_count: int = 3,
+) -> list[str] | None:
+    """Read examples from a single sense dict.
+
+    Handles both string examples and dict examples with 'text' key.
+    """
+    examples: list[str] = []
+    for example in sense.get("examples", [])[:max_count]:
+        if isinstance(example, str):
+            examples.append(example)
+        elif isinstance(example, dict) and "text" in example:
+            examples.append(example["text"])
+    return examples if examples else None

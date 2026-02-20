@@ -118,7 +118,7 @@ pip install -e .
 
 **Stanza NLP 모델 다운로드** (자동):
 - API 서비스 첫 실행 시 Stanza German pipeline (~349MB)이 자동으로 다운로드됩니다.
-- 다운로드는 `src/api/main.py`의 `lifespan` 함수에서 `preload_stanza()`를 통해 실행됩니다.
+- 다운로드는 `src/api/main.py`의 `lifespan` 함수에서 `get_nlp_port().preload()`를 통해 실행됩니다 (NLPPort/StanzaAdapter).
 - 이후 실행 시에는 캐시된 모델을 사용하므로 추가 다운로드가 필요하지 않습니다.
 - 수동 다운로드: `uv run python -c "import stanza; stanza.download('de')"`
 

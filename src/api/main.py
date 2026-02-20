@@ -20,7 +20,7 @@ load_dotenv()
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.routes import articles, jobs, health, stats, dictionary, auth, usage
+from api.routes import articles, jobs, health, stats, dictionary, vocabulary, auth, usage
 from utils.logging import setup_structured_logging
 from adapter.mongodb.connection import get_mongodb_client, DATABASE_NAME
 from adapter.mongodb.indexes import ensure_all_indexes
@@ -54,8 +54,10 @@ async def lifespan(app: FastAPI):
 
     # Startup: preload Stanza German pipeline (~349MB)
     try:
-        from utils.lemma_extraction import preload_stanza
-        preload_stanza()
+        from api.dependencies import get_nlp_port
+        adapter = get_nlp_port()
+        if hasattr(adapter, 'preload'):
+            adapter.preload()
     except Exception as e:
         logger.warning("Failed to preload Stanza pipeline: %s", e)
 
@@ -106,6 +108,7 @@ app.include_router(jobs.router)
 app.include_router(health.router)
 app.include_router(stats.router)
 app.include_router(dictionary.router)
+app.include_router(vocabulary.router)
 app.include_router(auth.router)
 app.include_router(usage.router)
 
