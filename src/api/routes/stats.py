@@ -1,22 +1,15 @@
 """Database statistics API routes."""
 
 import logging
-import sys
-from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 
-# Add src to path
-# stats.py is at /app/src/api/routes/stats.py
-# src is at /app/src, so we go up 3 levels
-_src_path = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(_src_path))
-
 from adapter.mongodb.connection import get_mongodb_client, DATABASE_NAME
 from adapter.mongodb.stats import get_database_stats, get_vocabulary_stats
-from api.job_queue import get_job_stats
+from api.dependencies import get_job_queue
 from api.models import UserResponse
 from api.security import get_current_user_required
+from port.job_queue import JobQueuePort
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +17,11 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 
 
 @router.get("")
-async def get_database_stats_endpoint(
+async def get_database_stats(
     _current_user: UserResponse = Depends(get_current_user_required),
+    job_queue: JobQueuePort = Depends(get_job_queue),
 ):
-    """Get MongoDB database and Redis statistics.
-    
-    Returns information about collection size, index size, document counts, job statistics, etc.
-    Useful for debugging disk space issues and job processing.
-    """
+    """Get MongoDB database and Redis statistics."""
     client = get_mongodb_client()
     if not client:
         raise HTTPException(status_code=503, detail="Database service unavailable")
@@ -41,8 +31,8 @@ async def get_database_stats_endpoint(
     if not stats:
         raise HTTPException(status_code=503, detail="Failed to retrieve database statistics")
 
-    # Get job statistics from Redis
-    job_stats = get_job_stats()
+    # Get job statistics via port
+    job_stats = job_queue.get_stats()
     if job_stats:
         stats.update({f'job_{k}': v for k, v in job_stats.items()})
 
@@ -255,7 +245,7 @@ def _render_stats_html(stats: dict) -> HTMLResponse:
                         <h3 class="text-xl font-semibold text-gray-900 mb-4">By Language</h3>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 """
-    
+
     # Add language breakdown if available
     vocab_by_language = stats.get('vocab_by_language', {})
     if vocab_by_language:
@@ -267,7 +257,7 @@ def _render_stats_html(stats: dict) -> HTMLResponse:
                             </div>"""
     else:
         html += "                            <div class='text-gray-500 col-span-3 text-center py-4'>No vocabulary data available</div>"
-    
+
     html += """
                         </div>
                     </div>
@@ -286,5 +276,5 @@ def _render_stats_html(stats: dict) -> HTMLResponse:
     </body>
     </html>
     """
-    
+
     return HTMLResponse(content=html)

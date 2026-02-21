@@ -23,8 +23,8 @@ from adapter.external.free_dictionary import FreeDictionaryAdapter
 _llm = LiteLLMAdapter()
 _dict_adapter = FreeDictionaryAdapter()
 from services.lemma_extraction import _build_reduced_prompt as build_reduced_word_definition_prompt
-from utils.json_parsing import parse_json_content
-from utils.prompts import build_word_definition_prompt
+from json_repair import repair_json
+from services.dictionary_service import _build_full_prompt as build_word_definition_prompt
 
 
 def get_random_vocabularies(count: int = 10) -> list[dict]:
@@ -73,7 +73,7 @@ async def test_hybrid_lookup(vocab: dict) -> dict:
             temperature=0
         )
         llm_time = time.time() - llm_start
-        llm_result = parse_json_content(content)
+        llm_result = repair_json(content, return_objects=True)
 
         result['llm_time'] = llm_time
         result['llm_tokens'] = {
@@ -152,7 +152,7 @@ async def test_full_llm_lookup(vocab: dict) -> dict:
             temperature=0
         )
         elapsed = time.time() - start
-        result = parse_json_content(content)
+        result = repair_json(content, return_objects=True)
 
         return {
             'time': elapsed,

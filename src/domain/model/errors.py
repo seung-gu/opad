@@ -23,3 +23,16 @@ class PermissionDeniedError(DomainError):
 
 class ValidationError(DomainError):
     """Input violates a business validation rule."""
+
+
+class DuplicateArticleError(DuplicateError):
+    """Duplicate article detected within the dedup window."""
+
+    def __init__(self, article_id: str, job_data: dict | None = None):
+        self.article_id = article_id
+        self.job_data = job_data
+        super().__init__("Duplicate article detected")
+
+
+class EnqueueError(DomainError):
+    """Failed to enqueue a job to the queue."""

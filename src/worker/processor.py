@@ -1,156 +1,91 @@
 """Job processor - Worker service core logic.
 
-This module contains the worker's main processing logic:
-1. Dequeue jobs from Redis queue (FIFO order)
-2. Execute CrewAI to generate articles
-3. Save results to MongoDB
-4. Update job status in Redis
-
 Architecture:
-    Redis Queue -> dequeue_job() -> process_job() -> CrewAI -> MongoDB
-                                        |
-                                  update_job_status() -> Redis Status
-
-Progress Tracking:
-    JobProgressListener subscribes to CrewAI events for real-time task updates.
-
-Token Usage:
-    After execution, token usage is retrieved via CrewAI's built-in metrics
-    (agent.llm.get_token_usage_summary()) and saved to MongoDB per agent/model.
+    JobQueuePort -> dequeue() -> process_job() -> generate_article() -> ArticleRepository
+                                      |
+                              JobQueuePort.update_status()
 """
 
 import logging
-import sys
-from pathlib import Path
+from collections.abc import Callable
 
-_src_path = Path(__file__).parent.parent
-sys.path.insert(0, str(_src_path))
-
-from crew.main import run as run_crew
-from api.job_queue import dequeue_job
-from services.token_usage_service import track_crew_usage
-from worker.context import JobContext, translate_error
-from crew.progress_listener import JobProgressListener
-from crew.models import ReviewedArticle
+from domain.model.job import JobContext
 from port.article_repository import ArticleRepository
-from port.llm import LLMPort
-from port.token_usage_repository import TokenUsageRepository
-from port.vocabulary import VocabularyPort
-from domain.model.cefr import CEFRLevel
+from port.job_queue import JobQueuePort
 from domain.model.article import ArticleStatus
-
 
 logger = logging.getLogger(__name__)
 
 
+def _translate_error(error: Exception) -> str:
+    """Translate technical error to user-friendly message."""
+    msg = str(error).lower()
+    if "json" in msg:
+        return "AI model returned invalid response. Please try again."
+    if "timeout" in msg:
+        return "Request timed out. Please try again."
+    if "rate limit" in msg or "429" in msg:
+        return "Rate limit exceeded. Please wait and try again."
+    return f"Job failed: {type(error).__name__}"
+
+
 def process_job(
-    job_data: dict,
+    ctx: JobContext,
     repo: ArticleRepository,
-    token_usage_repo: TokenUsageRepository | None = None,
-    vocab: VocabularyPort | None = None,
-    llm: LLMPort | None = None,
+    job_queue: JobQueuePort,
+    generate: Callable[..., bool] | None = None,
 ) -> bool:
-    """Process a single job from the queue.
+    """Process a single job from the queue."""
 
-    Args:
-        job_data: Job data from queue (job_id, article_id, user_id, inputs, created_at)
-        repo: ArticleRepository (injected from main.py or test)
-        token_usage_repo: TokenUsageRepository (injected from main.py or test)
-
-    Returns:
-        True if job completed, False if failed
-    """
-    ctx = JobContext.from_dict(job_data, repo)
-    if not ctx:
-        return False
+    def mark_failed(message: str, error: str | None = None):
+        job_queue.update_status(ctx.job_id, 'failed', 0, message, error, ctx.article_id)
+        if ctx.article_id:
+            repo.update_status(ctx.article_id, ArticleStatus.FAILED)
 
     logger.info("Processing job", extra=ctx.log_extra)
-    ctx.update_status('running', 0, 'Starting CrewAI execution...')
+    job_queue.update_status(ctx.job_id, 'running', 0, 'Starting article generation...', article_id=ctx.article_id)
 
     try:
-        from crewai.events.event_bus import crewai_event_bus
-
-        with crewai_event_bus.scoped_handlers():
-            # Listener registers event handlers in __init__ for real-time progress updates.
-            # It subscribes to CrewAI events and updates Redis with job progress.
-            listener = JobProgressListener(
-                job_id=ctx.job_id,
-                article_id=ctx.article_id or ""
-            )
-
-            # Fetch vocabulary for personalized generation (always set default to avoid template error)
-            # Filter by target level to avoid vocab too difficult for the article
-            vocab_list = None
-            if ctx.user_id and ctx.inputs.get('language') and vocab:
-                levels = CEFRLevel.range(ctx.inputs.get('level'), max_above=1)
-                vocab_list = vocab.find_lemmas(
-                    user_id=ctx.user_id,
-                    language=ctx.inputs['language'],
-                    levels=levels,
-                    limit=50,
-                )
-            ctx.inputs['vocabulary_list'] = vocab_list if vocab_list else ""
-
-            # Execute CrewAI
-            logger.info("Executing CrewAI", extra=ctx.log_extra)
-            result = run_crew(inputs=ctx.inputs)
-            logger.info("CrewAI completed", extra=ctx.log_extra)
-
-            # Save token usage for each agent (even if task failed - tokens were still consumed)
-            if ctx.user_id and token_usage_repo:
-                track_crew_usage(token_usage_repo, result, ctx.user_id, ctx.article_id, ctx.job_id, llm=llm)
-
-            # Check for task failures
-            if listener.task_failed:
-                logger.warning("Task failed during execution", extra=ctx.log_extra)
-                if ctx.article_id:
-                    repo.update_status(ctx.article_id, ArticleStatus.FAILED)
-                return False
-
-        # Log replaced sentences from review
-        reviewed = result.pydantic
-        if isinstance(reviewed, ReviewedArticle) and reviewed.replaced_sentences:
-            for change in reviewed.replaced_sentences:
-                logger.info(
-                    f"Sentence replaced: '{change.original}' -> '{change.replaced}' ({change.rationale})",
-                    extra=ctx.log_extra
-                )
-
-        # Save to MongoDB
-        logger.info("Saving article", extra=ctx.log_extra)
-        content = reviewed.article_content
-        if not repo.save_content(ctx.article_id, content, ctx.started_at):
-            ctx.mark_failed('Failed to save article to database', 'MongoDB save error')
+        if not generate:
+            mark_failed('Internal configuration error', 'generate function is None')
             return False
 
-        # Mark completed
-        ctx.update_status('completed', 100, 'Article generated successfully!')
-        logger.info("Job completed", extra=ctx.log_extra)
-        return True
+        article = repo.get_by_id(ctx.article_id) if ctx.article_id else None
+        if not article:
+            mark_failed('Article not found', f'Article {ctx.article_id} not found in database')
+            return False
+
+        success = generate(article=article, user_id=ctx.user_id, inputs=ctx.inputs, job_id=ctx.job_id)
+
+        if success:
+            job_queue.update_status(ctx.job_id, 'completed', 100, 'Article generated successfully!', article_id=ctx.article_id)
+            logger.info("Job completed", extra=ctx.log_extra)
+        else:
+            mark_failed('Failed to generate or save article', 'Generation returned False')
+
+        return success
 
     except Exception as e:
         logger.error(f"Job failed: {e}", extra={**ctx.log_extra, "error": str(e)})
-        ctx.mark_failed(translate_error(e), f"{type(e).__name__}: {str(e)[:200]}")
+        mark_failed(_translate_error(e), f"{type(e).__name__}: {str(e)[:200]}")
         return False
 
 
 def run_worker_loop(
     repo: ArticleRepository,
-    token_usage_repo: TokenUsageRepository | None = None,
-    vocab: VocabularyPort | None = None,
-    llm: LLMPort | None = None,
+    job_queue: JobQueuePort,
+    generate: Callable[..., bool],
 ):
-    """Main worker loop - continuously processes jobs from Redis queue."""
+    """Main worker loop - continuously processes jobs from queue."""
     logger.info("Worker started, waiting for jobs...")
 
     while True:
         try:
-            job_data = dequeue_job()
+            ctx = job_queue.dequeue()
 
-            if job_data:
-                job_id = job_data.get('job_id')
-                logger.info("Received job", extra={"jobId": job_id})
-                process_job(job_data, repo, token_usage_repo, vocab, llm)
+            if ctx:
+                logger.info("Received job", extra=ctx.log_extra)
+                process_job(ctx, repo, job_queue, generate)
             else:
                 import time
                 time.sleep(5)

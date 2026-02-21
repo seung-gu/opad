@@ -1,30 +1,18 @@
-"""Article-related API routes.
-
-This module handles article creation and generation requests:
-- POST /articles: Create article record
-- POST /articles/:id/generate: Enqueue generation job
-- GET /articles/:id: Get article details
-
-Flow:
-    Client -> POST /articles -> Create record -> Return article_id
-    Client -> POST /articles/:id/generate -> Enqueue job -> Return job_id
-    Client -> Poll GET /jobs/:job_id -> Get status -> Wait for completion
-"""
+"""Article-related API routes."""
 
 import logging
-import uuid
-from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 
 from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse, ArticleListResponse, UserResponse, VocabularyResponse
 from api.security import get_current_user_required
-from api.job_queue import enqueue_job, update_job_status, get_job_status
-from api.dependencies import get_article_repo
+from api.dependencies import get_article_repo, get_job_queue, get_vocab_repo
 from port.article_repository import ArticleRepository
+from port.job_queue import JobQueuePort
 from domain.model.article import ArticleInputs, ArticleStatus, Article
-from api.dependencies import get_vocab_repo
+from domain.model.errors import DomainError, DuplicateArticleError, EnqueueError
 from port.vocabulary_repository import VocabularyRepository
+from services.article_generation_service import submit_generation
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +50,7 @@ def _build_article_response(article: Article) -> dict:
 
 def _check_ownership(article: Article, current_user: UserResponse, article_id: str, action: str = "access") -> None:
     """Check if the current user owns the article."""
-    if article.user_id != current_user.id:
+    if not article.is_owned_by(current_user.id):
         logger.warning(
             f"Unauthorized {action} attempt",
             extra={
@@ -84,82 +72,13 @@ def _get_article_or_404(
     article = repo.get_by_id(article_id)
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
-    if check_deleted and article.status == ArticleStatus.DELETED:
+    if check_deleted and article.is_deleted:
         raise HTTPException(status_code=404, detail="Article not found")
     return article
 
 
-def _check_duplicate(
-    repo: ArticleRepository,
-    inputs: ArticleInputs,
-    force: bool = False,
-    user_id: Optional[str] = None,
-) -> None:
-    """Check for duplicate articles and raise 409 if found."""
-    if force:
-        logger.info("Force generation requested, skipping duplicate check", extra={"userId": user_id})
-        return
-
-    existing = repo.find_duplicate(inputs, user_id, hours=24)
-    if not existing:
-        return
-
-    logger.info("Duplicate article detected", extra={
-        "existingArticleId": existing.id,
-        "existingJobId": existing.job_id,
-        "userId": user_id
-    })
-
-    # Get job status from Redis if job_id exists
-    existing_job = None
-    if existing.job_id:
-        existing_job_data = get_job_status(existing.job_id)
-        if existing_job_data:
-            try:
-                existing_job = JobResponse(**existing_job_data)
-            except Exception as e:
-                logger.warning("Failed to parse existing job status", extra={
-                    "existingJobId": existing.job_id,
-                    "error": str(e)
-                })
-
-    detail = {
-        "error": "Duplicate article detected",
-        "message": "An article with identical parameters was created within the last 24 hours.",
-        "existing_job": existing_job.model_dump(mode='json') if existing_job else None,
-        "article_id": existing.id
-    }
-
-    raise HTTPException(status_code=409, detail=detail)
-
-
-def _create_and_enqueue_job(
-    repo: ArticleRepository,
-    article_id: str,
-    inputs: dict,
-    job_id: str,
-    user_id: Optional[str] = None,
-) -> GenerateResponse:
-    """Create new job and enqueue it."""
-    if not update_job_status(job_id, 'queued', 0, 'Job queued, waiting for worker...', article_id=article_id):
-        logger.error("Failed to initialize job status", extra={"jobId": job_id, "articleId": article_id})
-        raise HTTPException(status_code=503, detail="Failed to initialize job status")
-
-    if not enqueue_job(job_id, article_id, inputs, user_id):
-        update_job_status(job_id, 'failed', 0, 'Failed to enqueue job', 'Queue service unavailable', article_id=article_id)
-        repo.update_status(article_id, ArticleStatus.FAILED)
-        raise HTTPException(status_code=503, detail="Failed to enqueue job")
-
-    logger.info("Job enqueued", extra={"jobId": job_id, "articleId": article_id, "userId": user_id})
-    return GenerateResponse(
-        job_id=job_id,
-        article_id=article_id,
-        message="Article generation started. Use job_id to track progress."
-    )
-
-
 @router.get("")
-async def list_articles_endpoint(
+async def list_articles(
     skip: int = 0,
     limit: int = 20,
     status: Optional[str] = None,
@@ -178,12 +97,13 @@ async def list_articles_endpoint(
         status_enum = ArticleStatus(status) if status else None
     except ValueError:
         raise HTTPException(status_code=422, detail=f"Invalid status: {status}")
-    articles, total = repo.find_many(
+
+    result = repo.find_many(
         skip, limit, status_enum, language, level, current_user.id, exclude_deleted=True,
     )
 
     article_responses = []
-    for article in articles:
+    for article in result.items:
         try:
             article_responses.append(_build_article_response(article))
         except Exception as e:
@@ -194,14 +114,14 @@ async def list_articles_endpoint(
 
     logger.info("Listed articles", extra={
         "count": len(article_responses),
-        "total": total,
+        "total": result.total,
         "skip": skip,
         "limit": limit
     })
 
     return ArticleListResponse(
         articles=article_responses,
-        total=total,
+        total=result.total,
         skip=skip,
         limit=limit
     )
@@ -213,6 +133,7 @@ async def generate_article(
     force: bool = False,
     current_user: UserResponse = Depends(get_current_user_required),
     repo: ArticleRepository = Depends(get_article_repo),
+    job_queue: JobQueuePort = Depends(get_job_queue),
 ):
     """Create article and start generation (unified endpoint)."""
     inputs = ArticleInputs(
@@ -221,47 +142,36 @@ async def generate_article(
         length=request.length,
         topic=request.topic,
     )
-    user_id: str = current_user.id
 
-    logger.info("Article generation requested", extra={
-        "userId": user_id,
-        "topic": request.topic,
-        "language": request.language
-    })
+    try:
+        article = submit_generation(inputs, current_user.id, repo, job_queue, force)
+    except DuplicateArticleError as e:
+        existing_job = None
+        if e.job_data:
+            try:
+                existing_job = JobResponse(**e.job_data)
+            except Exception:
+                pass
+        raise HTTPException(status_code=409, detail={
+            "error": "Duplicate article detected",
+            "message": "An article with identical parameters was created within the last 24 hours.",
+            "existing_job": existing_job.model_dump(mode='json') if existing_job else None,
+            "article_id": e.article_id,
+        })
+    except EnqueueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except DomainError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
-    # Step 1: Check for duplicate
-    _check_duplicate(repo, inputs, force, user_id)
-
-    # Step 2: Generate IDs
-    article_id = str(uuid.uuid4())
-    job_id = str(uuid.uuid4())
-    created_at = datetime.now(timezone.utc)
-
-    # Step 3: Create article
-    if not repo.save_metadata(
-        article_id=article_id,
-        inputs=inputs,
-        status=ArticleStatus.RUNNING,
-        created_at=created_at,
-        user_id=user_id,
-        job_id=job_id,
-    ):
-        raise HTTPException(status_code=503, detail="Failed to save article")
-
-    logger.info("Created article", extra={"articleId": article_id, "jobId": job_id, "userId": user_id})
-
-    # Step 4: Enqueue job
-    job_inputs = {
-        'language': request.language,
-        'level': request.level,
-        'length': request.length,
-        'topic': request.topic,
-    }
-    return _create_and_enqueue_job(repo, article_id, job_inputs, job_id, user_id)
+    return GenerateResponse(
+        job_id=article.job_id,
+        article_id=article.id,
+        message="Article generation started. Use job_id to track progress.",
+    )
 
 
 @router.get("/{article_id}", response_model=ArticleResponse)
-async def get_article_endpoint(
+async def get_article(
     article_id: str,
     current_user: UserResponse = Depends(get_current_user_required),
     repo: ArticleRepository = Depends(get_article_repo),
@@ -286,7 +196,7 @@ async def get_article_content(
     article = _get_article_or_404(repo, article_id)
     _check_ownership(article, current_user, article_id, "access")
 
-    if not article.content:
+    if not article.has_content:
         raise HTTPException(status_code=404, detail="Article content not found")
 
     return Response(content=article.content, media_type='text/markdown')
@@ -336,7 +246,7 @@ async def get_article_vocabularies(
 
 
 @router.delete("/{article_id}")
-async def delete_article_endpoint(
+async def delete_article(
     article_id: str,
     current_user: UserResponse = Depends(get_current_user_required),
     repo: ArticleRepository = Depends(get_article_repo),

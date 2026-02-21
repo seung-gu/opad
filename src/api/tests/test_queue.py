@@ -1,339 +1,196 @@
-"""Comprehensive tests for Redis queue operations."""
+"""Comprehensive tests for Redis queue operations via RedisJobQueueAdapter."""
 
 import unittest
 from unittest.mock import patch, MagicMock
 import sys
 from pathlib import Path
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add src to path
-# test_queue.py is at /app/src/api/tests/test_queue.py
-# src is at /app/src, so we go up 3 levels
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from api.job_queue import enqueue_job, get_job_status, update_job_status, get_redis_client
-from worker.processor import process_job
+from adapter.queue.redis_job_queue import RedisJobQueueAdapter
+from adapter.fake.job_queue import FakeJobQueueAdapter
 from adapter.fake.article_repository import FakeArticleRepository
-from domain.model.article import ArticleInputs
-import api.job_queue as queue_module
+from worker.processor import process_job
+from domain.model.article import Article, ArticleInputs, ArticleStatus
+from domain.model.job import JobContext
+
+TEST_INPUTS = ArticleInputs(language='German', level='B2', length='500', topic='AI')
 
 
 class TestQueueBasics(unittest.TestCase):
-    """Basic queue operation tests."""
-    
-    @patch('api.job_queue.get_redis_client')
-    def test_job_lifecycle(self, mock_get_redis):
-        """Test complete job lifecycle: enqueue -> process -> status update."""
-        # Mock Redis client
-        mock_redis = MagicMock()
-        mock_get_redis.return_value = mock_redis
-        
-        # No existing data initially
-        mock_redis.get.return_value = None
-        
-        # Test enqueue
+    """Basic queue operation tests using FakeJobQueueAdapter."""
+
+    def test_fake_job_lifecycle(self):
+        """Test complete job lifecycle with FakeJobQueueAdapter."""
+        job_queue = FakeJobQueueAdapter()
+
         job_id = "test-job-123"
         article_id = "test-article-456"
         inputs = {'language': 'German', 'level': 'B2', 'length': '500', 'topic': 'AI'}
-        
-        result = enqueue_job(job_id, article_id, inputs)
+
+        # Enqueue
+        result = job_queue.enqueue(job_id, article_id, inputs)
         self.assertTrue(result)
-        mock_redis.rpush.assert_called_once()
-        
-        # Test status update
-        update_job_status(
+
+        # Update status
+        job_queue.update_status(
             job_id=job_id,
             status='running',
             progress=50,
-            message='Processing...'
+            message='Processing...',
         )
-        mock_redis.setex.assert_called()
-        
-        # Test status retrieval
-        mock_redis.get.return_value = '{"id": "test-job-123", "status": "running", "progress": 50}'
-        status = get_job_status(job_id)
+
+        # Get status
+        status = job_queue.get_status(job_id)
         self.assertIsNotNone(status)
         self.assertEqual(status['status'], 'running')
-    
-    @patch('worker.context.update_job_status')
-    @patch('worker.processor.run_crew')
-    @patch('crew.progress_listener.JobProgressListener')
-    def test_end_to_end_job_processing(self, mock_listener,
-                                        mock_run_crew, mock_update_status):
+        self.assertEqual(status['progress'], 50)
+
+        # Dequeue
+        ctx = job_queue.dequeue()
+        self.assertIsNotNone(ctx)
+        self.assertEqual(ctx.job_id, job_id)
+
+    def test_end_to_end_job_processing(self):
         """Test end-to-end job processing flow."""
         repo = FakeArticleRepository()
-        repo.save_metadata(
-            article_id='e2e-test-article',
+        job_queue = FakeJobQueueAdapter()
+
+        article = Article(
+            id='e2e-test-article',
             inputs=ArticleInputs(language='German', level='B2', length='500', topic='AI'),
+            status=ArticleStatus.RUNNING,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
             user_id='test-user-789',
         )
+        repo.save(article)
 
-        job_data = {
-            'job_id': 'e2e-test-job',
-            'article_id': 'e2e-test-article',
-            'user_id': 'test-user-789',
-            'inputs': {'language': 'German', 'level': 'B2', 'length': '500', 'topic': 'AI'}
-        }
+        ctx = JobContext(
+            job_id='e2e-test-job',
+            article_id='e2e-test-article',
+            user_id='test-user-789',
+            inputs=TEST_INPUTS,
+        )
 
-        # Mock successful execution
-        mock_result = MagicMock()
-        mock_result.raw = "# Test Article\n\nContent"
-        mock_result.pydantic.article_content = "# Test Article\n\nContent"
-        mock_result.pydantic.replaced_sentences = []
-        mock_run_crew.return_value = mock_result
+        mock_generate = MagicMock(return_value=True)
 
-        mock_listener_instance = MagicMock()
-        mock_listener_instance.task_failed = False
-        mock_listener.return_value = mock_listener_instance
+        result = process_job(ctx, repo, job_queue, generate=mock_generate)
 
-        # Execute
-        result = process_job(job_data, repo)
-
-        # Verify
         self.assertTrue(result)
-        # Should update status multiple times: running -> completed
-        self.assertGreaterEqual(mock_update_status.call_count, 2)
-
-        # Check final status update (positional args: job_id, status, progress, message)
-        final_call = mock_update_status.call_args_list[-1]
-        args, _ = final_call
-        self.assertEqual(args[1], 'completed')  # status
-        self.assertEqual(args[2], 100)  # progress
+        status = job_queue.get_status('e2e-test-job')
+        self.assertEqual(status['status'], 'completed')
+        self.assertEqual(status['progress'], 100)
 
 
-class TestRedisReconnection(unittest.TestCase):
-    """Test Redis client reconnection after connection loss."""
-    
+class TestRedisAdapter(unittest.TestCase):
+    """Test RedisJobQueueAdapter with mocked Redis."""
+
     def setUp(self):
-        """Reset global state before each test."""
-        queue_module._redis_client_cache = None
-        queue_module._redis_connection_attempted = False
-        queue_module._redis_connection_failed = False
-    
-    @patch('api.job_queue.REDIS_URL', 'redis://localhost:6379')
-    @patch('redis.from_url')
-    def test_reconnection_after_cached_client_failure(self, mock_from_url):
-        """Test that reconnection is attempted after cached client fails ping."""
-        # Mock successful initial connection
-        mock_client1 = MagicMock()
-        mock_client1.ping.return_value = True
-        mock_from_url.return_value = mock_client1
-        
-        # First call - should connect and cache
-        client1 = get_redis_client()
-        self.assertIsNotNone(client1)
-        self.assertEqual(queue_module._redis_client_cache, mock_client1)
-        self.assertTrue(queue_module._redis_connection_attempted)
-        
-        # Simulate cached client failure (ping fails)
-        mock_client1.ping.side_effect = Exception("Connection lost")
-        
-        # Mock new connection for reconnection
-        mock_client2 = MagicMock()
-        mock_client2.ping.return_value = True
-        mock_from_url.return_value = mock_client2
-        
-        # Second call - should detect cache failure and reconnect
-        client2 = get_redis_client()
-        self.assertIsNotNone(client2)
-        self.assertEqual(queue_module._redis_client_cache, mock_client2)
-        # Should have attempted reconnection (not blocked by _redis_connection_attempted)
-        self.assertEqual(mock_from_url.call_count, 2)
-    
-    @patch('api.job_queue.REDIS_URL', 'redis://localhost:6379')
-    @patch('redis.from_url')
-    def test_no_reconnection_after_initial_failure(self, mock_from_url):
-        """Test that initial connection failure prevents retries."""
-        from redis.exceptions import RedisError
-        
-        # Mock initial connection failure (ping fails with RedisError)
-        mock_client = MagicMock()
-        mock_client.ping.side_effect = RedisError("Connection refused")
-        mock_from_url.return_value = mock_client
-        
-        # First call - should fail and mark as failed
-        client1 = get_redis_client()
-        self.assertIsNone(client1)
-        self.assertTrue(queue_module._redis_connection_failed)
-        
-        # Second call - should return None immediately without retry
-        client2 = get_redis_client()
-        self.assertIsNone(client2)
-        # Should not have attempted another connection (only one attempt)
-        self.assertEqual(mock_from_url.call_count, 1)
-    
-    @patch('api.job_queue.REDIS_URL', 'redis://localhost:6379')
-    @patch('redis.from_url')
-    def test_first_connection_logs_successfully(self, mock_from_url):
-        """Test that first connection logs 'Connected successfully'."""
-        # Mock successful connection
-        mock_client = MagicMock()
-        mock_client.ping.return_value = True
-        mock_from_url.return_value = mock_client
-        
-        with self.assertLogs('api.job_queue', level='INFO') as log_context:
-            client = get_redis_client()
-            self.assertIsNotNone(client)
-            
-            # Should log "Connected successfully" on first connection
-            self.assertTrue(
-                any('[REDIS] Connected successfully' in msg for msg in log_context.output),
-                "First connection should log 'Connected successfully'"
-            )
-    
-    @patch('api.job_queue.REDIS_URL', 'redis://localhost:6379')
-    @patch('redis.from_url')
-    def test_reconnection_does_not_log_as_first_connection(self, mock_from_url):
-        """Test that reconnection does NOT log 'Connected successfully'."""
-        # Step 1: First successful connection
-        mock_client1 = MagicMock()
-        mock_client1.ping.return_value = True
-        mock_from_url.return_value = mock_client1
-        
-        with self.assertLogs('api.job_queue', level='DEBUG') as log_context1:
-            client1 = get_redis_client()
-            self.assertIsNotNone(client1)
-            
-            # First connection should log
-            self.assertTrue(
-                any('[REDIS] Connected successfully' in msg for msg in log_context1.output),
-                "First connection should log"
-            )
-        
-        # Step 2: Simulate connection loss (ping fails)
-        mock_client1.ping.side_effect = Exception("Connection lost")
-        
-        # Step 3: Reconnect
-        mock_client2 = MagicMock()
-        mock_client2.ping.return_value = True
-        mock_from_url.return_value = mock_client2
-        
-        with self.assertLogs('api.job_queue', level='DEBUG') as log_context2:
-            client2 = get_redis_client()
-            self.assertIsNotNone(client2)
-            
-            # Reconnection should NOT log "Connected successfully"
-            self.assertFalse(
-                any('[REDIS] Connected successfully' in msg for msg in log_context2.output),
-                "Reconnection should NOT log 'Connected successfully'"
-            )
-            
-            # Should log reconnection attempt
-            self.assertTrue(
-                any('attempting reconnection' in msg for msg in log_context2.output),
-                "Should log reconnection attempt"
-            )
+        self.adapter = RedisJobQueueAdapter()
+
+    @patch.object(RedisJobQueueAdapter, '_get_client')
+    def test_enqueue(self, mock_get_client):
+        mock_redis = MagicMock()
+        mock_get_client.return_value = mock_redis
+
+        result = self.adapter.enqueue("job-1", "article-1", {"topic": "AI"})
+
+        self.assertTrue(result)
+        mock_redis.rpush.assert_called_once()
+
+    @patch.object(RedisJobQueueAdapter, '_get_client')
+    def test_update_and_get_status(self, mock_get_client):
+        mock_redis = MagicMock()
+        mock_get_client.return_value = mock_redis
+        mock_redis.get.return_value = None
+
+        result = self.adapter.update_status("job-1", "queued", 0, "Queued", article_id="art-1")
+
+        self.assertTrue(result)
+        mock_redis.setex.assert_called_once()
+
+        call_args = mock_redis.setex.call_args[0]
+        stored_data = json.loads(call_args[2])
+        self.assertEqual(stored_data['article_id'], 'art-1')
+        self.assertEqual(stored_data['id'], 'job-1')
+
+    @patch.object(RedisJobQueueAdapter, '_get_client')
+    def test_article_id_preservation(self, mock_get_client):
+        mock_redis = MagicMock()
+        mock_get_client.return_value = mock_redis
+
+        existing_status = {
+            'id': 'job-1',
+            'article_id': 'existing-article',
+            'status': 'queued',
+            'progress': 0,
+        }
+        mock_redis.get.return_value = json.dumps(existing_status)
+
+        self.adapter.update_status("job-1", "running", 50, "Processing...")
+
+        call_args = mock_redis.setex.call_args[0]
+        stored_data = json.loads(call_args[2])
+        self.assertEqual(stored_data['article_id'], 'existing-article')
+
+    @patch.object(RedisJobQueueAdapter, '_get_client')
+    def test_progress_preservation(self, mock_get_client):
+        """Test that progress is not reset when new progress is 0."""
+        mock_redis = MagicMock()
+        mock_get_client.return_value = mock_redis
+
+        existing_status = {
+            'id': 'job-1',
+            'status': 'running',
+            'progress': 75,
+        }
+        mock_redis.get.return_value = json.dumps(existing_status)
+
+        self.adapter.update_status("job-1", "failed", 0, "Error")
+
+        call_args = mock_redis.setex.call_args[0]
+        stored_data = json.loads(call_args[2])
+        self.assertEqual(stored_data['progress'], 75)
+
+    @patch.object(RedisJobQueueAdapter, '_get_client')
+    def test_ping_success(self, mock_get_client):
+        mock_redis = MagicMock()
+        mock_redis.ping.return_value = True
+        mock_get_client.return_value = mock_redis
+
+        self.assertTrue(self.adapter.ping())
+
+    @patch.object(RedisJobQueueAdapter, '_get_client')
+    def test_ping_failure(self, mock_get_client):
+        mock_get_client.return_value = None
+
+        self.assertFalse(self.adapter.ping())
 
 
 class TestJobStatusFields(unittest.TestCase):
-    """Test job status field storage and preservation."""
-    
-    @patch('api.job_queue.get_redis_client')
-    def test_article_id_storage(self, mock_get_redis):
-        """Test that article_id is stored in status data."""
-        mock_redis = MagicMock()
-        mock_get_redis.return_value = mock_redis
-        mock_redis.get.return_value = None
-        
-        job_id = "test-job-123"
-        article_id = "test-article-456"
-        
-        result = update_job_status(
-            job_id=job_id,
-            status='queued',
-            progress=0,
-            message='Test',
-            article_id=article_id
-        )
-        
-        self.assertTrue(result)
-        call_args = mock_redis.setex.call_args
-        stored_data = json.loads(call_args[0][2])
-        
-        self.assertEqual(stored_data['article_id'], article_id)
-        self.assertEqual(stored_data['id'], job_id)
-    
-    @patch('api.job_queue.get_redis_client')
-    def test_article_id_preservation(self, mock_get_redis):
-        """Test that article_id is preserved if not provided."""
-        mock_redis = MagicMock()
-        mock_get_redis.return_value = mock_redis
-        
-        job_id = "test-job-123"
-        existing_article_id = "existing-article-789"
-        
-        existing_status = {
-            'id': job_id,
-            'article_id': existing_article_id,
-            'status': 'queued',
-            'progress': 0
-        }
-        mock_redis.get.return_value = json.dumps(existing_status)
-        
-        result = update_job_status(
-            job_id=job_id,
-            status='running',
-            progress=50,
-            message='Processing...'
-        )
-        
-        self.assertTrue(result)
-        call_args = mock_redis.setex.call_args
-        stored_data = json.loads(call_args[0][2])
-        
-        self.assertEqual(stored_data['article_id'], existing_article_id)
-    
-    @patch('api.job_queue.get_redis_client')
-    def test_created_at_preservation(self, mock_get_redis):
-        """Test that created_at is preserved across status transitions."""
-        mock_redis = MagicMock()
-        mock_get_redis.return_value = mock_redis
-        mock_redis.get.return_value = None
-        
-        job_id = "test-job-123"
-        article_id = "test-article-456"
-        
-        # Initial queued status
-        result1 = update_job_status(
-            job_id=job_id,
-            status='queued',
-            progress=0,
-            message='Job queued',
-            article_id=article_id
-        )
-        self.assertTrue(result1)
-        
-        first_call_args = mock_redis.setex.call_args_list[0]
-        first_stored_data = json.loads(first_call_args[0][2])
-        created_at = first_stored_data.get('created_at')
-        self.assertIsNotNone(created_at)
-        
-        # Simulate existing data
-        existing_status = {
-            'id': job_id,
-            'article_id': article_id,
-            'status': 'queued',
-            'progress': 0,
-            'created_at': created_at,
-            'updated_at': datetime.now().isoformat()
-        }
-        mock_redis.get.return_value = json.dumps(existing_status)
-        
-        # Update to running
-        result2 = update_job_status(
-            job_id=job_id,
-            status='running',
-            progress=50,
-            message='Processing...'
-        )
-        self.assertTrue(result2)
-        
-        second_call_args = mock_redis.setex.call_args_list[1]
-        second_stored_data = json.loads(second_call_args[0][2])
-        
-        # Verify created_at preserved
-        self.assertEqual(second_stored_data.get('created_at'), created_at)
+    """Test job status field storage and preservation using FakeJobQueueAdapter."""
+
+    def test_created_at_set_on_queued(self):
+        """Test that created_at is set when status is 'queued'."""
+        job_queue = FakeJobQueueAdapter()
+        job_queue.update_status("job-1", "queued", 0, "Queued", article_id="art-1")
+
+        status = job_queue.get_status("job-1")
+        self.assertIsNotNone(status['created_at'])
+
+    def test_created_at_preserved(self):
+        """Test that created_at is preserved across updates."""
+        job_queue = FakeJobQueueAdapter()
+        job_queue.update_status("job-1", "queued", 0, "Queued")
+        created_at = job_queue.get_status("job-1")['created_at']
+
+        job_queue.update_status("job-1", "running", 50, "Running")
+        status = job_queue.get_status("job-1")
+        self.assertEqual(status['created_at'], created_at)
 
 
 if __name__ == '__main__':

@@ -77,7 +77,7 @@ class TestGetArticleRepo(unittest.TestCase):
         repo = get_article_repo()
 
         expected_methods = [
-            'save_metadata', 'save_content', 'get_by_id',
+            'save', 'get_by_id',
             'find_many', 'find_duplicate', 'update_status', 'delete',
         ]
         for method in expected_methods:

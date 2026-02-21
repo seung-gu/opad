@@ -3,14 +3,10 @@
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
 
 from domain.model.token_usage import LLMCallResult, TokenUsage
 from port.token_usage_repository import TokenUsageRepository
 from port.llm import LLMPort
-
-if TYPE_CHECKING:
-    from crew.main import CrewResult
 
 logger = logging.getLogger(__name__)
 
@@ -49,20 +45,20 @@ def track_llm_usage(
     return repo.save(usage)
 
 
-def track_crew_usage(
+def track_agent_usage(
     repo: TokenUsageRepository,
-    result: "CrewResult",
+    agent_usage: list[dict],
     user_id: str,
     article_id: str | None,
     job_id: str,
     llm: LLMPort | None = None,
 ) -> None:
-    """Track token usage for each CrewAI agent.
+    """Track token usage for each agent (framework-agnostic).
 
-    Converts each agent's usage to LLMCallResult, then delegates to track_llm_usage.
+    Accepts a list of dicts with agent_role, agent_name, model, prompt_tokens,
+    completion_tokens, total_tokens.
     """
     try:
-        agent_usage = result.get_agent_usage()
         total_saved = 0
 
         logger.info(
@@ -78,21 +74,21 @@ def track_crew_usage(
         )
 
         for agent in agent_usage:
-            if agent['total_tokens'] == 0:
+            if agent.get('total_tokens', 0) == 0:
                 continue
 
             agent_name = agent.get('agent_name')
-            display_name = agent_name if isinstance(agent_name, str) and agent_name else agent['agent_role']
+            display_name = agent_name if isinstance(agent_name, str) and agent_name else agent.get('agent_role', 'unknown')
 
             stats = LLMCallResult(
-                model=agent['model'],
-                prompt_tokens=agent['prompt_tokens'],
-                completion_tokens=agent['completion_tokens'],
-                total_tokens=agent['total_tokens'],
+                model=agent.get('model', 'unknown'),
+                prompt_tokens=agent.get('prompt_tokens', 0),
+                completion_tokens=agent.get('completion_tokens', 0),
+                total_tokens=agent.get('total_tokens', 0),
                 estimated_cost=llm.estimate_cost(
-                    model=agent['model'],
-                    prompt_tokens=agent['prompt_tokens'],
-                    completion_tokens=agent['completion_tokens'],
+                    model=agent.get('model', 'unknown'),
+                    prompt_tokens=agent.get('prompt_tokens', 0),
+                    completion_tokens=agent.get('completion_tokens', 0),
                 ) if llm else 0.0,
             )
             result_id = track_llm_usage(

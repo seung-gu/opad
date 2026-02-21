@@ -1,8 +1,8 @@
-"""Unit tests for token_usage module cost calculation and crew tracking.
+"""Unit tests for token_usage module cost calculation and agent usage tracking.
 
 Tests for:
 - estimate_cost() via LiteLLMAdapter
-- track_crew_usage() function with CrewAI results
+- track_agent_usage() function with agent usage data
 - Edge cases: unknown models, zero tokens, empty agent lists
 - Error handling and non-fatal exceptions
 """
@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import Mock, patch, MagicMock
 
 from adapter.external.litellm import LiteLLMAdapter
-from services.token_usage_service import track_crew_usage
+from services.token_usage_service import track_agent_usage
 
 
 class TestEstimateCost(unittest.TestCase):
@@ -173,8 +173,8 @@ class TestEstimateCost(unittest.TestCase):
             self.assertEqual(call_kwargs['completion_tokens'], -50)
 
 
-class TestTrackCrewUsage(unittest.TestCase):
-    """Test cases for track_crew_usage function."""
+class TestTrackAgentUsage(unittest.TestCase):
+    """Test cases for track_agent_usage function."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -184,10 +184,9 @@ class TestTrackCrewUsage(unittest.TestCase):
         self.mock_llm = Mock()
         self.mock_llm.estimate_cost.return_value = 0.001
 
-    def test_track_crew_usage_with_single_agent(self):
+    def test_track_agent_usage_with_single_agent(self):
         """Test saving token usage for single agent with agent_name."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'News Researcher',
                 'agent_name': 'Article Search',
@@ -200,9 +199,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
         with patch('services.token_usage_service.logger') as mock_logger:
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -224,10 +223,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
             self.assertEqual(mock_logger.info.call_count, 2)
 
-    def test_track_crew_usage_with_multiple_agents(self):
+    def test_track_agent_usage_with_multiple_agents(self):
         """Test saving token usage for multiple agents with agent_name."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'News Researcher',
                 'agent_name': 'Article Search',
@@ -257,9 +255,9 @@ class TestTrackCrewUsage(unittest.TestCase):
         self.mock_llm.estimate_cost.side_effect = [0.001, 0.010, 0.0008]
         with patch('services.token_usage_service.logger') as mock_logger:
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -277,10 +275,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             self.assertEqual(calls[1][0][0].metadata['agent_name'], 'Article Selection')
             self.assertEqual(calls[2][0][0].metadata['agent_name'], 'Quality Reviewer')
 
-    def test_track_crew_usage_skips_zero_token_agents(self):
+    def test_track_agent_usage_skips_zero_token_agents(self):
         """Test that agents with zero tokens are skipped."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'News Researcher',
                 'model': 'gpt-4.1-mini',
@@ -306,9 +303,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
         with patch('services.token_usage_service.logger') as mock_logger:
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -320,16 +317,15 @@ class TestTrackCrewUsage(unittest.TestCase):
             log_extra = mock_logger.info.call_args[1]['extra']
             self.assertEqual(log_extra['agentCount'], 2)
 
-    def test_track_crew_usage_with_empty_agent_list(self):
+    def test_track_agent_usage_with_empty_agent_list(self):
         """Test saving token usage with empty agent list."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = []
+        agent_usage = []
 
         with patch('services.token_usage_service.logger') as mock_logger:
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -342,10 +338,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             log_extra = mock_logger.info.call_args[1]['extra']
             self.assertEqual(log_extra['agentCount'], 0)
 
-    def test_track_crew_usage_with_none_article_id(self):
+    def test_track_agent_usage_with_none_article_id(self):
         """Test saving token usage with None article_id."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'News Researcher',
                 'model': 'gpt-4.1-mini',
@@ -357,9 +352,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 None,
                 self.job_id,
@@ -369,10 +364,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             usage = mock_repo.save.call_args[0][0]
             self.assertIsNone(usage.article_id)
 
-    def test_track_crew_usage_calculates_cost_for_each_agent(self):
+    def test_track_agent_usage_calculates_cost_for_each_agent(self):
         """Test that cost is calculated for each agent's model and tokens."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'News Researcher',
                 'model': 'gpt-4.1-mini',
@@ -392,9 +386,9 @@ class TestTrackCrewUsage(unittest.TestCase):
         self.mock_llm.estimate_cost.side_effect = [0.001, 0.01]
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -412,10 +406,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             self.assertEqual(calls[1][1]['prompt_tokens'], 200)
             self.assertEqual(calls[1][1]['completion_tokens'], 100)
 
-    def test_track_crew_usage_logs_job_metadata(self):
+    def test_track_agent_usage_logs_job_metadata(self):
         """Test that job metadata is logged correctly."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'News Researcher',
                 'model': 'gpt-4.1-mini',
@@ -427,9 +420,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
         with patch('services.token_usage_service.logger') as mock_logger:
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -446,16 +439,13 @@ class TestTrackCrewUsage(unittest.TestCase):
             self.assertEqual(extra['articleId'], self.article_id)
             self.assertEqual(extra['agentCount'], 1)
 
-    def test_track_crew_usage_exception_logged_as_warning(self):
+    def test_track_agent_usage_exception_logged_as_warning(self):
         """Test that exceptions during save are logged as warning (non-fatal)."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.side_effect = RuntimeError("Failed to get agent usage")
-
         with patch('services.token_usage_service.logger') as mock_logger:
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                None,  # Will cause TypeError when iterating
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -469,12 +459,11 @@ class TestTrackCrewUsage(unittest.TestCase):
 
             extra = call_args[1]['extra']
             self.assertEqual(extra['jobId'], self.job_id)
-            self.assertIn("RuntimeError", extra['errorType'])
+            self.assertIn("TypeError", extra['errorType'])
 
-    def test_track_crew_usage_save_token_usage_exception_non_fatal(self):
+    def test_track_agent_usage_save_token_usage_exception_non_fatal(self):
         """Test that exception in save_token_usage doesn't crash function."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'News Researcher',
                 'model': 'gpt-4.1-mini',
@@ -487,9 +476,9 @@ class TestTrackCrewUsage(unittest.TestCase):
         with patch('services.token_usage_service.logger') as mock_logger:
             mock_repo = MagicMock()
             mock_repo.save.side_effect = ValueError("DB error")
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -500,10 +489,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             extra = mock_logger.warning.call_args[1]['extra']
             self.assertIn("ValueError", extra['errorType'])
 
-    def test_track_crew_usage_with_all_agents_zero_tokens(self):
+    def test_track_agent_usage_with_all_agents_zero_tokens(self):
         """Test when all agents have zero tokens."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'model': 'gpt-4.1-mini',
                 'prompt_tokens': 0,
@@ -520,9 +508,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
         with patch('services.token_usage_service.logger') as mock_logger:
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -534,10 +522,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             log_extra = mock_logger.info.call_args[1]['extra']
             self.assertEqual(log_extra['agentCount'], 0)
 
-    def test_track_crew_usage_mixed_zero_and_nonzero_tokens(self):
+    def test_track_agent_usage_mixed_zero_and_nonzero_tokens(self):
         """Test with mix of zero and non-zero token agents."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Agent 1',
                 'agent_name': None,
@@ -574,9 +561,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
         with patch('services.token_usage_service.logger') as mock_logger:
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -588,10 +575,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             log_extra = mock_logger.info.call_args[1]['extra']
             self.assertEqual(log_extra['agentCount'], 2)
 
-    def test_track_crew_usage_passes_job_id_in_metadata(self):
+    def test_track_agent_usage_passes_job_id_in_metadata(self):
         """Test that job_id is included in metadata passed to save_token_usage."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Test Agent',
                 'agent_name': 'Test Name',
@@ -604,9 +590,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -617,10 +603,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             self.assertIsNotNone(usage.metadata)
             self.assertEqual(usage.metadata['job_id'], self.job_id)
 
-    def test_track_crew_usage_operation_type_is_article_generation(self):
+    def test_track_agent_usage_operation_type_is_article_generation(self):
         """Test that operation type is always 'article_generation'."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Test Agent',
                 'agent_name': 'Test Name',
@@ -633,9 +618,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -645,10 +630,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             usage = mock_repo.save.call_args[0][0]
             self.assertEqual(usage.operation, 'article_generation')
 
-    def test_track_crew_usage_with_different_models(self):
+    def test_track_agent_usage_with_different_models(self):
         """Test saving usage with different model types."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Researcher',
                 'agent_name': None,
@@ -677,9 +661,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -696,10 +680,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             self.assertIn('claude-3-sonnet-20240229', models)
             self.assertIn('gemini-1.5-flash', models)
 
-    def test_track_crew_usage_agent_name_fallback_to_agent_role(self):
+    def test_track_agent_usage_agent_name_fallback_to_agent_role(self):
         """Test that agent_name falls back to agent_role when agent_name is None."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Article Researcher',
                 'agent_name': None,
@@ -712,9 +695,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -724,10 +707,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             usage = mock_repo.save.call_args[0][0]
             self.assertEqual(usage.metadata['agent_name'], 'Article Researcher')
 
-    def test_track_crew_usage_agent_name_empty_string_fallback(self):
+    def test_track_agent_usage_agent_name_empty_string_fallback(self):
         """Test that empty string agent_name falls back to agent_role."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Content Writer',
                 'agent_name': '',
@@ -740,9 +722,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -752,10 +734,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             usage = mock_repo.save.call_args[0][0]
             self.assertEqual(usage.metadata['agent_name'], 'Content Writer')
 
-    def test_track_crew_usage_agent_name_with_special_characters(self):
+    def test_track_agent_usage_agent_name_with_special_characters(self):
         """Test that agent_name with special characters is preserved."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Reviewer (Advanced)',
                 'agent_name': 'Quality Check #2',
@@ -768,9 +749,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -780,10 +761,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             usage = mock_repo.save.call_args[0][0]
             self.assertEqual(usage.metadata['agent_name'], 'Quality Check #2')
 
-    def test_track_crew_usage_metadata_includes_job_id_and_agent_name(self):
+    def test_track_agent_usage_metadata_includes_job_id_and_agent_name(self):
         """Test that metadata includes both job_id and agent_name."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Researcher',
                 'agent_name': 'Article Search',
@@ -796,9 +776,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -812,10 +792,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             self.assertEqual(metadata['job_id'], self.job_id)
             self.assertEqual(metadata['agent_name'], 'Article Search')
 
-    def test_track_crew_usage_logs_agent_names_in_usage_data(self):
+    def test_track_agent_usage_logs_agent_names_in_usage_data(self):
         """Test that agent usage logging includes agent role."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'News Researcher',
                 'agent_name': 'Article Search',
@@ -837,9 +816,9 @@ class TestTrackCrewUsage(unittest.TestCase):
         self.mock_llm.estimate_cost.side_effect = [0.001, 0.01]
         with patch('services.token_usage_service.logger') as mock_logger:
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -854,10 +833,9 @@ class TestTrackCrewUsage(unittest.TestCase):
             self.assertEqual(usage_data[0]['role'], 'News Researcher')
             self.assertEqual(usage_data[1]['role'], 'Article Writer')
 
-    def test_track_crew_usage_without_llm_defaults_cost_to_zero(self):
+    def test_track_agent_usage_without_llm_defaults_cost_to_zero(self):
         """Test that cost defaults to 0.0 when llm is None."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Test Agent',
                 'agent_name': 'Test',
@@ -870,9 +848,9 @@ class TestTrackCrewUsage(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -884,12 +862,11 @@ class TestTrackCrewUsage(unittest.TestCase):
 
 
 class TestEstimateCostIntegration(unittest.TestCase):
-    """Integration tests between estimate_cost and track_crew_usage."""
+    """Integration tests between estimate_cost and track_agent_usage."""
 
-    def test_estimate_cost_integration_with_track_crew(self):
-        """Test full flow: estimate_cost called within track_crew_usage."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+    def test_estimate_cost_integration_with_track_agent(self):
+        """Test full flow: estimate_cost called within track_agent_usage."""
+        agent_usage = [
             {
                 'agent_role': 'Integration Test Agent',
                 'agent_name': 'Integration Test',
@@ -905,9 +882,9 @@ class TestEstimateCostIntegration(unittest.TestCase):
             mock_cost.return_value = (0.001, 0.002)
             with patch('services.token_usage_service.logger'):
                 mock_repo = MagicMock()
-                track_crew_usage(
+                track_agent_usage(
                     mock_repo,
-                    mock_result,
+                    agent_usage,
                     "user-123",
                     "article-456",
                     "job-789",
