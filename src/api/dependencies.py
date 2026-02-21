@@ -10,8 +10,10 @@ from adapter.mongodb.article_repository import MongoArticleRepository
 from adapter.mongodb.token_usage_repository import MongoTokenUsageRepository
 from adapter.mongodb.user_repository import MongoUserRepository
 from adapter.mongodb.vocabulary_repository import MongoVocabularyRepository
+from adapter.queue.redis_job_queue import RedisJobQueueAdapter
 from port.article_repository import ArticleRepository
 from port.dictionary import DictionaryPort
+from port.job_queue import JobQueuePort
 from port.llm import LLMPort
 from port.nlp import NLPPort
 from port.token_usage_repository import TokenUsageRepository
@@ -54,6 +56,10 @@ def get_dictionary_port() -> DictionaryPort:
 
 def get_llm_port() -> LLMPort:
     return LiteLLMAdapter()
+
+
+def get_job_queue() -> JobQueuePort:
+    return RedisJobQueueAdapter()
 
 
 @lru_cache(maxsize=1)

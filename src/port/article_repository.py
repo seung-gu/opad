@@ -1,28 +1,12 @@
 """Port definition for ArticleRepository."""
 
 from typing import Protocol
-from datetime import datetime
 
-from domain.model.article import Article, ArticleInputs, ArticleStatus
+from domain.model.article import Article, ArticleInputs, ArticleStatus, Articles
 
 
 class ArticleRepository(Protocol):
-    def save_metadata(
-        self,
-        article_id: str,
-        inputs: ArticleInputs,
-        status: ArticleStatus = ArticleStatus.RUNNING,
-        created_at: datetime | None = None,
-        user_id: str | None = None,
-        job_id: str | None = None,
-    ) -> bool: ...
-
-    def save_content(
-        self,
-        article_id: str,
-        content: str,
-        started_at: datetime | None = None,
-    ) -> bool: ...
+    def save(self, article: Article) -> bool: ...
 
     def get_by_id(self, article_id: str) -> Article | None: ...
 
@@ -35,7 +19,7 @@ class ArticleRepository(Protocol):
         level: str | None = None,
         user_id: str | None = None,
         exclude_deleted: bool = True,
-    ) -> tuple[list[Article], int]: ...
+    ) -> Articles: ...
 
     def find_duplicate(
         self,

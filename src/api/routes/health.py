@@ -2,17 +2,12 @@
 
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
-import sys
-from pathlib import Path
 
-# Add src to path
-_src_path = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(_src_path))
-
-from api.job_queue import get_redis_client
+from api.dependencies import get_job_queue
 from adapter.mongodb.connection import get_mongodb_client
+from port.job_queue import JobQueuePort
 
 logger = logging.getLogger(__name__)
 
@@ -20,32 +15,21 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 
 @router.get("")
-async def health():
-    """Health check endpoint with dependency status.
-    
-    Checks the health of:
-    - API service itself
-    - Redis connection (for job queue and status)
-    - MongoDB connection (for article storage)
-    
-    Returns:
-        JSON response with overall status and individual service statuses
-        - 200: All services healthy
-        - 503: One or more services unhealthy
-    """
+async def health(
+    job_queue: JobQueuePort = Depends(get_job_queue),
+):
+    """Health check endpoint with dependency status."""
     health_status = {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         "services": {}
     }
-    
+
     overall_healthy = True
-    
-    # Check Redis connection
+
+    # Check Redis connection via port
     try:
-        redis_client = get_redis_client()
-        if redis_client:
-            redis_client.ping()
+        if job_queue.ping():
             health_status["services"]["redis"] = {
                 "status": "healthy",
                 "message": "Connection successful"
@@ -62,7 +46,7 @@ async def health():
             "message": f"Connection error: {str(e)[:200]}"
         }
         overall_healthy = False
-    
+
     # Check MongoDB connection
     try:
         mongo_client = get_mongodb_client()
@@ -84,14 +68,13 @@ async def health():
             "message": f"Connection error: {str(e)[:200]}"
         }
         overall_healthy = False
-    
+
     # Update overall status
     if not overall_healthy:
         health_status["status"] = "degraded"
-    
-    # Return appropriate status code
+
     status_code = status.HTTP_200_OK if overall_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
-    
+
     return JSONResponse(
         content=health_status,
         status_code=status_code

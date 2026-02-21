@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-02-20
+
+### Added
+- **Article domain model enhancements** — value objects: `SourceInfo`, `EditRecord`, `GenerationResult` providing type-safe article metadata (Issue #101)
+- **Article aggregate methods** — `create()`, `complete()`, `fail()`, `delete()`, `is_deleted`, `has_content`, `is_owned_by()` encapsulating article lifecycle logic
+- **Articles collection class** — paginated results container for article queries
+- **JobQueuePort protocol** — outbound port abstracting job queue operations (enqueue, dequeue, update status)
+- **RedisJobQueueAdapter** — production implementation of JobQueuePort using Redis BLPOP/RPUSH for async job processing
+- **FakeJobQueueAdapter** — in-memory test adapter for deterministic queue testing
+- **ArticleGeneratorPort protocol** — outbound port abstracting article generation via external processors
+- **CrewAIArticleGenerator adapter** — production implementation using CrewAI for multi-stage article generation
+- **FakeArticleGenerator** — in-memory test adapter for testing without CrewAI dependencies
+- **ArticleGenerationService** — orchestration layer with `submit_generation()` and `generate_article()` methods coordinating ports
+- **Domain exceptions** — `DuplicateArticleError` (for duplicate article detection), `EnqueueError` (for queue failures)
+- **Comprehensive test suite** — 31 unit tests for article_generation_service covering service orchestration, port interactions, and error cases
+
+### Changed
+- **Crew adapter migration** — `crew/` → `adapter/crew/` following hexagonal architecture for framework isolation
+- **Route error handling** — replaced inline HTTPException logic with domain exception pattern for consistent error semantics
+- **Route function naming** — removed `_endpoint` suffixes for cleaner function names
+- **Token usage tracking** — renamed `track_crew_usage` → `track_agent_usage` for framework-agnostic naming
+- **Worker processor refactoring** — integrated ArticleGenerationService and ports for decoupled job processing
+
+### Removed
+- **`src/api/job_queue.py`** — replaced by hexagonal architecture adapters (`adapter/queue/redis_job_queue.py`)
+- **Direct framework dependencies** — CrewAI and Redis imports removed from service/route layers (now isolated in adapters)
+
+### Technical Impact
+- **Queue abstraction**: JobQueuePort enables swapping Redis with other queue systems (RabbitMQ, Celery, etc.) without service changes
+- **Generation flexibility**: ArticleGeneratorPort decouples CrewAI implementation from domain logic, enabling alternate generators
+- **Testability**: FakeJobQueueAdapter and FakeArticleGenerator enable fast unit tests without external dependencies
+- **Error semantics**: Domain exceptions (DuplicateArticleError, EnqueueError) replace generic HTTP status codes
+- **Worker decoupling**: Processor depends on ports, not concrete implementations
+- **Separation of concerns**: Adapters own framework logic, services own business logic, routes own HTTP concerns
+
 ## [0.16.0] - 2026-02-19
 
 ### Added

@@ -8,10 +8,10 @@ Both paths return the same dict format: {"lemma", "related_words", "level"}.
 import logging
 from typing import Any, TypedDict
 
+from json_repair import repair_json
 from port.llm import LLMPort
 from port.nlp import NLPPort
 from domain.model.token_usage import LLMCallResult
-from utils.json_parsing import parse_json_content
 
 logger = logging.getLogger(__name__)
 
@@ -129,8 +129,8 @@ async def _estimate_cefr(
             temperature=0,
             timeout=10,
         )
-        result = parse_json_content(content)
-        level = result.get("level") if result else None
+        result = repair_json(content, return_objects=True)
+        level = result.get("level") if isinstance(result, dict) else None
         return level, stats
     except Exception as e:
         logger.warning("CEFR estimation failed", extra={"error": str(e)})
@@ -155,8 +155,8 @@ async def _extract_with_llm(
             temperature=0,
         )
 
-        parsed = parse_json_content(content)
-        if parsed is None:
+        parsed = repair_json(content, return_objects=True)
+        if not isinstance(parsed, dict):
             logger.warning(
                 "Failed to parse JSON from LLM reduced prompt",
                 extra={"word": word, "language": language,

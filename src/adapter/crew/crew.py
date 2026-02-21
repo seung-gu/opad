@@ -2,8 +2,8 @@ from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from crewai_tools import SerperDevTool, ScrapeWebsiteTool
 
-from crew.models import NewsArticleList, SelectedArticle, ReviewedArticle
-from crew.guardrails import repair_json_output
+from adapter.crew.models import NewsArticleList, SelectedArticle, ReviewedArticle
+from adapter.crew.guardrails import repair_json_output
 
 
 @CrewBase

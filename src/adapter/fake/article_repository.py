@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from domain.model.article import Article, ArticleInputs, ArticleStatus
+from domain.model.article import Article, ArticleInputs, ArticleStatus, Articles
 
 
 class FakeArticleRepository:
@@ -11,44 +11,8 @@ class FakeArticleRepository:
 
     # ── write operations ─────────────────────────────────────
 
-    def save_metadata(
-        self,
-        article_id: str,
-        inputs: ArticleInputs,
-        status: ArticleStatus = ArticleStatus.RUNNING,
-        created_at: datetime | None = None,
-        user_id: str | None = None,
-        job_id: str | None = None,
-    ) -> bool:
-        if created_at is None:
-            created_at = datetime.now(timezone.utc)
-
-        self.store[article_id] = Article(
-            id=article_id,
-            inputs=inputs,
-            status=status,
-            created_at=created_at,
-            updated_at=datetime.now(timezone.utc),
-            user_id=user_id,
-            job_id=job_id,
-        )
-        return True
-
-    def save_content(
-        self,
-        article_id: str,
-        content: str,
-        started_at: datetime | None = None,
-    ) -> bool:
-        article = self.store.get(article_id)
-        if not article:
-            return False
-
-        article.content = content
-        article.status = ArticleStatus.COMPLETED
-        article.updated_at = datetime.now(timezone.utc)
-        if started_at:
-            article.started_at = started_at
+    def save(self, article: Article) -> bool:
+        self.store[article.id] = article
         return True
 
     def update_status(self, article_id: str, status: ArticleStatus) -> bool:
@@ -83,7 +47,7 @@ class FakeArticleRepository:
         level: str | None = None,
         user_id: str | None = None,
         exclude_deleted: bool = True,
-    ) -> tuple[list[Article], int]:
+    ) -> Articles:
         results = list(self.store.values())
 
         if status:
@@ -99,7 +63,7 @@ class FakeArticleRepository:
 
         results.sort(key=lambda a: a.created_at, reverse=True)
         total = len(results)
-        return results[skip:skip + limit], total
+        return Articles(items=results[skip:skip + limit], total=total)
 
     def find_duplicate(
         self,

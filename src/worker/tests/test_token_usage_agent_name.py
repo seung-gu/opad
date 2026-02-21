@@ -6,17 +6,17 @@ Tests for:
 - Type validation for agent_name (string vs non-string)
 - Fallback behavior when agent_name is missing/empty
 - Malformed metadata handling
-- Integration with track_crew_usage and TokenUsageRepository
+- Integration with track_agent_usage and TokenUsageRepository
 """
 
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
-from services.token_usage_service import track_crew_usage
+from services.token_usage_service import track_agent_usage
 
 
 class TestAgentNameHandling(unittest.TestCase):
-    """Test cases for agent_name handling in track_crew_usage."""
+    """Test cases for agent_name handling in track_agent_usage."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -28,8 +28,7 @@ class TestAgentNameHandling(unittest.TestCase):
 
     def test_agent_name_is_saved_when_provided(self):
         """Test that agent_name from metadata is saved to database."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'News Researcher',
                 'agent_name': 'Article Search',
@@ -42,9 +41,9 @@ class TestAgentNameHandling(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -57,8 +56,7 @@ class TestAgentNameHandling(unittest.TestCase):
 
     def test_agent_role_fallback_when_agent_name_is_none(self):
         """Test that agent_role is used as fallback when agent_name is None."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Article Writer',
                 'agent_name': None,
@@ -71,9 +69,9 @@ class TestAgentNameHandling(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -85,8 +83,7 @@ class TestAgentNameHandling(unittest.TestCase):
 
     def test_agent_name_empty_string_uses_fallback(self):
         """Test that empty string agent_name falls back to agent_role."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Quality Reviewer',
                 'agent_name': '',
@@ -99,9 +96,9 @@ class TestAgentNameHandling(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -113,8 +110,7 @@ class TestAgentNameHandling(unittest.TestCase):
 
     def test_agent_name_with_numeric_value_uses_fallback(self):
         """Test that numeric agent_name is rejected, uses agent_role instead."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Researcher',
                 'agent_name': 123,
@@ -127,9 +123,9 @@ class TestAgentNameHandling(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -141,8 +137,7 @@ class TestAgentNameHandling(unittest.TestCase):
 
     def test_agent_name_with_boolean_value_uses_fallback(self):
         """Test that boolean agent_name is rejected, uses agent_role instead."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Content Parser',
                 'agent_name': True,
@@ -155,9 +150,9 @@ class TestAgentNameHandling(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -169,8 +164,7 @@ class TestAgentNameHandling(unittest.TestCase):
 
     def test_agent_name_with_dict_value_uses_fallback(self):
         """Test that dict agent_name is rejected, uses agent_role instead."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Validator',
                 'agent_name': {'name': 'test'},
@@ -183,9 +177,9 @@ class TestAgentNameHandling(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -197,8 +191,7 @@ class TestAgentNameHandling(unittest.TestCase):
 
     def test_agent_name_with_special_characters(self):
         """Test that agent_name with special characters is preserved."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Reviewer',
                 'agent_name': 'Quality Check #2 (Advanced)',
@@ -211,9 +204,9 @@ class TestAgentNameHandling(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -225,8 +218,7 @@ class TestAgentNameHandling(unittest.TestCase):
 
     def test_agent_name_with_unicode_characters(self):
         """Test that agent_name with unicode characters is preserved."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Rechercheur',
                 'agent_name': 'Recherche 📰 Française',
@@ -239,9 +231,9 @@ class TestAgentNameHandling(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -253,8 +245,7 @@ class TestAgentNameHandling(unittest.TestCase):
 
     def test_agent_name_priority_over_agent_role(self):
         """Test that agent_name takes priority over agent_role in metadata."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Long Role Name',
                 'agent_name': 'Short Name',
@@ -267,9 +258,9 @@ class TestAgentNameHandling(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -281,8 +272,7 @@ class TestAgentNameHandling(unittest.TestCase):
 
     def test_agent_name_with_leading_trailing_whitespace(self):
         """Test that agent_name with whitespace is preserved as-is."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Researcher',
                 'agent_name': '  Article Search  ',
@@ -295,9 +285,9 @@ class TestAgentNameHandling(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -309,8 +299,7 @@ class TestAgentNameHandling(unittest.TestCase):
 
     def test_multiple_agents_different_agent_names(self):
         """Test multiple agents with different agent_name values."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Researcher',
                 'agent_name': 'Article Search',
@@ -339,9 +328,9 @@ class TestAgentNameHandling(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -358,8 +347,7 @@ class TestAgentNameHandling(unittest.TestCase):
     def test_agent_name_with_very_long_string(self):
         """Test that very long agent_name is preserved."""
         long_name = 'A' * 500
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Researcher',
                 'agent_name': long_name,
@@ -372,9 +360,9 @@ class TestAgentNameHandling(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -386,8 +374,7 @@ class TestAgentNameHandling(unittest.TestCase):
 
     def test_agent_name_metadata_structure(self):
         """Test that agent_name is properly placed in metadata dict."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Researcher',
                 'agent_name': 'Article Search',
@@ -400,9 +387,9 @@ class TestAgentNameHandling(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -419,8 +406,7 @@ class TestAgentNameHandling(unittest.TestCase):
 
     def test_agent_name_not_overwriting_job_id(self):
         """Test that agent_name and job_id coexist in metadata."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Researcher',
                 'agent_name': 'Article Search',
@@ -433,9 +419,9 @@ class TestAgentNameHandling(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -463,8 +449,7 @@ class TestAgentNameTypeValidation(unittest.TestCase):
 
     def test_agent_name_type_check_with_string(self):
         """Test that string agent_name passes type check."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Researcher',
                 'agent_name': 'Article Search',
@@ -477,9 +462,9 @@ class TestAgentNameTypeValidation(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -491,8 +476,7 @@ class TestAgentNameTypeValidation(unittest.TestCase):
 
     def test_agent_name_type_validation_with_list(self):
         """Test that list agent_name is rejected."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Researcher',
                 'agent_name': ['Article', 'Search'],
@@ -505,9 +489,9 @@ class TestAgentNameTypeValidation(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,
@@ -519,8 +503,7 @@ class TestAgentNameTypeValidation(unittest.TestCase):
 
     def test_agent_name_type_validation_with_none(self):
         """Test that None agent_name is handled correctly."""
-        mock_result = Mock()
-        mock_result.get_agent_usage.return_value = [
+        agent_usage = [
             {
                 'agent_role': 'Researcher',
                 'agent_name': None,
@@ -533,9 +516,9 @@ class TestAgentNameTypeValidation(unittest.TestCase):
 
         with patch('services.token_usage_service.logger'):
             mock_repo = MagicMock()
-            track_crew_usage(
+            track_agent_usage(
                 mock_repo,
-                mock_result,
+                agent_usage,
                 self.user_id,
                 self.article_id,
                 self.job_id,

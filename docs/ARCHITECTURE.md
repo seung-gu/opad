@@ -94,25 +94,28 @@ sequenceDiagram
     participant MongoDB
     
     Web->>API: POST /articles/generate
-    API->>MongoDB: Check duplicates
-    API->>MongoDB: Save article metadata
-    API->>Redis: RPUSH job
+    API->>API: submit_generation() service
+    API->>MongoDB: Check duplicates (repo.find_duplicate)
+    API->>MongoDB: Article.create() + repo.save()
+    API->>Redis: job_queue.enqueue() via JobQueuePort
     API-->>Web: Return job_id + article_id
-    
-    Worker->>Redis: BLPOP
-    Redis-->>Worker: job_data
-    
-    Worker->>CrewAI: Execute crew.kickoff()
-    CrewAI-->>Worker: Return article
-    
-    Worker->>MongoDB: Save article content
-    Worker->>Redis: Update status (completed)
+
+    Worker->>Redis: job_queue.dequeue() via JobQueuePort
+    Redis-->>Worker: JobContext
+
+    Worker->>Worker: article_generation_service.generate_article()
+    Worker->>CrewAI: generator.generate() via ArticleGeneratorPort
+    CrewAI-->>Worker: GenerationResult (domain DTO)
+
+    Worker->>Worker: article.complete(content, source, edit_history)
+    Worker->>MongoDB: repo.save(article)
+    Worker->>Redis: job_queue.update_status(completed)
 ```
 
 **특징:**
 - **실시간 응답**: 사용자가 단어를 클릭하면 즉시 정의 반환 (비동기 큐 사용 안 함)
 - **프록시 패턴**: Next.js API route가 FastAPI로 요청을 프록시
-- **서비스 계층**: `services/lemma_extraction.py`, `services/sense_selection.py`에서 파이프라인 단계 처리, `utils/llm.py`로 LLM 호출
+- **서비스 계층**: `services/article_generation_service.py`에서 article 제출/생성 처리, `services/lemma_extraction.py`, `services/sense_selection.py`에서 dictionary 파이프라인 단계 처리
 - **Stanza NLP**: 독일어 lemma 추출에 Stanza NLP 사용 (로컬 처리, ~51ms), 기타 언어는 LLM 사용
 - **에러 처리**: `get_llm_error_response()`로 일관된 에러 응답
 
@@ -124,17 +127,17 @@ sequenceDiagram
 | **Web** | **Next.js API** | HTTP | Dictionary API 요청 (프록시), Vocabulary CRUD 요청 (프록시), Dictionary Stats 요청 (프록시) |
 | **Next.js API** | **API** | HTTP | Dictionary API 프록시 요청, Vocabulary CRUD 프록시 요청, Dictionary Stats 프록시 요청 |
 | **API** | **MongoDB** | (via Repository adapters) | 중복 체크, Article metadata 저장/조회 (ArticleRepository), Vocabulary 저장/조회 (VocabularyRepository), Token usage 저장/조회 (TokenUsageRepository), User 인증/조회 (UserRepository) |
-| **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
-| **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.job_queue` 사용) |
+| **API** | **Redis** | `RPUSH` (via JobQueuePort / RedisJobQueueAdapter) | Job을 큐에 추가 |
+| **API** | **Redis** | `SET/GET` (via JobQueuePort / RedisJobQueueAdapter) | Job 상태 저장/조회 |
 | **API** | **Stanza NLP** | Local (via NLPPort / StanzaAdapter) | German lemma extraction (로컬 NLP, ~51ms) |
 | **API** | **LLM** | HTTP (via LLMPort / LiteLLMAdapter) | Dictionary API용 LLM 호출 (non-German lemma extraction + CEFR estimation + entry/sense selection) + Token tracking |
 | **API** | **API** | Internal | Token usage endpoints (`/usage/me`, `/usage/articles/{id}`) |
-| **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
-| **Worker** | **Redis** | `SET` | Job 상태 업데이트 (공통 모듈 `api.job_queue` 사용) |
-| **Worker** | **CrewAI** | Function Call | Article 생성 |
+| **Worker** | **Redis** | `BLPOP` (via JobQueuePort / RedisJobQueueAdapter) | Job을 큐에서 꺼냄 (blocking) |
+| **Worker** | **Redis** | `SET` (via JobQueuePort / RedisJobQueueAdapter) | Job 상태 업데이트 |
+| **Worker** | **CrewAI** | Function Call (via ArticleGeneratorPort / CrewAIArticleGenerator) | Article 생성 |
 | **Worker** | **MongoDB** | (via Repository adapters) | Article content 저장 (ArticleRepository), Token usage 저장 (TokenUsageRepository) |
 
-**참고**: API와 Worker 모두 `api.job_queue` 모듈을 통해 Redis에 접근합니다. 모든 MongoDB 접근은 hexagonal architecture의 Repository 어댑터를 통해 합니다: `ArticleRepository`, `VocabularyRepository` (CRUD), `VocabularyPort` (aggregate queries), `TokenUsageRepository`, `UserRepository`. 외부 서비스 호출도 Port를 통해 합니다: `DictionaryPort` (Free Dictionary API), `LLMPort` (LLM 호출), `NLPPort` (Stanza NLP). 모든 Port/Repository는 `api/dependencies.py`(Composition Root)에서 생성되어 FastAPI `Depends()`로 주입됩니다.
+**참고**: API와 Worker 모두 `JobQueuePort` / `RedisJobQueueAdapter`를 통해 Redis에 접근합니다. Worker는 `ArticleGeneratorPort` / `CrewAIArticleGenerator`를 통해 CrewAI에 접근합니다. 모든 MongoDB 접근은 hexagonal architecture의 Repository 어댑터를 통해 합니다: `ArticleRepository`, `VocabularyRepository` (CRUD), `VocabularyPort` (aggregate queries), `TokenUsageRepository`, `UserRepository`. 외부 서비스 호출도 Port를 통해 합니다: `DictionaryPort` (Free Dictionary API), `LLMPort` (LLM 호출), `NLPPort` (Stanza NLP), `JobQueuePort` (Redis), `ArticleGeneratorPort` (CrewAI). API의 모든 Port/Repository는 `api/dependencies.py`(Composition Root)에서 생성되어 FastAPI `Depends()`로 주입됩니다. Worker의 Port/Adapter는 `worker/main.py`에서 직접 생성됩니다.
 
 ### Redis 데이터 구조
 
@@ -301,25 +304,31 @@ The diagram contains **31 edges**, each color-coded by CQRS (Command Query Respo
 
 ```
 API Service (FastAPI :8001)        Worker Service
-  Routes (Entrypoint)                Redis BLPOP -> processor.py -> CrewAI Pipeline
+  Routes (Entrypoint)                processor.py -> run_worker_loop()
+    articles.py (generate, list)       -> process_job() -> generate_article()
     dictionary.py (search)
     vocabulary.py (CRUD + aggregates)
   Service Layer
+    article_generation_service (submit_generation / generate_article)
     dictionary_service / token_usage_service / vocabulary_service
     lemma_extraction / sense_selection
-  job_queue -> Redis
 
 Domain
-  CEFRLevel / LLMCallResult / TokenUsage / Vocabulary / Article / Errors
+  Article (+ SourceInfo, EditRecord, GenerationResult) / ArticleInputs / Articles
+  JobContext / CEFRLevel / LLMCallResult / TokenUsage / Vocabulary / Errors
 
 Ports (Protocol)
-  LLMPort / DictionaryPort / NLPPort / VocabularyRepository / VocabularyPort / TokenUsageRepository / ArticleRepository
+  LLMPort / DictionaryPort / NLPPort / JobQueuePort / ArticleGeneratorPort
+  VocabularyRepository / VocabularyPort / TokenUsageRepository / ArticleRepository
 
 Adapters
-  LiteLLMAdapter / FreeDictionaryAdapter / StanzaAdapter / MongoVocabRepo / MongoTokenRepo / MongoArticleRepo
+  LiteLLMAdapter / FreeDictionaryAdapter / StanzaAdapter
+  RedisJobQueueAdapter / CrewAIArticleGenerator
+  MongoVocabRepo / MongoTokenRepo / MongoArticleRepo
 
 External
-  OpenAI API / Free Dictionary API / Stanza NLP (local) / MongoDB
+  OpenAI API / Free Dictionary API / Stanza NLP (local)
+  Redis / MongoDB / CrewAI Pipeline
 ```
 
 A legend box at the bottom of the diagram summarizes the three edge categories.
@@ -347,6 +356,31 @@ class ArticleInputs:
     length: str
     topic: str
 
+# Value Objects
+@dataclass(frozen=True)
+class SourceInfo:
+    """Source metadata from the original news article."""
+    title: str
+    source_name: str
+    source_url: str | None = None
+    author: str | None = None
+    publication_date: str | None = None
+
+@dataclass(frozen=True)
+class EditRecord:
+    """Record of a sentence edited during the review process."""
+    original: str
+    replaced: str
+    rationale: str
+
+@dataclass(frozen=True)
+class GenerationResult:
+    """Article generation result -- framework-agnostic domain DTO."""
+    content: str
+    source: SourceInfo
+    edit_history: list[EditRecord]
+    agent_usage: list[dict]
+
 @dataclass
 class Article:
     id: str
@@ -358,7 +392,60 @@ class Article:
     job_id: str | None = None
     content: str | None = None
     started_at: datetime | None = None
+    source: SourceInfo | None = None
+    edit_history: list[EditRecord] = field(default_factory=list)
+
+    # Factory
+    @staticmethod
+    def create(inputs: ArticleInputs, user_id: str) -> 'Article': ...
+
+    # Queries
+    @property
+    def is_deleted(self) -> bool: ...
+    @property
+    def has_content(self) -> bool: ...
+    def is_owned_by(self, user_id: str) -> bool: ...
+
+    # State transitions
+    def complete(self, content, source=None, edit_history=None) -> None: ...
+    def fail(self) -> None: ...
+    def delete(self) -> None: ...
+
+@dataclass
+class Articles:
+    """Collection wrapper for paginated article results."""
+    items: list[Article]
+    total: int
 ```
+
+**Article as a Rich Domain Model:**
+- `Article.create()` factory generates IDs and sets initial `RUNNING` status
+- State transitions (`complete()`, `fail()`, `delete()`) encapsulate business rules and update `updated_at`
+- Query methods (`is_deleted`, `has_content`, `is_owned_by()`) centralize ownership and state checks
+- `SourceInfo` and `EditRecord` are frozen value objects preserving article provenance
+- `GenerationResult` is a framework-agnostic DTO returned by `ArticleGeneratorPort`, decoupling CrewAI output from domain
+- `Articles` wraps paginated results (replaces raw `tuple[list, int]`)
+
+#### JobContext (`domain/model/job.py`)
+
+```python
+@dataclass
+class JobContext:
+    """Typed container for job queue data. Parses and validates raw dict once."""
+    job_id: str
+    article_id: str | None
+    user_id: str | None
+    inputs: ArticleInputs
+    started_at: datetime = field(default_factory=...)
+
+    @classmethod
+    def from_dict(cls, job_data: dict) -> 'JobContext | None': ...
+
+    @property
+    def log_extra(self) -> dict: ...
+```
+
+`JobContext` replaces raw dict passing between worker components. `from_dict()` validates and converts queue data once at dequeue time.
 
 #### User (`domain/model/user.py`)
 
@@ -452,24 +539,34 @@ class TokenUsageSummary:
 **Design decisions:**
 - `ArticleInputs` is `frozen=True` (immutable) because inputs never change after creation
 - `ArticleStatus` extends `str` for JSON serialization compatibility
-- `Article` is a mutable dataclass (status, content change during lifecycle)
+- `Article` is a mutable dataclass (status, content change during lifecycle) with encapsulated state transitions (`complete()`, `fail()`, `delete()`) and query methods (`is_deleted`, `has_content`, `is_owned_by()`)
+- `Article.create()` is a static factory that generates `id` and `job_id` UUIDs, centralizing creation logic
+- `SourceInfo` and `EditRecord` are `frozen=True` value objects preserving article provenance from CrewAI output
+- `GenerationResult` is a framework-agnostic DTO bridging `ArticleGeneratorPort` and the domain layer
+- `Articles` is a collection wrapper for paginated results, replacing raw tuples
+- `JobContext` is a typed container for queue job data, replacing raw dict passing
 - `GrammaticalInfo` groups optional grammatical metadata for vocabulary entries (no `level` -- level is on `Vocabulary`/`LookupResult`)
 - `SenseResult` holds the definition and examples selected from dictionary entries
 - `LookupResult` is `frozen=True` (immutable Value Object) returned by `dictionary_service.lookup()`
 - `VocabularyCount` is a composite model combining a vocabulary entry with its aggregated count
-- Domain errors (`NotFoundError`, `PermissionDeniedError`, etc.) are raised by services and caught by route handlers to map to HTTP status codes
+- Domain errors (`NotFoundError`, `PermissionDeniedError`, `DuplicateArticleError`, `EnqueueError`, etc.) are raised by services and caught by route handlers to map to HTTP status codes
 
 #### Domain Errors (`domain/model/errors.py`)
 
 ```python
-class DomainError(Exception): ...          # Base class
-class NotFoundError(DomainError): ...       # -> 404
-class DuplicateError(DomainError): ...      # -> 409
+class DomainError(Exception): ...            # Base class -> 503
+class NotFoundError(DomainError): ...         # -> 404
+class DuplicateError(DomainError): ...        # -> 409
 class PermissionDeniedError(DomainError): ... # -> 403
-class ValidationError(DomainError): ...     # -> 422
+class ValidationError(DomainError): ...       # -> 422
+
+class DuplicateArticleError(DuplicateError):  # -> 409 (with article_id, job_data)
+    def __init__(self, article_id: str, job_data: dict | None = None): ...
+
+class EnqueueError(DomainError): ...          # -> 503 (job queue failure)
 ```
 
-Services raise these exceptions; route handlers catch and map to HTTP status codes.
+Services raise these exceptions; route handlers catch and map to HTTP status codes. `DuplicateArticleError` carries context (existing article ID and job status) for the 409 response. `EnqueueError` signals Redis queue failures during article submission.
 
 ### Ports (`src/port/`)
 
@@ -528,10 +625,9 @@ class NLPPort(Protocol):
 
 ```python
 class ArticleRepository(Protocol):
-    def save_metadata(self, article_id, inputs, status, ...) -> bool: ...
-    def save_content(self, article_id, content, ...) -> bool: ...
+    def save(self, article: Article) -> bool: ...
     def get_by_id(self, article_id) -> Article | None: ...
-    def find_many(self, skip, limit, status, ...) -> tuple[list[Article], int]: ...
+    def find_many(self, skip, limit, status, ...) -> Articles: ...
     def find_duplicate(self, inputs, user_id, hours) -> Article | None: ...
     def update_status(self, article_id, status) -> bool: ...
     def delete(self, article_id) -> bool: ...
@@ -591,6 +687,31 @@ class TokenUsageRepository(Protocol):
     def get_by_article(self, article_id) -> list[TokenUsage]: ...
 ```
 
+#### JobQueuePort (`port/job_queue.py`)
+
+```python
+class JobQueuePort(Protocol):
+    def enqueue(self, job_id: str, article_id: str, inputs: dict, user_id: str | None = None) -> bool: ...
+    def dequeue(self, timeout: int = 1) -> JobContext | None: ...
+    def get_status(self, job_id: str) -> dict | None: ...
+    def update_status(self, job_id: str, status: str, progress: int = 0,
+                      message: str = '', error: str | None = None,
+                      article_id: str | None = None) -> bool: ...
+    def get_stats(self) -> dict | None: ...
+    def ping(self) -> bool: ...
+```
+
+`JobQueuePort` abstracts job queue operations (enqueue, dequeue, status tracking). Both API and Worker services depend on this port. The API uses `enqueue()`, `update_status()`, `get_status()`, and `get_stats()`. The Worker uses `dequeue()` and `update_status()`.
+
+#### ArticleGeneratorPort (`port/article_generator.py`)
+
+```python
+class ArticleGeneratorPort(Protocol):
+    def generate(self, inputs: ArticleInputs, vocabulary: list[str]) -> GenerationResult: ...
+```
+
+`ArticleGeneratorPort` abstracts article generation. Returns a framework-agnostic `GenerationResult` domain object, decoupling the service layer from CrewAI. The Worker's `ArticleGenerationService` depends on this port.
+
 **Why Protocol (structural typing)?**
 - No need for adapters to explicitly inherit from an ABC
 - Any class with matching method signatures satisfies the protocol
@@ -618,15 +739,17 @@ All MongoDB adapters follow the same pattern:
 - `stats.py`: `get_database_stats(db)` and `get_vocabulary_stats(db)` for the `/stats` endpoint
 - `connection.py`: MongoDB client singleton (`get_mongodb_client()`, `DATABASE_NAME`)
 
-#### External Service Adapters (`src/adapter/external/`, `src/adapter/nlp/`)
+#### External Service Adapters (`src/adapter/external/`, `src/adapter/nlp/`, `src/adapter/queue/`, `src/adapter/crew/`)
 
-Adapters for outbound API calls (dictionary lookups, LLM calls) and local NLP processing. These implement the `DictionaryPort`, `LLMPort`, and `NLPPort` protocols respectively.
+Adapters for outbound API calls (dictionary lookups, LLM calls), local NLP processing, job queue operations, and article generation. These implement the `DictionaryPort`, `LLMPort`, `NLPPort`, `JobQueuePort`, and `ArticleGeneratorPort` protocols respectively.
 
 | Adapter | File | Port | External Service |
 |---------|------|------|------------------|
 | `FreeDictionaryAdapter` | `adapter/external/free_dictionary.py` | `DictionaryPort` | Free Dictionary API |
 | `LiteLLMAdapter` | `adapter/external/litellm.py` | `LLMPort` | LLM providers via LiteLLM |
 | `StanzaAdapter` | `adapter/nlp/stanza.py` | `NLPPort` | Stanza NLP (local) |
+| `RedisJobQueueAdapter` | `adapter/queue/redis_job_queue.py` | `JobQueuePort` | Redis (queue + status) |
+| `CrewAIArticleGenerator` | `adapter/crew/article_generator.py` | `ArticleGeneratorPort` | CrewAI pipeline |
 
 **FreeDictionaryAdapter** (`adapter/external/free_dictionary.py`):
 - Implements all `DictionaryPort` methods: `fetch()`, `build_sense_listing()`, `get_sense()`, `extract_grammar()`
@@ -647,6 +770,30 @@ Adapters for outbound API calls (dictionary lookups, LLM calls) and local NLP pr
 - Provides `preload()` method for eagerly loading the German pipeline (~349MB) at API startup
 - Singleton pattern via `get_nlp_port()` in `api/dependencies.py`
 
+**RedisJobQueueAdapter** (`adapter/queue/redis_job_queue.py`):
+- Implements all `JobQueuePort` methods: `enqueue()`, `dequeue()`, `get_status()`, `update_status()`, `get_stats()`, `ping()`
+- `enqueue()`: RPUSH job JSON to `opad:jobs` list
+- `dequeue()`: BLPOP from `opad:jobs`, returns parsed `JobContext` domain object
+- `get_status()` / `update_status()`: GET/SETEX on `opad:job:{job_id}` keys with 24h TTL
+- `get_stats()`: SCAN all `opad:job:*` keys, aggregate status counts
+- Cached Redis client with automatic reconnection and connection failure tracking
+- Used by both API (enqueue, status queries) and Worker (dequeue, status updates)
+
+**CrewAIArticleGenerator** (`adapter/crew/article_generator.py`):
+- Implements `ArticleGeneratorPort.generate()` -- runs the CrewAI pipeline and returns a `GenerationResult`
+- Receives `JobQueuePort` via constructor for progress tracking through `JobProgressListener`
+- `set_job_context()`: Sets job/article IDs before `generate()` for progress reporting
+- Converts `ReviewedArticle` (CrewAI Pydantic model) to `GenerationResult` (domain DTO) with `SourceInfo` and `EditRecord` value objects
+- Uses `crewai_event_bus.scoped_handlers()` for isolated event listener lifecycle
+
+**CrewAI Pipeline** (`adapter/crew/`):
+- `crew.py`: `ReadingMaterialCreator` -- CrewAI crew definition with 4 agents and 4 tasks
+- `main.py`: `run()` function and `CrewResult` container with `get_agent_usage()` for token metrics
+- `models.py`: Pydantic models for CrewAI task outputs (`NewsArticle`, `SelectedArticle`, `ReviewedArticle`) with `to_source_info()` and `to_edit_record()` converters to domain value objects
+- `progress_listener.py`: `JobProgressListener` -- CrewAI event listener that updates job progress via `JobQueuePort` (no direct Redis dependency)
+- `guardrails.py`: JSON output repair for CrewAI task outputs
+- `config/agents.yaml`, `config/tasks.yaml`: Agent and task configuration
+
 #### Fake Adapters (`src/adapter/fake/`)
 
 In-memory adapters for unit testing. No external dependencies required.
@@ -660,12 +807,18 @@ In-memory adapters for unit testing. No external dependencies required.
 | `FakeDictionaryAdapter` | `dictionary.py` | `DictionaryPort` |
 | `FakeLLMAdapter` | `llm.py` | `LLMPort` |
 | `FakeNLPAdapter` | `nlp.py` | `NLPPort` |
+| `FakeJobQueueAdapter` | `job_queue.py` | `JobQueuePort` |
+| `FakeArticleGenerator` | `article_generator.py` | `ArticleGeneratorPort` |
 
 **FakeDictionaryAdapter**: Returns preconfigured `entries` list. Implements all `DictionaryPort` methods (`fetch`, `build_sense_listing`, `get_sense`, `extract_grammar`). Records `last_word` and `last_language` for assertion.
 
 **FakeLLMAdapter**: Returns preconfigured `response` string and `TokenUsageStats`. Records all calls in `self.calls` list for assertion.
 
 **FakeNLPAdapter**: Returns preconfigured `result` dict. Records all calls in `self.calls` list for assertion.
+
+**FakeJobQueueAdapter**: In-memory queue (deque) and status dict. Implements all `JobQueuePort` methods. Preserves existing status fields on update (mirrors Redis adapter behavior).
+
+**FakeArticleGenerator**: Returns preconfigured `GenerationResult` with default content. Tracks `generate_called` flag for assertion.
 
 ### Composition Root (Dependency Injection)
 
@@ -702,15 +855,16 @@ def get_dictionary_port() -> DictionaryPort:
 def get_llm_port() -> LLMPort:
     return LiteLLMAdapter()
 
+def get_job_queue() -> JobQueuePort:
+    return RedisJobQueueAdapter()
+
+@lru_cache(maxsize=1)
 def get_nlp_port() -> NLPPort:
     """Get NLP port (Stanza adapter singleton for German lemma extraction)."""
-    global _stanza_adapter
-    if _stanza_adapter is None:
-        _stanza_adapter = StanzaAdapter()
-    return _stanza_adapter
+    return StanzaAdapter()
 ```
 
-Note: `get_vocab_repo()` and `get_vocab_port()` both return `MongoVocabularyRepository`, which satisfies both protocols via duck typing. They are separate factory functions to make the dependency intent explicit at the injection site.
+Note: `get_vocab_repo()` and `get_vocab_port()` both return `MongoVocabularyRepository`, which satisfies both protocols via duck typing. They are separate factory functions to make the dependency intent explicit at the injection site. `get_nlp_port()` uses `@lru_cache(maxsize=1)` for singleton behavior.
 
 Used by FastAPI route handlers via `Depends()`:
 
@@ -731,10 +885,26 @@ def main():
     client = get_mongodb_client()
     db = client[DATABASE_NAME]
     repo = MongoArticleRepository(db)
-    run_worker_loop(repo)  # repo passed as parameter
+    token_usage_repo = MongoTokenUsageRepository(db)
+    vocab_repo = MongoVocabularyRepository(db)
+    llm = LiteLLMAdapter()
+
+    # Job queue and article generator via ports
+    job_queue = RedisJobQueueAdapter()
+    generator = CrewAIArticleGenerator(job_queue)
+    generate = partial(
+        generate_article,
+        generator=generator,
+        repo=repo,
+        token_usage_repo=token_usage_repo,
+        vocab=vocab_repo,
+        llm=llm,
+    )
+
+    run_worker_loop(repo, job_queue, generate)
 ```
 
-The worker creates the repository once at startup and passes it through the call chain: `main()` -> `run_worker_loop(repo)` -> `process_job(job_data, repo)` -> `JobContext.from_dict(job_data, repo)`.
+The worker creates all adapters at startup and wires them together via `functools.partial`. The `generate` callable is a partially-applied `article_generation_service.generate_article()` with all infrastructure dependencies pre-bound. The worker loop passes `JobQueuePort` for dequeue/status operations and delegates generation to the `ArticleGenerationService`.
 
 ### Port and Adapter Overview
 
@@ -759,15 +929,20 @@ Note: `MongoVocabularyRepository` (and its fake counterpart) satisfies both `Voc
 | Dictionary API | `DictionaryPort` | `FreeDictionaryAdapter` | `FakeDictionaryAdapter` |
 | LLM Provider | `LLMPort` | `LiteLLMAdapter` | `FakeLLMAdapter` |
 | NLP (Stanza) | `NLPPort` | `StanzaAdapter` | `FakeNLPAdapter` |
+| Job Queue (Redis) | `JobQueuePort` | `RedisJobQueueAdapter` | `FakeJobQueueAdapter` |
+| Article Generator (CrewAI) | `ArticleGeneratorPort` | `CrewAIArticleGenerator` | `FakeArticleGenerator` |
 
 **Additional components:**
 - `adapter/mongodb/indexes.py`: Centralized index management with `ensure_all_indexes(db)`
 - `adapter/mongodb/stats.py`: Database statistics for `/stats` endpoint
+- `adapter/crew/progress_listener.py`: CrewAI event listener for real-time job progress tracking via `JobQueuePort`
+- `services/article_generation_service.py`: Article submission (API-side: `submit_generation()`) and generation (Worker-side: `generate_article()`)
 - `services/vocabulary_service.py`: Business logic for vocabulary operations (save, delete with ownership verification)
 - `services/dictionary_service.py`: Dictionary lookup orchestrator (hybrid pipeline + full LLM fallback)
 - `services/lemma_extraction.py`: Step 1 of lookup pipeline (NLP for German, LLM for others)
 - `services/sense_selection.py`: Step 3 of lookup pipeline (LLM sense selection from dictionary entries)
-- `domain/model/errors.py`: Domain-level exceptions (`NotFoundError`, `PermissionDeniedError`, `DuplicateError`, `ValidationError`)
+- `domain/model/job.py`: `JobContext` typed container for queue job data
+- `domain/model/errors.py`: Domain-level exceptions (`NotFoundError`, `PermissionDeniedError`, `DuplicateArticleError`, `EnqueueError`, `ValidationError`)
 
 ---
 
@@ -1037,16 +1212,19 @@ sequenceDiagram
     Note over User,MongoDB: Article Generation with Token Tracking
     User->>WebUI: Generate article
     WebUI->>API: POST /articles/generate
-    API->>Redis: Enqueue job
-    Redis-->>Worker: Dequeue job
-    Worker->>CrewAI: run_crew()
+    API->>API: submit_generation() (service layer)
+    API->>MongoDB: Article.create() + repo.save()
+    API->>Redis: job_queue.enqueue() (via JobQueuePort)
+    Redis-->>Worker: job_queue.dequeue() -> JobContext
+    Worker->>Worker: article_generation_service.generate_article()
+    Worker->>CrewAI: generator.generate() (via ArticleGeneratorPort)
     CrewAI->>LLM: Multiple API calls (agents execute)
     LLM-->>CrewAI: Responses (usage tracked internally)
-    CrewAI-->>Worker: CrewResult (with crew_instance)
-    Worker->>Worker: result.get_agent_usage()
-    Worker->>Worker: calculate_cost() per agent
-    Worker->>MongoDB: save_crew_token_usage() (per agent)
-    Worker->>MongoDB: Save article
+    CrewAI-->>Worker: GenerationResult (domain DTO)
+    Worker->>Worker: article.complete(content, source, edit_history)
+    Worker->>MongoDB: repo.save(article)
+    Worker->>Worker: track_agent_usage() + calculate_cost()
+    Worker->>MongoDB: token_usage_repo.save() (per agent)
 
     Note over User,MongoDB: Usage Summary Retrieval
     User->>WebUI: View usage page
@@ -1067,25 +1245,63 @@ sequenceDiagram
 
 ---
 
-## 🔧 Worker Token Tracking
+## 🔧 Worker Architecture
 
 ### Overview
 
-The Worker service tracks token usage during CrewAI article generation using **CrewAI's built-in token tracking**, which provides reliable per-agent usage metrics.
+The Worker service processes article generation jobs from the Redis queue via hexagonal architecture. All infrastructure access goes through ports: `JobQueuePort` (Redis), `ArticleGeneratorPort` (CrewAI), `ArticleRepository` (MongoDB).
 
-### Architecture
+### Article Generation Pipeline
 
 **Data Flow:**
 ```
-Worker → process_job() → run_crew() → CrewAI agents execute
-                                            ↓
-                                     CrewAI tracks usage internally
-                                            ↓
-                                     CrewResult.get_agent_usage()
-                                            ↓
-                                     calculate_cost() (LiteLLM pricing)
-                                            ↓
-                                     save_crew_token_usage() → MongoDB
+Worker main.py
+  └── run_worker_loop(repo, job_queue, generate)
+         └── job_queue.dequeue() -> JobContext
+         └── process_job(ctx, repo, job_queue, generate)
+                └── generate(article, user_id, inputs, job_id)
+                       = article_generation_service.generate_article(...)
+                            ├── 1. _get_vocabulary() via VocabularyPort
+                            ├── 2. generator.set_job_context(job_id, article_id)
+                            ├── 3. generator.generate(inputs, vocab_list)
+                            │       └── CrewAIArticleGenerator
+                            │             ├── JobProgressListener (job_queue.update_status)
+                            │             └── run_crew(inputs) -> CrewResult -> GenerationResult
+                            ├── 4. article.complete(content, source, edit_history)
+                            ├── 5. repo.save(article) via ArticleRepository
+                            └── 6. track_agent_usage() via TokenUsageRepository
+```
+
+### Article Submission (API-side)
+
+The `submit_generation()` service function handles the API-side submission flow:
+
+```
+POST /articles/generate
+  └── submit_generation(inputs, user_id, repo, job_queue, force)
+         ├── _check_duplicate(repo, job_queue, inputs, force, user_id)
+         │     └── raises DuplicateArticleError if duplicate found
+         ├── Article.create(inputs, user_id)  # factory with generated IDs
+         ├── repo.save(article)               # ArticleRepository
+         └── _enqueue_job(job_queue, repo, article)
+               ├── job_queue.update_status(job_id, 'queued', ...)
+               └── job_queue.enqueue(job_id, article_id, inputs, user_id)
+```
+
+### Worker Token Tracking
+
+The Worker tracks token usage during CrewAI article generation using **CrewAI's built-in token tracking**, which provides reliable per-agent usage metrics.
+
+**Token Tracking Data Flow:**
+```
+CrewAIArticleGenerator.generate()
+  └── run_crew(inputs) -> CrewResult
+         └── CrewResult.get_agent_usage()  # per-agent metrics
+                ↓
+article_generation_service.generate_article()
+  └── track_agent_usage(token_usage_repo, agent_usage, user_id, article_id, job_id, llm)
+         └── calculate_cost() per agent (LiteLLM pricing)
+         └── token_usage_repo.save() per agent -> MongoDB
 ```
 
 **Key Design Decision:**
@@ -1125,28 +1341,33 @@ def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> fl
 - Gracefully handles KeyError, ValueError, AttributeError
 - Logs unexpected errors at debug level
 
-#### save_crew_token_usage()
+#### track_agent_usage()
+
+**Module**: `services/token_usage_service.py`
 
 ```python
-def save_crew_token_usage(
-    result: CrewResult,
+def track_agent_usage(
+    repo: TokenUsageRepository,
+    agent_usage: list[dict],
     user_id: str,
     article_id: str | None,
-    job_id: str
+    job_id: str,
+    llm: LLMPort | None = None,
 ) -> None:
-    """Save token usage for each CrewAI agent to MongoDB.
+    """Track token usage for each agent (framework-agnostic).
 
-    Uses CrewAI's built-in token tracking (agent.llm.get_token_usage_summary())
-    to get per-agent, per-model usage metrics.
+    Accepts a list of dicts with agent_role, agent_name, model, prompt_tokens,
+    completion_tokens, total_tokens.
     """
 ```
 
 **Behavior**:
-- Iterates through all agents in CrewResult
+- Iterates through `agent_usage` list (framework-agnostic dicts)
 - Skips agents with zero token usage
-- Calculates cost using `calculate_cost()` with LiteLLM pricing
-- Saves each agent's usage as separate MongoDB record
-- Non-fatal: failures don't crash job processing
+- Resolves agent display name from `agent_name` with fallback to `agent_role`
+- Calculates cost via `llm.estimate_cost()` if `LLMPort` is provided
+- Saves each agent's usage as separate MongoDB record via `TokenUsageRepository`
+- Non-fatal: failures are caught, logged as warnings, and do not crash the worker
 
 **Data Saved per Agent**:
 ```json
@@ -1158,7 +1379,7 @@ def save_crew_token_usage(
   "completion_tokens": 1500,
   "estimated_cost": 0.0525,
   "article_id": "article-uuid",
-  "metadata": {"job_id": "job-uuid"}
+  "metadata": {"job_id": "job-uuid", "agent_name": "Article Finder"}
 }
 ```
 
@@ -1166,7 +1387,7 @@ def save_crew_token_usage(
 
 ### CrewResult Class
 
-**File**: `src/crew/main.py`
+**File**: `src/adapter/crew/main.py`
 
 **Purpose**: Container for crew execution result with usage metrics extraction.
 
@@ -1397,7 +1618,7 @@ lemmas = get_user_lemmas(
 
 The CrewAI pipeline uses four specialized agents for article generation. Each agent is configured with a specific role, goal, and LLM model.
 
-**Agents** (`src/crew/config/agents.yaml`):
+**Agents** (`src/adapter/crew/config/agents.yaml`):
 
 | Agent | Role | Tools | LLM Model |
 |-------|------|-------|-----------|
@@ -1426,7 +1647,7 @@ graph LR
     style D fill:#e8f5e9
 ```
 
-**Tasks** (`src/crew/config/tasks.yaml`):
+**Tasks** (`src/adapter/crew/config/tasks.yaml`):
 
 #### 1. find_news_articles
 - **Agent**: `article_finder`
@@ -1468,7 +1689,7 @@ graph LR
 
 ### Pydantic Output Models
 
-**File**: `src/crew/models.py`
+**File**: `src/adapter/crew/models.py`
 
 #### ReviewedArticle
 Final output from the review task:
@@ -1508,10 +1729,10 @@ if isinstance(reviewed, ReviewedArticle) and reviewed.replaced_sentences:
             extra=ctx.log_extra
         )
 
-# Save to MongoDB via ArticleRepository (injected)
-content = reviewed.article_content
-if not repo.save_content(ctx.article_id, content, ctx.started_at):
-    ctx.mark_failed('Failed to save article to database', 'MongoDB save error')
+# Save via ArticleGenerationService (domain model pattern)
+article.complete(content=result.content, source=result.source, edit_history=result.edit_history)
+if not repo.save(article):
+    logger.error("Failed to save article", extra={"articleId": article.id})
     return False
 ```
 
@@ -1650,33 +1871,32 @@ opad/
 ### 서비스 구분
 | 폴더 | 역할 | 런타임 | 포트 |
 |------|------|--------|------|
-| `src/domain/` | Domain models (Article, User, Vocabulary, TokenUsage) | - | - |
-| `src/port/` | Port definitions (ArticleRepository, UserRepository, VocabularyRepository, VocabularyPort, TokenUsageRepository, DictionaryPort, LLMPort, NLPPort) | - | - |
-| `src/adapter/` | Infrastructure adapters (MongoDB, External APIs, Fake) | - | - |
-| `src/services/` | Business logic (vocabulary_service, dictionary_service) | - | - |
+| `src/domain/` | Domain models (Article, JobContext, User, Vocabulary, TokenUsage, Errors) | - | - |
+| `src/port/` | Port definitions (ArticleRepository, UserRepository, VocabularyRepository, VocabularyPort, TokenUsageRepository, DictionaryPort, LLMPort, NLPPort, JobQueuePort, ArticleGeneratorPort) | - | - |
+| `src/adapter/` | Infrastructure adapters (MongoDB, External APIs, Queue, Crew, Fake) | - | - |
+| `src/services/` | Business logic (article_generation_service, vocabulary_service, dictionary_service) | - | - |
 | `src/api/` | CRUD + Job enqueue + Dictionary API | Python (FastAPI) | 8001 (default) |
-| `src/worker/` | CrewAI 실행 + Job/Token Tracking | Python | - |
+| `src/worker/` | Job dequeue + Article generation orchestration | Python | - |
 | `src/web/` | UI | Node.js (Next.js) | 3000 |
-| `src/crew/` | CrewAI 로직 (공유) | - | - |
 | `src/utils/` | 공통 유틸 (공유) | - | - |
 
 ### Worker 모듈 구성
 | 파일 | 역할 | 의존성 |
 |------|------|--------|
-| `worker/main.py` | Worker 진입점 + composition root (MongoArticleRepository 생성) | `processor.py`, `adapter/mongodb/` |
-| `worker/processor.py` | Job 처리 로직 (process_job) -- `ArticleRepository` + `VocabularyPort` 주입 받음 | `crew/main.py`, `utils/token_usage.py`, `port/article_repository.py`, `port/vocabulary.py` |
-| `worker/context.py` | JobContext helper (job data validation) -- `ArticleRepository` 주입 받음 | `api/job_queue.py`, `port/article_repository.py` |
-| `crew/progress_listener.py` | JobProgressListener (CrewAI event listener) | `api/job_queue.py` |
+| `worker/main.py` | Worker 진입점 + composition root (adapters + partial generate) | `processor.py`, `adapter/mongodb/`, `adapter/queue/`, `adapter/crew/`, `services/article_generation_service` |
+| `worker/processor.py` | Job 처리 로직 (process_job, run_worker_loop) | `port/article_repository.py`, `port/job_queue.py` |
 
-### CrewAI 모듈 구성
+### CrewAI Adapter 모듈 구성
 | 파일 | 역할 | 출력 모델 |
 |------|------|----------|
-| `crew/crew.py` | ReadingMaterialCreator 클래스 (agents + tasks 정의) | - |
-| `crew/main.py` | `run()` 함수 - CrewAI 실행 엔트리포인트 | `CrewResult` |
-| `crew/models.py` | Pydantic 출력 모델 정의 | `NewsArticleList`, `SelectedArticle`, `ReviewedArticle` |
-| `crew/guardrails.py` | JSON 출력 복구 guardrail | - |
-| `crew/config/agents.yaml` | 에이전트 설정 (role, goal, backstory, llm) | - |
-| `crew/config/tasks.yaml` | 태스크 설정 (description, expected_output, context) | - |
+| `adapter/crew/crew.py` | ReadingMaterialCreator 클래스 (agents + tasks 정의) | - |
+| `adapter/crew/main.py` | `run()` 함수 - CrewAI 실행 엔트리포인트 | `CrewResult` |
+| `adapter/crew/article_generator.py` | `CrewAIArticleGenerator` - ArticleGeneratorPort 구현 | `GenerationResult` |
+| `adapter/crew/models.py` | Pydantic 출력 모델 + domain 변환 메서드 | `NewsArticle`, `SelectedArticle`, `ReviewedArticle` |
+| `adapter/crew/progress_listener.py` | `JobProgressListener` (CrewAI event listener, via JobQueuePort) | - |
+| `adapter/crew/guardrails.py` | JSON 출력 복구 guardrail | - |
+| `adapter/crew/config/agents.yaml` | 에이전트 설정 (role, goal, backstory, llm) | - |
+| `adapter/crew/config/tasks.yaml` | 태스크 설정 (description, expected_output, context) | - |
 
 ---
 

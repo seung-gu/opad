@@ -14,7 +14,7 @@ from api.security import get_current_user_required
 from api.dependencies import get_article_repo, get_token_usage_repo
 from adapter.fake.article_repository import FakeArticleRepository
 from adapter.fake.token_usage_repository import FakeTokenUsageRepository
-from domain.model.article import ArticleInputs, ArticleStatus
+from domain.model.article import Article, ArticleInputs, ArticleStatus
 from domain.model.token_usage import TokenUsage
 from domain.model.vocabulary import GrammaticalInfo, LookupResult
 
@@ -169,13 +169,16 @@ class TestGetArticleUsage(unittest.TestCase):
 
     def _create_test_article(self, user_id="test-user-123", status=ArticleStatus.COMPLETED):
         """Create a test article in the fake repo."""
-        self.repo.save_metadata(
-            article_id=self.article_id,
+        article = Article(
+            id=self.article_id,
             inputs=ArticleInputs(language='English', level='B2', length='500', topic='AI'),
+            status=status,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
             user_id=user_id,
+            content="Test content" if status == ArticleStatus.COMPLETED else None,
         )
-        if status == ArticleStatus.COMPLETED:
-            self.repo.save_content(self.article_id, "Test content")
+        self.repo.save(article)
 
     def test_get_article_usage_requires_authentication(self):
         """Test that endpoint requires authentication."""

@@ -8,7 +8,10 @@ from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
 from adapter.mongodb import COLLECTION_NAME
-from domain.model.article import Article, ArticleInputs, ArticleStatus
+from domain.model.article import (
+    Article, ArticleInputs, ArticleStatus, Articles,
+    SourceInfo, EditRecord,
+)
 
 logger = getLogger(__name__)
 
@@ -43,6 +46,14 @@ class MongoArticleRepository:
 
     def _to_domain(self, doc: dict) -> Article:
         """Convert MongoDB document to Article domain model."""
+        source = None
+        if doc.get('source'):
+            source = SourceInfo(**doc['source'])
+
+        edit_history = []
+        for rec in doc.get('edit_history', []):
+            edit_history.append(EditRecord(**rec))
+
         return Article(
             id=doc['_id'],
             inputs=ArticleInputs(**doc['inputs']),
@@ -53,76 +64,40 @@ class MongoArticleRepository:
             job_id=doc.get('job_id'),
             content=doc.get('content'),
             started_at=doc.get('started_at'),
+            source=source,
+            edit_history=edit_history,
         )
 
     # ── write operations ─────────────────────────────────────
 
-    def save_metadata(
-        self,
-        article_id: str,
-        inputs: ArticleInputs,
-        status: ArticleStatus = ArticleStatus.RUNNING,
-        created_at: datetime | None = None,
-        user_id: str | None = None,
-        job_id: str | None = None,
-    ) -> bool:
-        """Save article metadata to MongoDB (without content)."""
+    def save(self, article: Article) -> bool:
+        """Save entire Article (upsert)."""
         try:
-            if created_at is None:
-                created_at = datetime.now(timezone.utc)
-
-            article_doc = {
-                'inputs': asdict(inputs),
-                'status': status.value,
-                'updated_at': datetime.now(timezone.utc),
-                'user_id': user_id,
-                'job_id': job_id,
+            doc = {
+                'inputs': asdict(article.inputs),
+                'status': article.status.value,
+                'updated_at': article.updated_at,
+                'user_id': article.user_id,
+                'job_id': article.job_id,
+                'content': article.content,
+                'started_at': article.started_at,
+                'source': asdict(article.source) if article.source else None,
+                'edit_history': [asdict(r) for r in article.edit_history],
             }
 
             self.collection.update_one(
-                {'_id': article_id},
+                {'_id': article.id},
                 {
-                    '$set': article_doc,
-                    '$setOnInsert': {'created_at': created_at, '_id': article_id},
+                    '$set': doc,
+                    '$setOnInsert': {'created_at': article.created_at, '_id': article.id},
                 },
                 upsert=True,
             )
 
-            logger.info("Article metadata saved", extra={"articleId": article_id, "jobId": job_id})
+            logger.info("Article saved", extra={"articleId": article.id})
             return True
         except PyMongoError as e:
-            logger.error("Failed to save article metadata", extra={"articleId": article_id, "error": str(e)})
-            return False
-
-    def save_content(
-        self,
-        article_id: str,
-        content: str,
-        started_at: datetime | None = None,
-    ) -> bool:
-        """Save generated article content and mark as completed."""
-        try:
-            update_data = {
-                'content': content,
-                'status': ArticleStatus.COMPLETED.value,
-                'updated_at': datetime.now(timezone.utc),
-            }
-            if started_at:
-                update_data['started_at'] = started_at
-
-            result = self.collection.update_one(
-                {'_id': article_id},
-                {'$set': update_data},
-            )
-
-            if result.matched_count == 0:
-                logger.error("Article not found, cannot save content", extra={"articleId": article_id})
-                return False
-
-            logger.info("Article content saved", extra={"articleId": article_id})
-            return True
-        except PyMongoError as e:
-            logger.error("Failed to save article content", extra={"articleId": article_id, "error": str(e)})
+            logger.error("Failed to save article", extra={"articleId": article.id, "error": str(e)})
             return False
 
     def update_status(self, article_id: str, status: ArticleStatus) -> bool:
@@ -183,7 +158,7 @@ class MongoArticleRepository:
         level: str | None = None,
         user_id: str | None = None,
         exclude_deleted: bool = True,
-    ) -> tuple[list[Article], int]:
+    ) -> Articles:
         """List articles with filtering, sorting, and pagination."""
         try:
             query: dict = {}
@@ -208,10 +183,10 @@ class MongoArticleRepository:
 
             articles = [self._to_domain(doc) for doc in docs]
             logger.info("Listed articles", extra={"count": len(articles), "total": total_count})
-            return articles, total_count
+            return Articles(items=articles, total=total_count)
         except PyMongoError as e:
             logger.error("Failed to list articles", extra={"error": str(e)})
-            return [], 0
+            return Articles(items=[], total=0)
 
     def find_duplicate(
         self,

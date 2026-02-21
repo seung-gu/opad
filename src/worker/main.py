@@ -6,8 +6,6 @@ import logging
 from pathlib import Path
 
 # Add src to path
-# main.py is at /app/src/worker/main.py
-# src is at /app/src, so we go up 2 levels (same as processor.py)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from worker.processor import run_worker_loop
@@ -17,6 +15,10 @@ from adapter.mongodb.token_usage_repository import MongoTokenUsageRepository
 from adapter.mongodb.vocabulary_repository import MongoVocabularyRepository
 from adapter.mongodb.connection import get_mongodb_client, DATABASE_NAME
 from adapter.external.litellm import LiteLLMAdapter
+from adapter.queue.redis_job_queue import RedisJobQueueAdapter
+from functools import partial
+from adapter.crew.article_generator import CrewAIArticleGenerator
+from services.article_generation_service import generate_article
 
 # Set up structured JSON logging
 setup_structured_logging()
@@ -39,7 +41,20 @@ def main():
         token_usage_repo = MongoTokenUsageRepository(db)
         vocab_repo = MongoVocabularyRepository(db)
         llm = LiteLLMAdapter()
-        run_worker_loop(repo, token_usage_repo, vocab_repo, llm)
+
+        # Job queue and article generator via ports
+        job_queue = RedisJobQueueAdapter()
+        generator = CrewAIArticleGenerator(job_queue)
+        generate = partial(
+            generate_article,
+            generator=generator,
+            repo=repo,
+            token_usage_repo=token_usage_repo,
+            vocab=vocab_repo,
+            llm=llm,
+        )
+
+        run_worker_loop(repo, job_queue, generate)
     except KeyboardInterrupt:
         logger.info("Worker stopped")
     except Exception as e:
