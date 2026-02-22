@@ -13,10 +13,9 @@ from fastapi import HTTPException
 from api.main import app
 from api.models import UserResponse, VocabularyRequest
 from api.security import get_current_user_required
-from api.dependencies import get_vocab_repo, get_vocab_port
+from api.dependencies import get_vocab_repo
 from adapter.fake.vocabulary_repository import FakeVocabularyRepository
 from domain.model.vocabulary import GrammaticalInfo, Vocabulary
-from domain.model.errors import NotFoundError, PermissionDeniedError
 
 
 class TestGetVocabulariesList(unittest.TestCase):
@@ -42,7 +41,7 @@ class TestGetVocabulariesList(unittest.TestCase):
     def _setup(self):
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         app.dependency_overrides[get_vocab_repo] = lambda: self.vocab_repo
-        app.dependency_overrides[get_vocab_port] = lambda: self.vocab_repo
+
 
     def _make_vocab(self, **overrides) -> Vocabulary:
         """Create a Vocabulary domain object with sensible defaults."""
@@ -166,7 +165,7 @@ class TestAddVocabulary(unittest.TestCase):
     def _setup(self):
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         app.dependency_overrides[get_vocab_repo] = lambda: self.vocab_repo
-        app.dependency_overrides[get_vocab_port] = lambda: self.vocab_repo
+
 
     def test_add_vocabulary_success(self):
         """Test successful vocabulary addition returns 200 with VocabularyResponse fields."""
@@ -278,7 +277,7 @@ class TestDeleteVocabulary(unittest.TestCase):
     def _setup(self):
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         app.dependency_overrides[get_vocab_repo] = lambda: self.vocab_repo
-        app.dependency_overrides[get_vocab_port] = lambda: self.vocab_repo
+
 
     def _make_vocab(self, **overrides) -> Vocabulary:
         """Create a Vocabulary domain object with sensible defaults."""

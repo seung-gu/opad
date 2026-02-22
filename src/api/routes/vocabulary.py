@@ -1,8 +1,5 @@
 """Vocabulary API routes for vocabulary CRUD operations.
 
-This module handles HTTP concerns for vocabulary endpoints.
-Business logic is delegated to vocabulary_service.
-
 Endpoints:
 - POST /dictionary/vocabulary: Add a word to vocabulary list
 - GET /dictionary/vocabularies: Get aggregated vocabulary list
@@ -20,12 +17,10 @@ from api.models import (
     VocabularyResponse,
     VocabularyCountResponse,
 )
-from services import vocabulary_service
-from api.dependencies import get_vocab_repo, get_vocab_port
-from domain.model.errors import NotFoundError, PermissionDeniedError
+from api.dependencies import get_vocab_repo
+from domain.model.errors import PermissionDeniedError
 from port.vocabulary_repository import VocabularyRepository
-from port.vocabulary import VocabularyPort
-from domain.model.vocabulary import GrammaticalInfo
+from domain.model.vocabulary import GrammaticalInfo, Vocabulary
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +34,7 @@ async def add_vocabulary(
     repo: VocabularyRepository = Depends(get_vocab_repo),
 ):
     """Add a word to vocabulary list."""
-    vocab = vocabulary_service.save(
-        repo,
+    vocab = Vocabulary.create(
         article_id=request.article_id,
         word=request.word,
         lemma=request.lemma,
@@ -60,8 +54,10 @@ async def add_vocabulary(
         ),
     )
 
-    if not vocab:
+    vocab_id = repo.save(vocab)
+    if not vocab_id:
         raise HTTPException(status_code=500, detail="Failed to save vocabulary")
+    vocab = repo.get_by_id(vocab_id)
 
     logger.info("Vocabulary added", extra={
         "vocabulary_id": vocab.id,
@@ -97,12 +93,12 @@ async def get_vocabularies_list(
     skip: int = 0,
     limit: int = 100,
     current_user: UserResponse = Depends(get_current_user_required),
-    port: VocabularyPort = Depends(get_vocab_port),
+    repo: VocabularyRepository = Depends(get_vocab_repo),
 ):
     """Get aggregated vocabulary list grouped by lemma with counts."""
     limit = min(limit, 1000)
 
-    entries = port.count_by_lemma(
+    entries = repo.count_by_lemma(
         language=language, user_id=current_user.id, skip=skip, limit=limit,
     )
 
@@ -148,12 +144,16 @@ async def delete_vocabulary_word(
     repo: VocabularyRepository = Depends(get_vocab_repo),
 ):
     """Delete a vocabulary word."""
-    try:
-        vocabulary_service.delete(repo, vocabulary_id, current_user.id)
-    except NotFoundError:
+    vocab = repo.get_by_id(vocabulary_id)
+    if not vocab:
         raise HTTPException(status_code=404, detail="Vocabulary not found")
+
+    try:
+        vocab.check_ownership(current_user.id)
     except PermissionDeniedError:
         raise HTTPException(status_code=403, detail="You don't have permission to delete this vocabulary")
+
+    repo.delete(vocabulary_id)
 
     logger.info("Vocabulary deleted", extra={
         "vocabulary_id": vocabulary_id,
