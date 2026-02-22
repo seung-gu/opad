@@ -12,7 +12,7 @@ from port.job_queue import JobQueuePort
 from domain.model.article import ArticleInputs, ArticleStatus, Article
 from domain.model.errors import DomainError, DuplicateArticleError, EnqueueError
 from port.vocabulary_repository import VocabularyRepository
-from services.article_generation_service import submit_generation
+from services.article_submission_service import submit_generation
 
 logger = logging.getLogger(__name__)
 

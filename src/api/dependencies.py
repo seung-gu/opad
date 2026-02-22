@@ -19,7 +19,6 @@ from port.nlp import NLPPort
 from port.token_usage_repository import TokenUsageRepository
 from port.user_repository import UserRepository
 from port.vocabulary_repository import VocabularyRepository
-from port.vocabulary import VocabularyPort
 
 
 def _get_db():
@@ -43,10 +42,6 @@ def get_token_usage_repo() -> TokenUsageRepository:
 
 
 def get_vocab_repo() -> VocabularyRepository:
-    return MongoVocabularyRepository(_get_db())
-
-
-def get_vocab_port() -> VocabularyPort:
     return MongoVocabularyRepository(_get_db())
 
 

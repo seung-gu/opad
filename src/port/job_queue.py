@@ -2,11 +2,12 @@
 
 from typing import Protocol
 
+from domain.model.article import Article
 from domain.model.job import JobContext
 
 
 class JobQueuePort(Protocol):
-    def enqueue(self, job_id: str, article_id: str, inputs: dict, user_id: str | None = None) -> bool: ...
+    def enqueue(self, article: Article) -> bool: ...
     def dequeue(self, timeout: int = 1) -> JobContext | None: ...
     def get_status(self, job_id: str) -> dict | None: ...
     def update_status(

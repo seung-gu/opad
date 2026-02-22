@@ -2,11 +2,11 @@
 
 from typing import Protocol
 
-from domain.model.vocabulary import Vocabulary
+from domain.model.vocabulary import Vocabulary, VocabularyCount
 
 
 class VocabularyRepository(Protocol):
-    """Protocol for individual vocabulary entry data access (CRUD + primitive queries)."""
+    """Protocol for vocabulary data access (CRUD + aggregate queries)."""
 
     def save(self, vocab: Vocabulary) -> str | None:
         """Save a vocabulary entry, skipping duplicates based on identity.
@@ -42,4 +42,24 @@ class VocabularyRepository(Protocol):
 
     def delete(self, vocabulary_id: str) -> bool:
         """Delete a vocabulary entry. Returns True if deleted, False if not found."""
+        ...
+
+    def count_by_lemma(
+        self,
+        language: str | None = None,
+        user_id: str | None = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> list[VocabularyCount]:
+        """Aggregate vocabulary counts grouped by language + lemma, sorted by count descending."""
+        ...
+
+    def find_lemmas(
+        self,
+        user_id: str,
+        language: str,
+        levels: list[str] | None = None,
+        limit: int = 50,
+    ) -> list[str]:
+        """Get distinct lemmas sorted by frequency (desc) then recency (desc)."""
         ...

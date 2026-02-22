@@ -3,7 +3,7 @@
 from collections import deque
 from datetime import datetime, timezone
 
-from domain.model.article import ArticleInputs
+from domain.model.article import Article
 from domain.model.job import JobContext
 
 
@@ -12,17 +12,12 @@ class FakeJobQueueAdapter:
         self.queue: deque[JobContext] = deque()
         self.statuses: dict[str, dict] = {}
 
-    def enqueue(self, job_id: str, article_id: str, inputs: dict, user_id: str | None = None) -> bool:
+    def enqueue(self, article: Article) -> bool:
         self.queue.append(JobContext(
-            job_id=job_id,
-            article_id=article_id,
-            user_id=user_id,
-            inputs=ArticleInputs(
-                language=inputs.get('language', ''),
-                level=inputs.get('level', ''),
-                length=inputs.get('length', ''),
-                topic=inputs.get('topic', ''),
-            ),
+            job_id=article.job_id,
+            article_id=article.id,
+            user_id=article.user_id,
+            inputs=article.inputs,
         ))
         return True
 

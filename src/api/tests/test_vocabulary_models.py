@@ -62,7 +62,7 @@ class TestConjugationsModel(unittest.TestCase):
             past="ich ging",
             participle="ich bin gegangen"
         )
-        serialized = conj.dict()
+        serialized = conj.model_dump()
         self.assertEqual(serialized['present'], "ich gehe")
         self.assertEqual(serialized['past'], "ich ging")
         self.assertEqual(serialized['participle'], "ich bin gegangen")
@@ -150,7 +150,7 @@ class TestSearchResponseModel(unittest.TestCase):
             pos="verb",
             level="A1"
         )
-        serialized = response.dict()
+        serialized = response.model_dump()
         self.assertEqual(serialized['lemma'], "gehen")
         self.assertEqual(serialized['pos'], "verb")
         self.assertEqual(serialized['level'], "A1")
@@ -348,7 +348,7 @@ class TestVocabularyResponseModel(unittest.TestCase):
             created_at=self.now,
             level="B1"
         )
-        serialized = response.dict()
+        serialized = response.model_dump()
         self.assertEqual(serialized['id'], "vocab-123")
         self.assertEqual(serialized['level'], "B1")
         self.assertIsInstance(serialized['created_at'], datetime)
@@ -483,7 +483,7 @@ class TestVocabularyCountResponseModel(unittest.TestCase):
             article_ids=["article-1", "article-2"],
             level="B2"
         )
-        serialized = count.dict()
+        serialized = count.model_dump()
         self.assertEqual(serialized['count'], 5)
         self.assertEqual(len(serialized['article_ids']), 2)
         self.assertEqual(serialized['level'], "B2")

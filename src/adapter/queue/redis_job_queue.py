@@ -9,12 +9,15 @@ Manages the job queue system using Redis:
 import json
 import logging
 import os
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Optional
 
 import redis
 from redis.exceptions import RedisError
 
+from dataclasses import asdict
+from domain.model.article import Article
 from domain.model.job import JobContext
 
 logger = logging.getLogger(__name__)
@@ -73,25 +76,25 @@ class RedisJobQueueAdapter:
 
     # ── JobQueuePort implementation ──────────────────────────
 
-    def enqueue(self, job_id: str, article_id: str, inputs: dict, user_id: str | None = None) -> bool:
+    def enqueue(self, article: Article) -> bool:
         client = self._get_client()
         if not client:
             return False
 
         job_data = {
-            'job_id': job_id,
-            'article_id': article_id,
-            'user_id': user_id,
-            'inputs': inputs,
+            'job_id': article.job_id,
+            'article_id': article.id,
+            'user_id': article.user_id,
+            'inputs': asdict(article.inputs),
             'created_at': datetime.now(timezone.utc).isoformat(),
         }
 
         try:
             client.rpush(QUEUE_NAME, json.dumps(job_data))
-            logger.info("Job enqueued successfully", extra={"jobId": job_id, "articleId": article_id})
+            logger.info("Job enqueued successfully", extra={"jobId": article.job_id, "articleId": article.id})
             return True
         except RedisError as e:
-            logger.error("Failed to enqueue job", extra={"jobId": job_id, "articleId": article_id, "error": str(e)})
+            logger.error("Failed to enqueue job", extra={"jobId": article.job_id, "articleId": article.id, "error": str(e)})
             return False
 
     def dequeue(self, timeout: int = 1) -> JobContext | None:
@@ -193,48 +196,39 @@ class RedisJobQueueAdapter:
         if not client:
             return None
 
-        stats = {
-            'queued': 0,
-            'running': 0,
-            'completed': 0,
-            'failed': 0,
-            'total': 0,
-        }
-
         try:
-            cursor = 0
-            pattern = 'opad:job:*'
-
-            while True:
-                cursor, keys = client.scan(cursor, match=pattern, count=100)
-
-                for key in keys:
-                    try:
-                        status_data = client.get(key)
-                        if status_data:
-                            job_data = json.loads(status_data)
-                            s = job_data.get('status', 'unknown')
-                            if s in stats:
-                                stats[s] += 1
-                            stats['total'] += 1
-                    except (json.JSONDecodeError, KeyError):
-                        continue
-
-                if cursor == 0:
-                    break
-
-            logger.info("Job statistics retrieved", extra={
-                "totalJobs": stats['total'],
-                "queued": stats['queued'],
-                "running": stats['running'],
-                "completed": stats['completed'],
-                "failed": stats['failed'],
-            })
-
+            status_values = self._scan_all_job_status_values(client)
+            stats = self._tally(status_values)
+            logger.info("Job statistics retrieved", extra={"totalJobs": stats['total']})
             return stats
         except RedisError as e:
             logger.error("Failed to get job stats", extra={"error": str(e)})
             return None
+
+    @staticmethod
+    def _scan_all_job_status_values(client) -> list[str]:
+        """Scan all job keys and return their status strings."""
+        result = []
+        for key in client.scan_iter(match='opad:job:*', count=100):
+            try:
+                raw = client.get(key)
+                if raw:
+                    result.append(json.loads(raw).get('status', 'unknown'))
+            except (json.JSONDecodeError, KeyError):
+                continue
+        return result
+
+    @staticmethod
+    def _tally(status_values: list[str]) -> dict:
+        """Count job statuses."""
+        counts = Counter(status_values)
+        return {
+            'queued': counts.get('queued', 0),
+            'running': counts.get('running', 0),
+            'completed': counts.get('completed', 0),
+            'failed': counts.get('failed', 0),
+            'total': len(status_values),
+        }
 
     def ping(self) -> bool:
         client = self._get_client()

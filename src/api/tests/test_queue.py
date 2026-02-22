@@ -27,12 +27,18 @@ class TestQueueBasics(unittest.TestCase):
         """Test complete job lifecycle with FakeJobQueueAdapter."""
         job_queue = FakeJobQueueAdapter()
 
-        job_id = "test-job-123"
-        article_id = "test-article-456"
-        inputs = {'language': 'German', 'level': 'B2', 'length': '500', 'topic': 'AI'}
+        article = Article(
+            id="test-article-456",
+            inputs=TEST_INPUTS,
+            status=ArticleStatus.RUNNING,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            job_id="test-job-123",
+        )
+        job_id = article.job_id
 
         # Enqueue
-        result = job_queue.enqueue(job_id, article_id, inputs)
+        result = job_queue.enqueue(article)
         self.assertTrue(result)
 
         # Update status
@@ -97,7 +103,15 @@ class TestRedisAdapter(unittest.TestCase):
         mock_redis = MagicMock()
         mock_get_client.return_value = mock_redis
 
-        result = self.adapter.enqueue("job-1", "article-1", {"topic": "AI"})
+        article = Article(
+            id="article-1",
+            inputs=ArticleInputs(language='German', level='B2', length='500', topic='AI'),
+            status=ArticleStatus.RUNNING,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            job_id="job-1",
+        )
+        result = self.adapter.enqueue(article)
 
         self.assertTrue(result)
         mock_redis.rpush.assert_called_once()
