@@ -247,7 +247,7 @@ generateResponse.status === 409  ← Response handling!
 
 #### Articles
 
-> **Internal note**: All endpoints use hexagonal architecture (ports and adapters pattern) internally. All database access goes through Protocol-based repositories (`ArticleRepository`, `UserRepository`, `VocabularyRepository`, `VocabularyPort`, `TokenUsageRepository`), and all external service calls go through Protocol-based ports (`DictionaryPort`, `LLMPort`, `NLPPort`, `JobQueuePort`), injected via `Depends()` from `api/dependencies.py`. Article generation is delegated to `article_generation_service.submit_generation()` which orchestrates duplicate checking, article creation, and job enqueue via `JobQueuePort`. See [ARCHITECTURE.md - Hexagonal Architecture](ARCHITECTURE.md#hexagonal-architecture-ports-and-adapters) for details.
+> **Internal note**: All endpoints use hexagonal architecture (ports and adapters pattern) internally. All database access goes through Protocol-based repositories (`ArticleRepository`, `UserRepository`, `VocabularyRepository`, `TokenUsageRepository`), and all external service calls go through Protocol-based ports (`DictionaryPort`, `LLMPort`, `NLPPort`, `JobQueuePort`), injected via `Depends()` from `api/dependencies.py`. Article generation is delegated to `article_submission_service.submit_generation()` which orchestrates duplicate checking, article creation, and job enqueue via `JobQueuePort`. See [ARCHITECTURE.md - Hexagonal Architecture](ARCHITECTURE.md#hexagonal-architecture-ports-and-adapters) for details.
 
 - **GET** `/articles` - List articles with filters (status, language, level) and pagination
 - **POST** `/articles/generate` - Create article and start generation (unified endpoint)
@@ -308,7 +308,7 @@ Note: Dictionary search and Vocabulary CRUD share the `/dictionary` URL prefix b
 
 #### POST /articles/generate
 
-**Description**: Create article and start generation (unified endpoint). Delegates to `article_generation_service.submit_generation()` which creates an `Article` domain object via `Article.create()` factory, checks for duplicates via `ArticleRepository.find_duplicate()`, saves via `ArticleRepository.save()`, and enqueues a job via `JobQueuePort.enqueue()`.
+**Description**: Create article and start generation (unified endpoint). Delegates to `article_submission_service.submit_generation()` which creates an `Article` domain object via `Article.create()` factory, checks for duplicates via `ArticleRepository.find_duplicate()`, saves via `ArticleRepository.save()`, and enqueues a job via `JobQueuePort.enqueue()`.
 
 **Auth**: Required (JWT)
 
@@ -1609,7 +1609,7 @@ The worker uses hexagonal architecture with ports for all infrastructure access:
 - `ArticleGeneratorPort` (`CrewAIArticleGenerator`): Article generation via CrewAI
 - `ArticleRepository` (`MongoArticleRepository`): Article persistence
 - `TokenUsageRepository` (`MongoTokenUsageRepository`): Token usage tracking
-- `VocabularyPort` (`MongoVocabularyRepository`): Vocabulary-aware generation
+- `VocabularyRepository` (`MongoVocabularyRepository`): Vocabulary-aware generation
 
 **Worker Composition** (`worker/main.py`):
 ```python
@@ -1626,17 +1626,15 @@ generate = partial(
 run_worker_loop(repo, job_queue, generate)
 ```
 
-### ArticleGenerationService
+### ArticleSubmissionService (API-side)
 
-**Module**: `src/services/article_generation_service.py`
+**Module**: `src/services/article_submission_service.py`
 
-Two entry points for API and Worker:
-
-**`submit_generation()`** (API-side):
+**`submit_generation()`**:
 ```python
 def submit_generation(inputs, user_id, repo, job_queue, force=False) -> Article:
     """Submit article generation request.
-    Raises DuplicateArticleError or EnqueueError on failure."""
+    Raises DuplicateArticleError, EnqueueError, or DomainError on failure."""
     _check_duplicate(repo, job_queue, inputs, force, user_id)
     article = Article.create(inputs, user_id)
     repo.save(article)
@@ -1644,14 +1642,17 @@ def submit_generation(inputs, user_id, repo, job_queue, force=False) -> Article:
     return article
 ```
 
-**`generate_article()`** (Worker-side):
+### ArticleGenerationService (Worker-side)
+
+**Module**: `src/services/article_generation_service.py`
+
+**`generate_article()`**:
 ```python
 def generate_article(article, user_id, inputs, generator, repo,
                      token_usage_repo=None, vocab=None, llm=None, job_id=None) -> bool:
     """Generate article content and save to repository."""
     vocab_list = _get_vocabulary(user_id, inputs.language, inputs.level, vocab)
-    generator.set_job_context(job_id, article.id)
-    result = generator.generate(inputs, vocab_list)  # ArticleGeneratorPort
+    result = generator.generate(inputs, vocab_list, job_id=job_id or "", article_id=article.id)
     article.complete(content=result.content, source=result.source, edit_history=result.edit_history)
     repo.save(article)
     track_agent_usage(token_usage_repo, result.agent_usage, user_id, article.id, job_id, llm)
@@ -1675,7 +1676,8 @@ def generate_article(article, user_id, inputs, generator, repo,
 **Files**:
 - `src/worker/main.py` - Worker entry point and composition root
 - `src/worker/processor.py` - Job processing loop (`run_worker_loop`, `process_job`)
-- `src/services/article_generation_service.py` - Service layer (`submit_generation`, `generate_article`)
+- `src/services/article_submission_service.py` - API-side service (`submit_generation`)
+- `src/services/article_generation_service.py` - Worker-side service (`generate_article`)
 - `src/adapter/crew/article_generator.py` - CrewAI adapter (`CrewAIArticleGenerator`)
 - `src/adapter/crew/progress_listener.py` - Progress listener (`JobProgressListener`)
 - `src/adapter/queue/redis_job_queue.py` - Redis adapter (`RedisJobQueueAdapter`)

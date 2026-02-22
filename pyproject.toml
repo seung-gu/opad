@@ -1,6 +1,6 @@
 [project]
 name = "opad"
-version = "0.17.0"
+version = "0.18.0"
 description = "opad using crewAI"
 authors = [{ name = "Your Name", email = "you@example.com" }]
 requires-python = ">=3.10,<3.14"
