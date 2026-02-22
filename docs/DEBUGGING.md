@@ -86,7 +86,7 @@ Cursor 또는 VS Code에서 다음 확장 프로그램을 설치하세요:
 **브레이크포인트 설정 위치 예시:**
 - `src/api/routes/articles.py` - Article 엔드포인트
 - `src/api/routes/jobs.py` - Job 상태 엔드포인트
-- `src/utils/mongodb.py` - MongoDB 쿼리 함수
+- `src/adapter/mongodb/` - MongoDB repository adapters (article, user, vocabulary, token_usage)
 
 ### 2. Worker 서비스 디버깅
 
@@ -101,7 +101,7 @@ Cursor 또는 VS Code에서 다음 확장 프로그램을 설치하세요:
 
 **브레이크포인트 설정 위치:**
 - `src/worker/processor.py` - `run_worker_loop()` 함수
-- `src/crew/crew.py` - CrewAI 실행 로직
+- `src/adapter/crew/crew.py` - CrewAI 실행 로직
 
 ### 3. 현재 파일 디버깅
 

@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-02-23
+
+### Added
+- `Vocabulary.create()` factory method for consistent vocabulary object creation (mirrors Article.create pattern)
+- `Vocabulary.check_ownership()` domain method for permission-based access control
+- `PermissionDeniedError` exception for ownership validation failures
+- Interactive hexagonal architecture diagram (GitHub Pages) with clickable modules for data flow visualization
+- `article_submission_service.py` - dedicated service for article submission handling, separating concerns from article generation
+- Aggregate query support in `VocabularyRepository` port: `count_by_lemma()` and `find_lemmas()` methods
+
+### Changed
+- Removed thin `vocabulary_service.py` layer - routes now directly use domain models and repositories (simplified architecture)
+- `src/api/routes/vocabulary.py` refactored to directly compose `Vocabulary.create()` with repository operations instead of delegating to service
+- `VocabularyRepository` port now handles both CRUD and aggregate queries (consolidated interface)
+- `article_generation_service.py` split into two focused services: `article_submission_service.py` (submission only) and `article_generation_service.py` (generation only)
+- Updated architecture documentation to reflect vocabulary_service removal and service layer reorganization
+- Removed obsolete `VocabularyPort` - aggregate queries now part of `VocabularyRepository` protocol
+- Interactive architecture diagram link added to ARCHITECTURE.md pointing to GitHub Pages
+- ARCHITECTURE.md updated to document port-level exception handling (LLMTimeoutError, LLMRateLimitError, LLMAuthError)
+
+### Removed
+- `src/services/vocabulary_service.py` - thin service layer eliminated in favor of direct domain + repository composition
+- `src/port/vocabulary.py` - redundant port consolidated into `VocabularyRepository`
+- Unused diagram files: `service_diagram.drawio`, `service_diagram_layers.drawio`
+
+### Fixed
+- REFERENCE.md stale references: updated `VocabularyPort` → `VocabularyRepository`, corrected service split documentation
+
 ## [0.9.0] - 2026-02-02
 
 ### Added

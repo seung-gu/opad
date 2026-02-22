@@ -1,0 +1,39 @@
+"""LLM port — outbound interface for large language model calls."""
+
+from typing import Protocol
+
+from domain.model.token_usage import LLMCallResult
+
+
+class LLMError(Exception):
+    """Base exception for LLM port errors."""
+
+
+class LLMTimeoutError(LLMError):
+    """LLM request timed out."""
+
+
+class LLMRateLimitError(LLMError):
+    """LLM provider rate limit exceeded."""
+
+
+class LLMAuthError(LLMError):
+    """LLM provider authentication failed."""
+
+
+class LLMPort(Protocol):
+    """Port for making LLM API calls with token usage tracking."""
+
+    async def call(
+        self,
+        messages: list[dict[str, str]],
+        model: str,
+        timeout: float = 30.0,
+        **kwargs,
+    ) -> tuple[str, LLMCallResult]: ...
+
+    def estimate_cost(
+        self, model: str, prompt_tokens: int, completion_tokens: int,
+    ) -> float:
+        """Estimate LLM call cost."""
+        ...

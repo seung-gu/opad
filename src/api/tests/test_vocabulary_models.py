@@ -4,7 +4,7 @@ Tests for:
 - SearchResponse model with new fields
 - VocabularyRequest model with new fields
 - VocabularyResponse model with new fields
-- VocabularyCount model with new fields
+- VocabularyCountResponse model with new fields
 - Conjugations model validation
 - CEFRLevel validation
 """
@@ -18,7 +18,7 @@ from api.models import (
     SearchResponse,
     VocabularyRequest,
     VocabularyResponse,
-    VocabularyCount,
+    VocabularyCountResponse,
     CEFRLevel
 )
 
@@ -62,7 +62,7 @@ class TestConjugationsModel(unittest.TestCase):
             past="ich ging",
             participle="ich bin gegangen"
         )
-        serialized = conj.dict()
+        serialized = conj.model_dump()
         self.assertEqual(serialized['present'], "ich gehe")
         self.assertEqual(serialized['past'], "ich ging")
         self.assertEqual(serialized['participle'], "ich bin gegangen")
@@ -150,7 +150,7 @@ class TestSearchResponseModel(unittest.TestCase):
             pos="verb",
             level="A1"
         )
-        serialized = response.dict()
+        serialized = response.model_dump()
         self.assertEqual(serialized['lemma'], "gehen")
         self.assertEqual(serialized['pos'], "verb")
         self.assertEqual(serialized['level'], "A1")
@@ -348,7 +348,7 @@ class TestVocabularyResponseModel(unittest.TestCase):
             created_at=self.now,
             level="B1"
         )
-        serialized = response.dict()
+        serialized = response.model_dump()
         self.assertEqual(serialized['id'], "vocab-123")
         self.assertEqual(serialized['level'], "B1")
         self.assertIsInstance(serialized['created_at'], datetime)
@@ -368,16 +368,16 @@ class TestVocabularyResponseModel(unittest.TestCase):
             )
 
 
-class TestVocabularyCountModel(unittest.TestCase):
-    """Test VocabularyCount model with new fields."""
+class TestVocabularyCountResponseModel(unittest.TestCase):
+    """Test VocabularyCountResponse model with new fields."""
 
     def setUp(self):
         """Set up test fixtures."""
         self.now = datetime.now(timezone.utc)
 
     def test_vocabulary_count_with_all_new_fields(self):
-        """Test VocabularyCount with all new fields."""
-        count = VocabularyCount(
+        """Test VocabularyCountResponse with all new fields."""
+        count = VocabularyCountResponse(
             id="vocab-123",
             article_id="article-123",
             word="gehen",
@@ -408,8 +408,8 @@ class TestVocabularyCountModel(unittest.TestCase):
         self.assertEqual(count.level, "A1")
 
     def test_vocabulary_count_minimal_fields(self):
-        """Test VocabularyCount with minimal required fields."""
-        count = VocabularyCount(
+        """Test VocabularyCountResponse with minimal required fields."""
+        count = VocabularyCountResponse(
             id="vocab-123",
             article_id="article-123",
             word="test",
@@ -429,9 +429,9 @@ class TestVocabularyCountModel(unittest.TestCase):
         self.assertIsNone(count.level)
 
     def test_vocabulary_count_multiple_article_ids(self):
-        """Test VocabularyCount with multiple article IDs."""
+        """Test VocabularyCountResponse with multiple article IDs."""
         article_ids = ["article-1", "article-2", "article-3"]
-        count = VocabularyCount(
+        count = VocabularyCountResponse(
             id="vocab-123",
             article_id="article-1",
             word="test",
@@ -447,8 +447,8 @@ class TestVocabularyCountModel(unittest.TestCase):
         self.assertEqual(count.article_ids, article_ids)
 
     def test_vocabulary_count_with_german_noun(self):
-        """Test VocabularyCount with German noun."""
-        count = VocabularyCount(
+        """Test VocabularyCountResponse with German noun."""
+        count = VocabularyCountResponse(
             id="vocab-123",
             article_id="article-123",
             word="Hund",
@@ -469,8 +469,8 @@ class TestVocabularyCountModel(unittest.TestCase):
         self.assertEqual(count.level, "A1")
 
     def test_vocabulary_count_json_serialization(self):
-        """Test VocabularyCount JSON serialization."""
-        count = VocabularyCount(
+        """Test VocabularyCountResponse JSON serialization."""
+        count = VocabularyCountResponse(
             id="vocab-123",
             article_id="article-123",
             word="test",
@@ -483,15 +483,15 @@ class TestVocabularyCountModel(unittest.TestCase):
             article_ids=["article-1", "article-2"],
             level="B2"
         )
-        serialized = count.dict()
+        serialized = count.model_dump()
         self.assertEqual(serialized['count'], 5)
         self.assertEqual(len(serialized['article_ids']), 2)
         self.assertEqual(serialized['level'], "B2")
 
     def test_vocabulary_count_validation_count_positive(self):
-        """Test VocabularyCount count must be positive integer."""
+        """Test VocabularyCountResponse count must be positive integer."""
         # Count should be positive, test with valid value
-        count = VocabularyCount(
+        count = VocabularyCountResponse(
             id="vocab-123",
             article_id="article-123",
             word="test",
@@ -506,9 +506,9 @@ class TestVocabularyCountModel(unittest.TestCase):
         self.assertEqual(count.count, 1)
 
     def test_vocabulary_count_validation_missing_required_field(self):
-        """Test VocabularyCount validation fails without required field."""
+        """Test VocabularyCountResponse validation fails without required field."""
         with self.assertRaises(ValidationError):
-            VocabularyCount(
+            VocabularyCountResponse(
                 id="vocab-123",
                 article_id="article-123",
                 word="test",
@@ -646,8 +646,8 @@ class TestModelIntegration(unittest.TestCase):
         self.assertEqual(response.gender, "der")
 
     def test_vocabulary_count_from_multiple_entries(self):
-        """Integration test: create VocabularyCount from multiple entries."""
-        count = VocabularyCount(
+        """Integration test: create VocabularyCountResponse from multiple entries."""
+        count = VocabularyCountResponse(
             id="vocab-456",
             article_id="article-1",
             word="gehend",

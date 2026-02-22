@@ -8,9 +8,11 @@ This module handles token usage tracking and analytics:
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from api.middleware.auth import get_current_user_required
-from api.models import User, TokenUsageSummary, TokenUsageRecord, OperationUsage, DailyUsage
-from utils.mongodb import get_user_token_summary, get_article_token_usage, get_article
+from api.dependencies import get_article_repo, get_token_usage_repo
+from api.security import get_current_user_required
+from api.models import TokenUsageResponse, TokenUsageSummary, UserResponse
+from port.article_repository import ArticleRepository
+from port.token_usage_repository import TokenUsageRepository
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,8 @@ router = APIRouter(prefix="/usage", tags=["usage"])
 @router.get("/me", response_model=TokenUsageSummary)
 async def get_my_usage(
     days: int = Query(default=30, ge=1, le=365, description="Number of days to look back"),
-    current_user: User = Depends(get_current_user_required)
+    current_user: UserResponse = Depends(get_current_user_required),
+    repo: TokenUsageRepository = Depends(get_token_usage_repo),
 ):
     """Get current user's token usage summary.
 
@@ -34,46 +37,24 @@ async def get_my_usage(
     Returns:
         TokenUsageSummary with total tokens, cost, breakdown by operation, and daily usage
     """
-    summary = get_user_token_summary(user_id=current_user.id, days=days)
-
-    # Convert by_operation dict to OperationUsage models
-    by_operation = {}
-    for op_name, op_data in summary.get('by_operation', {}).items():
-        by_operation[op_name] = OperationUsage(
-            tokens=op_data['tokens'],
-            cost=op_data['cost'],
-            count=op_data['count']
-        )
-
-    # Convert daily_usage list to DailyUsage models
-    daily_usage = [
-        DailyUsage(
-            date=day['date'],
-            tokens=day['tokens'],
-            cost=day['cost']
-        )
-        for day in summary.get('daily_usage', [])
-    ]
+    summary = repo.get_user_summary(user_id=current_user.id, days=days)
 
     logger.info("Token usage summary retrieved", extra={
         "userId": current_user.id,
         "days": days,
-        "totalTokens": summary.get('total_tokens', 0),
-        "totalCost": summary.get('total_cost', 0)
+        "totalTokens": summary.get("total_tokens", 0),
+        "totalCost": summary.get("total_cost", 0.0)
     })
 
-    return TokenUsageSummary(
-        total_tokens=summary.get('total_tokens', 0),
-        total_cost=summary.get('total_cost', 0.0),
-        by_operation=by_operation,
-        daily_usage=daily_usage
-    )
+    return summary
 
 
-@router.get("/articles/{article_id}", response_model=list[TokenUsageRecord])
+@router.get("/articles/{article_id}", response_model=list[TokenUsageResponse])
 async def get_article_usage(
     article_id: str,
-    current_user: User = Depends(get_current_user_required)
+    current_user: UserResponse = Depends(get_current_user_required),
+    article_repo: ArticleRepository = Depends(get_article_repo),
+    token_usage_repo: TokenUsageRepository = Depends(get_token_usage_repo),
 ):
     """Get token usage records for a specific article.
 
@@ -85,17 +66,17 @@ async def get_article_usage(
         current_user: Authenticated user (required)
 
     Returns:
-        List of TokenUsageRecord objects sorted by created_at ascending
+        List of TokenUsageResponse objects sorted by created_at ascending
     """
     # Verify article ownership
-    article = get_article(article_id)
+    article = article_repo.get_by_id(article_id)
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
 
-    if article.get('user_id') != current_user.id:
+    if article.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You don't have permission to access this article's usage")
 
-    usage_records = get_article_token_usage(article_id)
+    usage_records = token_usage_repo.get_by_article(article_id)
 
     logger.info("Article token usage retrieved", extra={
         "userId": current_user.id,
@@ -103,18 +84,4 @@ async def get_article_usage(
         "recordCount": len(usage_records)
     })
 
-    return [
-        TokenUsageRecord(
-            id=record['id'],
-            user_id=record['user_id'],
-            operation=record['operation'],
-            model=record['model'],
-            prompt_tokens=record['prompt_tokens'],
-            completion_tokens=record['completion_tokens'],
-            total_tokens=record['total_tokens'],
-            estimated_cost=record['estimated_cost'],
-            metadata=record.get('metadata', {}),
-            created_at=record['created_at']
-        )
-        for record in usage_records
-    ]
+    return usage_records

@@ -16,10 +16,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from utils.mongodb import get_mongodb_client
-from utils.llm import call_llm_with_tracking, parse_json_from_content
-from utils.prompts import build_reduced_word_definition_prompt, build_word_definition_prompt
-from utils.dictionary_api import fetch_from_free_dictionary_api
+from adapter.mongodb.connection import get_mongodb_client
+from adapter.external.litellm import LiteLLMAdapter
+from adapter.external.free_dictionary import FreeDictionaryAdapter
+
+_llm = LiteLLMAdapter()
+_dict_adapter = FreeDictionaryAdapter()
+from services.lemma_extraction import _build_reduced_prompt as build_reduced_word_definition_prompt
+from json_repair import repair_json
+from services.dictionary_service import _build_full_prompt as build_word_definition_prompt
 
 
 def get_random_vocabularies(count: int = 10) -> list[dict]:
@@ -61,14 +66,14 @@ async def test_hybrid_lookup(vocab: dict) -> dict:
 
     llm_start = time.time()
     try:
-        content, stats = await call_llm_with_tracking(
+        content, stats = await _llm.call(
             messages=[{"role": "user", "content": prompt}],
             model="openai/gpt-4.1",
             max_tokens=500,
             temperature=0
         )
         llm_time = time.time() - llm_start
-        llm_result = parse_json_from_content(content)
+        llm_result = repair_json(content, return_objects=True)
 
         result['llm_time'] = llm_time
         result['llm_tokens'] = {
@@ -86,12 +91,20 @@ async def test_hybrid_lookup(vocab: dict) -> dict:
     # Step 2: Free Dictionary API call
     api_start = time.time()
     try:
-        api_result = await fetch_from_free_dictionary_api(lemma, language)
+        entries = await _dict_adapter.fetch(lemma, language)
         api_time = time.time() - api_start
 
         result['api_time'] = api_time
-        if api_result:
-            result['api_result'] = api_result.to_dict()
+        if entries:
+            entry = entries[0]
+            senses = entry.get('senses', [])
+            result['api_result'] = {
+                'definition': senses[0].get('definition', '') if senses else '',
+                'pos': entry.get('partOfSpeech'),
+                'gender': None,
+                'phonetics': None,
+                'forms': None,
+            }
         else:
             result['api_result'] = None
     except Exception as e:
@@ -132,14 +145,14 @@ async def test_full_llm_lookup(vocab: dict) -> dict:
 
     start = time.time()
     try:
-        content, stats = await call_llm_with_tracking(
+        content, stats = await _llm.call(
             messages=[{"role": "user", "content": prompt}],
             model="openai/gpt-4.1-mini",
             max_tokens=2000,
             temperature=0
         )
         elapsed = time.time() - start
-        result = parse_json_from_content(content)
+        result = repair_json(content, return_objects=True)
 
         return {
             'time': elapsed,

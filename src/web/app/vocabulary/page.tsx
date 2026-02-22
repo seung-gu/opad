@@ -34,7 +34,7 @@ export default function VocabularyPage() {
       setLoading(true)
       setError(null)
 
-      const response = await fetchWithAuth('/api/dictionary/vocabularies')
+      const response = await fetchWithAuth('/api/dictionary/vocabularies?limit=1000')
 
       if (!response.ok) {
         if (response.status === 401) {

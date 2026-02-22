@@ -66,6 +66,8 @@ graph TB
         end
         subgraph Dictionary["Dictionary"]
             FastAPI__dictionary_search["POST /dictionary/search"]
+        end
+        subgraph Vocabulary["Vocabulary"]
             FastAPI__dictionary_vocab_post["POST /dictionary/vocabulary"]
             FastAPI__dictionary_vocab_get["GET /dictionary/vocabularies"]
             FastAPI__dictionary_vocab_delete["DELETE /dictionary/vocabularies/{vocabulary_id}"]
@@ -239,11 +241,13 @@ generateResponse.status === 409  ← Response handling!
 
 ### Summary
 - Total endpoints: 18
-- Tags: meta, health, jobs, stats, articles, dictionary, auth, usage
+- Tags: meta, health, jobs, stats, articles, dictionary, vocabulary, auth, usage
 
 ### Endpoints by Tag
 
 #### Articles
+
+> **Internal note**: All endpoints use hexagonal architecture (ports and adapters pattern) internally. All database access goes through Protocol-based repositories (`ArticleRepository`, `UserRepository`, `VocabularyRepository`, `TokenUsageRepository`), and all external service calls go through Protocol-based ports (`DictionaryPort`, `LLMPort`, `NLPPort`, `JobQueuePort`), injected via `Depends()` from `api/dependencies.py`. Article generation is delegated to `article_submission_service.submit_generation()` which orchestrates duplicate checking, article creation, and job enqueue via `JobQueuePort`. See [ARCHITECTURE.md - Hexagonal Architecture](ARCHITECTURE.md#hexagonal-architecture-ports-and-adapters) for details.
 
 - **GET** `/articles` - List articles with filters (status, language, level) and pagination
 - **POST** `/articles/generate` - Create article and start generation (unified endpoint)
@@ -271,14 +275,19 @@ generateResponse.status === 409  ← Response handling!
 
 #### Stats
 
-- **GET** `/stats` - Get Database Stats Endpoint
+- **GET** `/stats` - Get Database Stats Endpoint (requires authentication)
 
 #### Dictionary
 
 - **POST** `/dictionary/search` - Search for word definition and lemma from sentence context
+
+#### Vocabulary
+
 - **POST** `/dictionary/vocabulary` - Add vocabulary word
 - **GET** `/dictionary/vocabularies` - Get aggregated vocabulary list (grouped by lemma with counts)
 - **DELETE** `/dictionary/vocabularies/{vocabulary_id}` - Delete vocabulary word
+
+Note: Dictionary search and Vocabulary CRUD share the `/dictionary` URL prefix but are implemented in separate routers (`api/routes/dictionary.py` and `api/routes/vocabulary.py`) with different tags (`dictionary` and `vocabulary`).
 
 #### Authentication
 
@@ -299,7 +308,7 @@ generateResponse.status === 409  ← Response handling!
 
 #### POST /articles/generate
 
-**Description**: Create article and start generation (unified endpoint).
+**Description**: Create article and start generation (unified endpoint). Delegates to `article_submission_service.submit_generation()` which creates an `Article` domain object via `Article.create()` factory, checks for duplicates via `ArticleRepository.find_duplicate()`, saves via `ArticleRepository.save()`, and enqueues a job via `JobQueuePort.enqueue()`.
 
 **Auth**: Required (JWT)
 
@@ -590,11 +599,32 @@ generateResponse.status === 409  ← Response handling!
 
 ---
 
+### Stats Endpoint
+
+#### GET /stats
+
+**Description**: Get MongoDB database and Redis statistics. Returns article collection size, index size, document counts by status, vocabulary statistics by language, and job queue statistics. Rendered as an HTML dashboard page.
+
+**Auth**: Required (JWT)
+
+**Response** (200): HTML page with database statistics dashboard
+
+**Response** (503 - Database unavailable):
+```json
+{
+  "detail": "Database service unavailable"
+}
+```
+
+**Implementation note**: Statistics are gathered from `adapter/mongodb/stats.py` (`get_database_stats()` and `get_vocabulary_stats()`) and `JobQueuePort.get_stats()` (via `RedisJobQueueAdapter`).
+
+---
+
 ### Dictionary Endpoints
 
 #### POST /dictionary/search
 
-**Description**: Search for word definition, lemma, and grammatical metadata using hybrid LLM + Free Dictionary API lookup. The hybrid approach uses a two-step LLM process: (1) extract lemma and CEFR level, then (2) select the best entry+sense+subsense from the Free Dictionary API response using X.Y.Z format (entry.sense.subsense). Metadata (POS, phonetics, forms, gender) is extracted from the selected entry rather than always using the first entry.
+**Description**: Search for word definition, lemma, and grammatical metadata using a 3-step hybrid pipeline. Step 1: Lemma extraction -- German uses Stanza NLP (local, ~51ms) with a tiny LLM call for CEFR level; other languages use an LLM reduced prompt. Step 2: Free Dictionary API lookup using the extracted lemma. Step 3: LLM sense selection picks the best entry+sense+subsense from the API response using X.Y.Z format. Falls back to a full LLM prompt when the pipeline fails. Metadata (POS, phonetics, forms, gender) is extracted from the selected entry.
 
 **Auth**: Required (JWT) - Prevents API abuse
 
@@ -892,24 +922,25 @@ The article detail page displays token usage with smart aggregation:
 
 ### Token Usage Functions
 
-#### save_token_usage()
+#### TokenUsageRepository.save()
 
-**Module**: `utils/mongodb.py`
+**Module**: `adapter/mongodb/token_usage_repository.py` (implements `port/token_usage_repository.py`)
 
 **Description**: Save token usage record to MongoDB for cost tracking and analytics.
 
 **Signature**:
 ```python
-def save_token_usage(
+def save(
+    self,
     user_id: str,
     operation: str,
     model: str,
     prompt_tokens: int,
     completion_tokens: int,
     estimated_cost: float,
-    article_id: Optional[str] = None,
-    metadata: Optional[dict] = None
-) -> Optional[str]
+    article_id: str | None = None,
+    metadata: dict | None = None,
+) -> str | None
 ```
 
 **Parameters**:
@@ -920,119 +951,117 @@ def save_token_usage(
 - `completion_tokens`: Number of output tokens
 - `estimated_cost`: Estimated cost in USD
 - `article_id` (optional): Article ID if usage is associated with an article
-- `metadata` (optional): Additional metadata (e.g., `{"query": "word", "language": "English"}`)
+- `metadata` (optional): Additional metadata (e.g., `{"word": "hello", "language": "English"}`)
 
 **Returns**: Document ID if successful, `None` otherwise
 
-**Example**:
+**Example** (via FastAPI dependency injection):
 ```python
-from utils.mongodb import save_token_usage
+from api.dependencies import get_token_usage_repo
+from port.token_usage_repository import TokenUsageRepository
 
-usage_id = save_token_usage(
+token_usage_repo: TokenUsageRepository = Depends(get_token_usage_repo)
+
+usage_id = token_usage_repo.save(
     user_id="user-123",
     operation="dictionary_search",
     model="gpt-4.1-mini",
     prompt_tokens=100,
     completion_tokens=50,
     estimated_cost=0.00025,
-    metadata={"query": "hello", "language": "English"}
+    metadata={"word": "hello", "language": "English"}
 )
 ```
 
 ---
 
-#### get_user_token_summary()
+#### TokenUsageRepository.get_user_summary()
 
-**Module**: `utils/mongodb.py`
+**Module**: `adapter/mongodb/token_usage_repository.py` (implements `port/token_usage_repository.py`)
 
 **Description**: Get token usage summary for a user within a specified time window.
 
 **Signature**:
 ```python
-def get_user_token_summary(user_id: str, days: int = 30) -> dict
+def get_user_summary(self, user_id: str, days: int = 30) -> TokenUsageSummary
 ```
 
 **Parameters**:
 - `user_id`: User ID to get summary for
 - `days`: Number of days to look back (default: 30, clamped to [1, 365])
 
-**Returns**:
+**Returns**: `TokenUsageSummary` dataclass with:
 ```python
-{
-    'total_tokens': int,           # Total tokens used
-    'total_cost': float,            # Total estimated cost in USD
-    'by_operation': {               # Usage by operation type
-        'operation_type': {
-            'tokens': int,
-            'cost': float,
-            'count': int
-        }
-    },
-    'daily_usage': [                # Daily usage breakdown
-        {
-            'date': 'YYYY-MM-DD',
-            'tokens': int,
-            'cost': float
-        }
-    ]
-}
+@dataclass
+class TokenUsageSummary:
+    total_tokens: int               # Total tokens used
+    total_cost: float               # Total estimated cost in USD
+    by_operation: dict[str, OperationUsage]  # Usage by operation type
+    daily_usage: list[DailyUsage]   # Daily usage breakdown
 ```
 
-**Example**:
+**Example** (via FastAPI dependency injection):
 ```python
-from utils.mongodb import get_user_token_summary
+from api.dependencies import get_token_usage_repo
+from port.token_usage_repository import TokenUsageRepository
 
-summary = get_user_token_summary("user-123", days=7)
-print(f"Total cost (7 days): ${summary['total_cost']:.4f}")
-print(f"Total tokens: {summary['total_tokens']}")
+repo: TokenUsageRepository = Depends(get_token_usage_repo)
 
-for op, stats in summary['by_operation'].items():
-    print(f"{op}: {stats['tokens']} tokens, ${stats['cost']:.4f}")
+summary = repo.get_user_summary("user-123", days=7)
+print(f"Total cost (7 days): ${summary.total_cost:.4f}")
+print(f"Total tokens: {summary.total_tokens}")
+
+for op, stats in summary.by_operation.items():
+    print(f"{op}: {stats.tokens} tokens, ${stats.cost:.4f}")
 ```
 
 ---
 
-#### get_article_token_usage()
+#### TokenUsageRepository.get_by_article()
 
-**Module**: `utils/mongodb.py`
+**Module**: `adapter/mongodb/token_usage_repository.py` (implements `port/token_usage_repository.py`)
 
 **Description**: Get all token usage records for a specific article.
 
 **Signature**:
 ```python
-def get_article_token_usage(article_id: str) -> list[dict]
+def get_by_article(self, article_id: str) -> list[TokenUsage]
 ```
 
 **Parameters**:
 - `article_id`: Article ID to get usage for
 
-**Returns**: List of token usage records sorted by `created_at` ascending (oldest first)
+**Returns**: List of `TokenUsage` domain objects sorted by `created_at` ascending (oldest first)
 
-**Record Format**:
+**TokenUsage fields**:
 ```python
-{
-    'id': str,                      # Usage record ID
-    'user_id': str,                 # User who incurred usage
-    'operation': str,               # Operation type (always "article_generation" for articles)
-    'model': str,                   # Model used
-    'prompt_tokens': int,           # Input tokens
-    'completion_tokens': int,       # Output tokens
-    'total_tokens': int,            # Total tokens
-    'estimated_cost': float,        # Cost in USD
-    'metadata': dict,               # Additional metadata (contains 'job_id')
-    'created_at': datetime          # Timestamp
-}
+@dataclass
+class TokenUsage:
+    id: str                         # Usage record ID
+    user_id: str                    # User who incurred usage
+    operation: str                  # Operation type ("dictionary_search" | "article_generation")
+    model: str                      # Model used
+    prompt_tokens: int              # Input tokens
+    completion_tokens: int          # Output tokens
+    total_tokens: int               # Total tokens
+    estimated_cost: float           # Cost in USD
+    created_at: datetime            # Timestamp
+    article_id: str | None          # Article ID (optional)
+    metadata: dict                  # Additional metadata (contains 'job_id' for article_generation)
 ```
 
 **Note**: Multiple records per article are expected during article generation. CrewAI makes multiple LLM calls (research, writing, editing agents), and each call generates a separate token usage record. Total cost = sum of all records.
 
-**Example**:
+**Example** (via FastAPI dependency injection):
 ```python
-from utils.mongodb import get_article_token_usage
+from api.dependencies import get_token_usage_repo
+from port.token_usage_repository import TokenUsageRepository
 
-usage_records = get_article_token_usage("article-123")
-total_cost = sum(record['estimated_cost'] for record in usage_records)
-total_tokens = sum(record['total_tokens'] for record in usage_records)
+repo: TokenUsageRepository = Depends(get_token_usage_repo)
+
+usage_records = repo.get_by_article("article-123")
+total_cost = sum(record.estimated_cost for record in usage_records)
+total_tokens = sum(record.total_tokens for record in usage_records)
 print(f"Total article generation cost: ${total_cost:.4f}")
 print(f"Total tokens used: {total_tokens}")
 print(f"Number of LLM calls: {len(usage_records)}")
@@ -1165,39 +1194,31 @@ indexes = [
 
 #### Index Conflict Resolution
 
-스키마 변경 시 인덱스 충돌을 자동으로 해결하는 헬퍼 함수들:
+**Module**: `adapter/mongodb/indexes.py`
+
+스키마 변경 시 인덱스 충돌을 자동으로 해결하는 헬퍼 함수들. 앱 시작 시 `ensure_all_indexes(db)`가 호출되어 모든 컬렉션의 인덱스를 검증/생성합니다:
 
 ```python
-def _create_index_safe(collection, keys, name, **kwargs) -> bool:
+def create_index_safe(collection, keys, name, **kwargs) -> bool:
     """Create index with conflict resolution."""
     try:
         collection.create_index(keys, name=name, **kwargs)
         return True
     except PyMongoError as e:
-        if "already exists" not in str(e):
+        if "already exists" not in str(e) and "Conflict" not in str(e):
             raise
-        return _resolve_index_conflict(collection, keys, name, **kwargs)
+        return _resolve_conflict(collection, keys, name, **kwargs)
 
 
-def _resolve_index_conflict(collection, keys, name, **kwargs) -> bool:
-    """Resolve by dropping conflicting index and recreating."""
-    keys_dict = dict(keys)
-    existing_indexes = collection.index_information()
-
-    for idx_name, idx_info in existing_indexes.items():
-        if idx_name == '_id_':
-            continue
-
-        idx_keys = dict(idx_info.get('key', []))
-
-        # 같은 이름 다른 키, 또는 같은 키 다른 이름
-        if (idx_name == name and idx_keys != keys_dict) or \
-           (idx_keys == keys_dict and idx_name != name):
-            collection.drop_index(idx_name)
-            collection.create_index(keys, name=name, **kwargs)
-            return True
-
-    return False
+def ensure_all_indexes(db) -> bool:
+    """Ensure indexes for all collections. Called at app startup."""
+    results = [
+        MongoArticleRepository(db).ensure_indexes(),
+        MongoUserRepository(db).ensure_indexes(),
+        MongoVocabularyRepository(db).ensure_indexes(),
+        MongoTokenUsageRepository(db).ensure_indexes(),
+    ]
+    return all(results)
 ```
 
 **사용 사례:**
@@ -1210,7 +1231,8 @@ def _resolve_index_conflict(collection, keys, name, **kwargs) -> bool:
 #### Input Validation
 
 ```python
-def save_token_usage(...) -> Optional[str]:
+# MongoTokenUsageRepository.save()
+def save(self, ...) -> str | None:
     # 1. user_id 검증 (빈 문자열 방지)
     if not user_id or not user_id.strip():
         logger.warning("Invalid user_id: empty or whitespace")
@@ -1226,7 +1248,8 @@ def save_token_usage(...) -> Optional[str]:
 ```
 
 ```python
-def get_user_token_summary(user_id: str, days: int = 30) -> dict:
+# MongoTokenUsageRepository.get_user_summary()
+def get_user_summary(self, user_id: str, days: int = 30) -> TokenUsageSummary:
     # days 범위 검증 [1, 365]
     if days < 1 or days > 365:
         logger.warning(f"Invalid days {days}, clamping to [1, 365]")
@@ -1261,7 +1284,7 @@ call_llm_with_tracking()
     ┌───────┴───────┐
     │               │
     ▼               ▼
-[로깅]        save_token_usage()
+[로깅]        token_usage_repo.save()
 logger.info()       │
                     ▼
               MongoDB insert
@@ -1289,7 +1312,7 @@ run_crew(inputs)
     │ calculate_cost()
     │       │       │
     │       ▼       │
-    │ save_token_usage()
+    │ token_usage_repo.save()
     └───────────────┘
             │
             ▼
@@ -1304,22 +1327,24 @@ run_crew(inputs)
     ┌───────────────┼───────────────┐
     │               │               │
     ▼               ▼               ▼
-get_user_      get_article_    Dashboard
-token_summary  token_usage     (Phase 7)
+repo.get_      repo.get_       Dashboard
+user_summary   by_article
     │               │
     ▼               ▼
-{total_tokens,  [usage records
- total_cost,     by article]
+TokenUsage     [TokenUsage
+Summary         records]
+{total_tokens,
+ total_cost,
  by_operation,
  daily_usage}
 ```
 
 **Phase 구분:**
 - **Phase 1** ✅: LiteLLM 통합, TokenUsageStats, Dictionary API 로깅
-- **Phase 2** ✅: MongoDB 저장 함수, 집계 함수, 인덱스
+- **Phase 2** ✅: MongoDB 저장 함수, 집계 함수, 인덱스 (migrated to `MongoTokenUsageRepository` in Issue #99)
 - **Phase 3** ✅: API 엔드포인트 (`/usage/me`, `/usage/articles/{id}`), Authentication/Authorization
 - **Phase 4** ✅: Worker에서 article_generation 토큰 추적 (LiteLLM callbacks)
-- **Phase 5** ✅: JobTracker coordinator pattern
+- **Phase 5** ✅: Worker architecture with `ArticleGenerationService` and port-based tracking
 - **Phase 6** ✅: CrewAI built-in tracking (`token_usage.py`, `CrewResult.get_agent_usage()`)
 - **Phase 7** 🔜: Frontend dashboard, cost alerts
 
@@ -1403,40 +1428,89 @@ print(f"Response: {content}")
 
 **Integration Example** (Dictionary API):
 ```python
-from services.dictionary_service import DictionaryService, LookupRequest
-from utils.mongodb import save_token_usage
+from services import dictionary_service
+from api.dependencies import get_dictionary_port, get_llm_port, get_nlp_port, get_token_usage_repo
+from port.dictionary import DictionaryPort
+from port.llm import LLMPort
+from port.nlp import NLPPort
+from port.token_usage_repository import TokenUsageRepository
 
 @router.post("/dictionary/search")
 async def search_word(
     request: SearchRequest,
-    current_user: User = Depends(get_current_user_required),
-    service: DictionaryService = Depends(get_dictionary_service)
+    current_user: UserResponse = Depends(get_current_user_required),
+    dictionary: DictionaryPort = Depends(get_dictionary_port),
+    llm: LLMPort = Depends(get_llm_port),
+    nlp: NLPPort = Depends(get_nlp_port),
+    token_usage_repo: TokenUsageRepo = Depends(get_token_usage_repo),
 ):
-    # Convert API request to service request
-    lookup_request = LookupRequest(
+    # Perform hybrid lookup via module function (ports injected as parameters)
+    # Token usage is tracked per LLM call internally by the service
+    result = await dictionary_service.lookup(
         word=request.word,
         sentence=request.sentence,
         language=request.language,
-        article_id=request.article_id
+        dictionary=dictionary,
+        llm=llm,
+        nlp=nlp,
+        token_usage_repo=token_usage_repo,
+        user_id=current_user.id,
+        article_id=request.article_id,
     )
 
-    # Perform hybrid lookup (LLM lemma extraction + API + LLM entry/sense selection)
-    result = await service.lookup(lookup_request)
+    # result is a LookupResult domain object
+    return SearchResponse(
+        lemma=result.lemma,
+        definition=result.definition,
+        related_words=result.related_words,
+        pos=result.grammar.pos,
+        gender=result.grammar.gender,
+        phonetics=result.grammar.phonetics,
+        conjugations=result.grammar.conjugations,
+        level=result.level,
+        examples=result.grammar.examples,
+    )
+```
 
-    # Track accumulated token usage (reduced prompt + entry/sense selection)
-    stats = service.last_token_stats
-    if stats:
-        save_token_usage(
-            user_id=current_user.id,
-            operation="dictionary_search",
-            model=stats.model,
-            prompt_tokens=stats.prompt_tokens,
-            completion_tokens=stats.completion_tokens,
-            estimated_cost=stats.estimated_cost,
-            metadata={"query": request.word, "language": request.language}
-        )
+---
 
-    return SearchResponse(**result.__dict__)
+#### accumulate_stats()
+
+**Module**: `utils/llm.py`
+
+**Description**: Combine multiple `TokenUsageStats` instances into a single aggregated result. Co-located with the `TokenUsageStats` dataclass for cohesion. Used by `dictionary_service.lookup()` to merge token usage from multi-step LLM pipelines (e.g., lemma extraction + sense selection).
+
+**Signature**:
+```python
+def accumulate_stats(
+    *stats_list: TokenUsageStats | None,
+) -> TokenUsageStats | None
+```
+
+**Parameters**:
+- `*stats_list`: Variable number of `TokenUsageStats` objects (or `None`). `None` values are filtered out.
+
+**Returns**:
+- Combined `TokenUsageStats` with summed `prompt_tokens`, `completion_tokens`, `total_tokens`, and `estimated_cost`
+- The single valid stats object if only one non-None input
+- `None` if all inputs are `None`
+
+**Note**: The `model` and `provider` fields are taken from the first valid stats object.
+
+**Example**:
+```python
+from utils.llm import accumulate_stats, TokenUsageStats
+
+stats1 = TokenUsageStats(model="gpt-4.1-mini", prompt_tokens=100,
+    completion_tokens=50, total_tokens=150, estimated_cost=0.001, provider="openai")
+stats2 = TokenUsageStats(model="gpt-4.1-mini", prompt_tokens=200,
+    completion_tokens=80, total_tokens=280, estimated_cost=0.002, provider="openai")
+
+combined = accumulate_stats(stats1, None, stats2)
+# combined.prompt_tokens = 300
+# combined.completion_tokens = 130
+# combined.total_tokens = 430
+# combined.estimated_cost = 0.003
 ```
 
 ---
@@ -1525,486 +1599,152 @@ except Exception as e:
 
 ---
 
-## Worker Job Tracking & Token Tracking
+## Worker Job Processing & Article Generation
 
-### Phase 5 Summary: JobTracker Coordinator Pattern
+### Architecture
 
-**Problem Solved**:
-Prior to Phase 5, the worker manually managed `litellm.callbacks` lifecycle:
+The worker uses hexagonal architecture with ports for all infrastructure access:
+
+- `JobQueuePort` (`RedisJobQueueAdapter`): Job dequeue and status updates
+- `ArticleGeneratorPort` (`CrewAIArticleGenerator`): Article generation via CrewAI
+- `ArticleRepository` (`MongoArticleRepository`): Article persistence
+- `TokenUsageRepository` (`MongoTokenUsageRepository`): Token usage tracking
+- `VocabularyRepository` (`MongoVocabularyRepository`): Vocabulary-aware generation
+
+**Worker Composition** (`worker/main.py`):
 ```python
-# Old pattern (manual, error-prone)
-token_tracker = ArticleGenerationTokenTracker(...)
-litellm.callbacks = [token_tracker]
-try:
-    result = run_crew(inputs)
-finally:
-    litellm.callbacks = []  # Easy to forget, doesn't handle nesting
-```
-
-**Issues**:
-- Manual setup/teardown code in `process_job()`
-- Risk of forgetting cleanup (memory leaks)
-- Doesn't support nested contexts
-- No coordination between progress tracking and token tracking
-
-**Solution: JobTracker Context Manager**:
-```python
-# New pattern (automatic, safe)
-with JobTracker(job_id, user_id, article_id) as tracker:
-    result = run_crew(inputs)
-    if tracker.listener.task_failed:
-        return False
-# Cleanup automatic, even on exceptions
-```
-
-**Benefits**:
-- Automatic setup and cleanup via `__enter__`/`__exit__`
-- Exception-safe (cleanup always runs)
-- Callback state preservation (supports nesting)
-- Single coordinator for both tracking systems
-- Simplified worker code (no manual callback management)
-
-**Files Modified**:
-- `src/worker/job_tracker.py` - New JobTracker coordinator class
-- `src/worker/processor.py` - Updated to use JobTracker pattern
-- `src/worker/token_tracker.py` - No changes (still used by JobTracker)
-- `src/crew/progress_listener.py` - No changes (still used by JobTracker)
-
----
-
-### JobTracker Coordinator (Phase 5)
-
-**Module**: `src/worker/job_tracker.py`
-
-**Description**: Unified coordinator that manages both job progress tracking (CrewAI events) and token usage tracking (LiteLLM callbacks) with context manager protocol for automatic lifecycle management.
-
-**Class**:
-```python
-class JobTracker:
-    """Coordinator for job progress and token tracking during article generation.
-
-    Unifies:
-    1. JobProgressListener - Real-time task progress updates via CrewAI events
-    2. ArticleGenerationTokenTracker - LLM token usage tracking via LiteLLM callbacks
-
-    Attributes:
-        job_id: The job ID being tracked.
-        user_id: The user ID who initiated the job (optional, for token tracking).
-        article_id: The article ID being generated.
-        listener: The JobProgressListener instance (created on __enter__).
-        token_tracker: The ArticleGenerationTokenTracker instance (if user_id exists).
-    """
-
-    def __init__(
-        self,
-        job_id: str,
-        user_id: str | None,
-        article_id: str | None
-    ) -> None:
-        """Initialize the JobTracker."""
-```
-
-**Context Manager Protocol**:
-
-**`__enter__()` - Setup**:
-```python
-def __enter__(self) -> Self:
-    """Set up tracking infrastructure.
-
-    Creates:
-    1. JobProgressListener for CrewAI task progress events
-    2. ArticleGenerationTokenTracker for LLM token usage (if user_id exists)
-
-    Returns:
-        Self for use in context manager.
-    """
-    # Create progress listener (always)
-    self.listener = JobProgressListener(
-        job_id=self.job_id,
-        article_id=self.article_id or ""
-    )
-
-    # Create token tracker only for authenticated users
-    if self.user_id:
-        self.token_tracker = ArticleGenerationTokenTracker(
-            job_id=self.job_id,
-            user_id=self.user_id,
-            article_id=self.article_id
-        )
-        # Save original callbacks for restoration on exit
-        self._original_callbacks = litellm.callbacks.copy() if litellm.callbacks else []
-        litellm.callbacks = [self.token_tracker]
-
-    return self
-```
-
-**`__exit__()` - Cleanup**:
-```python
-def __exit__(
-    self,
-    exc_type: type[BaseException] | None,
-    exc_val: BaseException | None,
-    exc_tb: TracebackType | None
-) -> None:
-    """Clean up tracking infrastructure.
-
-    Restores LiteLLM callbacks to prevent memory leaks and interference
-    with other jobs.
-    """
-    # Restore original LiteLLM callbacks
-    if self.token_tracker is not None:
-        litellm.callbacks = self._original_callbacks
-```
-
-**Integration Pattern** (`src/worker/processor.py`):
-```python
-from worker.job_tracker import JobTracker
-from crewai.events.event_bus import crewai_event_bus
-
-def process_job(job_data: dict) -> bool:
-    ctx = JobContext.from_dict(job_data)
-
-    try:
-        with crewai_event_bus.scoped_handlers():
-            with JobTracker(ctx.job_id, ctx.user_id, ctx.article_id) as tracker:
-                # Execute CrewAI (all LLM calls automatically tracked)
-                result = run_crew(inputs=ctx.inputs)
-
-                # Check for task failures via listener
-                if tracker.listener.task_failed:
-                    return False
-
-        # Save to MongoDB
-        save_article(ctx.article_id, result.raw, ctx.started_at)
-        return True
-
-    except Exception as e:
-        logger.error(f"Job failed: {e}")
-        return False
-```
-
-**Key Features**:
-- **Automatic Setup/Cleanup**: Context manager handles initialization and teardown
-- **Callback State Preservation**: Saves and restores original `litellm.callbacks`
-- **Nested Context Support**: Won't interfere with outer JobTracker contexts
-- **Conditional Tracking**: Only tracks tokens for authenticated users
-- **Memory Leak Prevention**: Always clears callbacks in `__exit__`
-
-**Benefits**:
-- Single entry point for all job tracking concerns
-- Fail-safe cleanup (runs even on exceptions)
-- Simplified worker code (no manual setup/teardown)
-- Supports future extensions (e.g., timing metrics, resource tracking)
-
----
-
-### ArticleGenerationTokenTracker
-
-**Module**: `src/worker/token_tracker.py`
-
-**Description**: LiteLLM callback handler for tracking token usage during CrewAI article generation. Intercepts all LLM API calls made by CrewAI agents and saves usage records to MongoDB.
-
-**Class**:
-```python
-class ArticleGenerationTokenTracker(CustomLogger):
-    """LiteLLM callback handler for token tracking during article generation."""
-
-    def __init__(
-        self,
-        job_id: str,
-        user_id: str,
-        article_id: str | None = None
-    ) -> None:
-        """Initialize tracker with job/user/article IDs."""
-```
-
-**Integration**: Now managed by `JobTracker` coordinator (see above)
-
-**Key Methods**:
-
-#### log_success_event()
-
-Called by LiteLLM after each successful LLM API call during article generation.
-
-**Signature**:
-```python
-def log_success_event(
-    self,
-    kwargs: dict[str, Any],
-    response_obj: Any,
-    start_time: float,
-    end_time: float
-) -> None
-```
-
-**Behavior**:
-- Extracts model name from response or kwargs
-- Extracts `prompt_tokens` and `completion_tokens` from `response_obj.usage`
-- Calculates cost using `litellm.completion_cost(completion_response=response_obj)`
-- Saves to MongoDB via `save_token_usage()` with operation="article_generation"
-- Never crashes worker (all exceptions caught and logged)
-
-**Data Saved**:
-```python
-save_token_usage(
-    user_id=self.user_id,
-    operation="article_generation",
-    model=model,                          # From response_obj.model
-    prompt_tokens=prompt_tokens,          # From response_obj.usage.prompt_tokens
-    completion_tokens=completion_tokens,  # From response_obj.usage.completion_tokens
-    estimated_cost=estimated_cost,        # From litellm.completion_cost()
-    article_id=self.article_id,
-    metadata={"job_id": self.job_id}
+job_queue = RedisJobQueueAdapter()
+generator = CrewAIArticleGenerator(job_queue)
+generate = partial(
+    generate_article,
+    generator=generator,
+    repo=repo,
+    token_usage_repo=token_usage_repo,
+    vocab=vocab_repo,
+    llm=llm,
 )
+run_worker_loop(repo, job_queue, generate)
 ```
 
-#### log_failure_event()
+### ArticleSubmissionService (API-side)
 
-Called by LiteLLM when an LLM API call fails.
+**Module**: `src/services/article_submission_service.py`
 
-**Signature**:
+**`submit_generation()`**:
 ```python
-def log_failure_event(
-    self,
-    kwargs: dict[str, Any],
-    response_obj: Any,
-    start_time: float,
-    end_time: float
-) -> None
+def submit_generation(inputs, user_id, repo, job_queue, force=False) -> Article:
+    """Submit article generation request.
+    Raises DuplicateArticleError, EnqueueError, or DomainError on failure."""
+    _check_duplicate(repo, job_queue, inputs, force, user_id)
+    article = Article.create(inputs, user_id)
+    repo.save(article)
+    _enqueue_job(job_queue, repo, article)
+    return article
 ```
 
-**Behavior**:
-- Logs error for observability (does not save to MongoDB)
-- Truncates error messages to 200 chars
-- Never crashes worker
+### ArticleGenerationService (Worker-side)
 
-**Why No MongoDB Save?**
-- Failed calls consume no tokens (or minimal tokens with no meaningful usage)
-- Only successful completions are billable
-- Error tracking handled separately via logs
+**Module**: `src/services/article_generation_service.py`
 
-### How It Works
-
-**LiteLLM Callback Flow with JobTracker**:
-```
-1. Worker creates JobTracker context: with JobTracker(...) as tracker:
-2. JobTracker.__enter__() registers callback: litellm.callbacks = [tracker]
-3. CrewAI agent calls LLM API (via LiteLLM)
-4. LiteLLM intercepts call
-5. API call completes successfully
-6. LiteLLM invokes tracker.log_success_event()
-7. Tracker extracts token usage from response
-8. Tracker saves to MongoDB (one record per LLM call)
-9. Repeat steps 3-8 for each agent (5-10 times per article)
-10. JobTracker.__exit__() restores callbacks: litellm.callbacks = _original_callbacks
+**`generate_article()`**:
+```python
+def generate_article(article, user_id, inputs, generator, repo,
+                     token_usage_repo=None, vocab=None, llm=None, job_id=None) -> bool:
+    """Generate article content and save to repository."""
+    vocab_list = _get_vocabulary(user_id, inputs.language, inputs.level, vocab)
+    result = generator.generate(inputs, vocab_list, job_id=job_id or "", article_id=article.id)
+    article.complete(content=result.content, source=result.source, edit_history=result.edit_history)
+    repo.save(article)
+    track_agent_usage(token_usage_repo, result.agent_usage, user_id, article.id, job_id, llm)
+    return True
 ```
 
-**Why JobTracker Pattern?**
-- **Automatic Lifecycle**: No manual setup/cleanup code needed
-- **Safe Cleanup**: `__exit__` always runs, even on exceptions
-- **State Preservation**: Original callbacks saved and restored
-- **Testability**: Easy to mock and verify cleanup behavior
+### Progress Tracking
 
-**Per-Call Tracking**:
-- Each LLM API call during article generation creates a separate MongoDB record
+**Module**: `src/adapter/crew/progress_listener.py`
+
+`JobProgressListener` is a CrewAI event listener that updates job progress in real-time via `JobQueuePort` (no direct Redis dependency). Used within `CrewAIArticleGenerator.generate()` via `crewai_event_bus.scoped_handlers()`.
+
+**Task Progress Mapping** (4 CrewAI tasks):
+| Task | Start % | End % | Label |
+|------|---------|-------|-------|
+| `find_news_articles` | 0 | 25 | Finding news articles |
+| `pick_best_article` | 25 | 50 | Selecting best article |
+| `adapt_news_article` | 50 | 75 | Adapting article for learners |
+| `review_article_quality` | 75 | 95 | Reviewing article quality |
+
+**Files**:
+- `src/worker/main.py` - Worker entry point and composition root
+- `src/worker/processor.py` - Job processing loop (`run_worker_loop`, `process_job`)
+- `src/services/article_submission_service.py` - API-side service (`submit_generation`)
+- `src/services/article_generation_service.py` - Worker-side service (`generate_article`)
+- `src/adapter/crew/article_generator.py` - CrewAI adapter (`CrewAIArticleGenerator`)
+- `src/adapter/crew/progress_listener.py` - Progress listener (`JobProgressListener`)
+- `src/adapter/queue/redis_job_queue.py` - Redis adapter (`RedisJobQueueAdapter`)
+
+---
+
+### Token Tracking in Article Generation
+
+Token usage during article generation is tracked via CrewAI's built-in per-agent metrics. The `CrewAIArticleGenerator` adapter returns a `GenerationResult` containing `agent_usage` (a list of per-agent token usage dicts). The `ArticleGenerationService` then calls `track_agent_usage()` to persist each agent's usage to MongoDB.
+
+```python
+# In article_generation_service.generate_article():
+result = generator.generate(inputs, vocab_list)  # ArticleGeneratorPort
+# result.agent_usage = [{'agent_role': '...', 'model': '...', 'prompt_tokens': ..., ...}, ...]
+
+if user_id and token_usage_repo and result.agent_usage:
+    track_agent_usage(token_usage_repo, result.agent_usage, user_id, article.id, job_id, llm)
+```
+
+**Progress tracking** is handled separately by `JobProgressListener` (CrewAI event listener) which updates job status via `JobQueuePort` during generation.
+
+| Concern | Component | Storage | Scope |
+|---------|-----------|---------|-------|
+| Job progress | `JobProgressListener` | Redis (via `JobQueuePort`) | Per-task (4 tasks) |
+| Token usage | `track_agent_usage()` | MongoDB (via `TokenUsageRepository`) | Per-agent |
+| Article content | `article.complete()` + `repo.save()` | MongoDB (via `ArticleRepository`) | Per-article |
+
+---
+
+### Error Handling in Worker
+
+**Non-Fatal Tracking**: All token tracking failures are caught and logged as warnings. Article generation continues even if token tracking fails. Progress tracking failures are similarly non-fatal.
+
+**Error Translation**: `processor.py` translates technical errors to user-friendly messages via `_translate_error()`:
+- JSON errors: "AI model returned invalid response"
+- Timeout: "Request timed out"
+- Rate limit: "Rate limit exceeded"
+- Other: "Job failed: {error type}"
+
+
+---
+
+### Worker Process Flow
+
+The worker processes jobs through the following pipeline:
+
+```
+1. run_worker_loop() polls job_queue.dequeue()
+2. process_job(ctx, repo, job_queue, generate)
+   a. job_queue.update_status('running')
+   b. repo.get_by_id(ctx.article_id) -> Article
+   c. generate(article, user_id, inputs, job_id)
+      = article_generation_service.generate_article(...)
+   d. job_queue.update_status('completed') on success
+   e. job_queue.update_status('failed') + repo.update_status(FAILED) on error
+```
+
+### Per-Agent Token Tracking
+
+- Each CrewAI agent's token usage is tracked via `agent.llm.get_token_usage_summary()`
+- `CrewResult.get_agent_usage()` returns a list of per-agent usage dicts
+- `track_agent_usage()` (in `services/token_usage_service.py`) saves each agent's usage as a separate MongoDB record via `TokenUsageRepository`
 - All records share the same `article_id` for aggregation
-- Multiple agents (research, writing, editing) = multiple records
-- Total article cost = sum of all individual call costs
-
-**Callback Lifecycle (Managed by JobTracker)**:
-```python
-# JobTracker.__enter__()
-self._original_callbacks = litellm.callbacks.copy()
-litellm.callbacks = [self.token_tracker]
-
-# During CrewAI execution
-# -> Multiple LLM calls
-# -> Each call triggers log_success_event()
-# -> Each call saves to MongoDB
-
-# JobTracker.__exit__()
-litellm.callbacks = self._original_callbacks  # Restore (prevents memory leaks)
-```
+- Total article cost = sum of all individual agent records
+- Cost estimation is delegated to `LLMPort.estimate_cost()` (port-based, no direct LiteLLM dependency)
 
 ---
-
-### Tracking Architecture: Progress vs Tokens
-
-**Two Parallel Tracking Systems Coordinated by JobTracker**:
-
-| Aspect | JobProgressListener | ArticleGenerationTokenTracker |
-|--------|---------------------|-------------------------------|
-| **Purpose** | Track CrewAI task progress | Track LLM token usage & costs |
-| **Event Source** | CrewAI event bus (task-level) | LiteLLM callbacks (API-level) |
-| **Granularity** | Coarse (task start/end) | Fine (per LLM call) |
-| **Data Captured** | Task name, progress %, message | Model, tokens, cost |
-| **Storage** | Redis (job status) | MongoDB (usage records) |
-| **Lifecycle** | Created in `JobTracker.__enter__()` | Created in `JobTracker.__enter__()` |
-| **User Requirement** | Always (all users) | Authenticated users only |
-
-**Why Two Systems?**
-- **Different Abstraction Levels**: CrewAI tasks (high-level) vs LLM API calls (low-level)
-- **Different Consumers**: Progress for user feedback, tokens for billing/analytics
-- **Different Storage**: Redis (ephemeral, fast) vs MongoDB (permanent, queryable)
-- **LiteLLM Intercepts Below CrewAI**: Token tracking happens at LLM provider layer, not visible to CrewAI events
-
-**Example Flow**:
-```
-1. JobTracker creates both listeners
-2. CrewAI task "find_news_articles" starts
-   → JobProgressListener updates Redis: "Finding news articles... (20%)"
-3. Within that task, 3 LLM API calls happen:
-   → ArticleGenerationTokenTracker saves 3 MongoDB records (tokens/cost)
-4. CrewAI task "pick_best_article" starts
-   → JobProgressListener updates Redis: "Selecting best article... (40%)"
-5. Within that task, 2 LLM API calls happen:
-   → ArticleGenerationTokenTracker saves 2 MongoDB records
-6. ... and so on for each task
-7. JobTracker cleanup restores callbacks
-```
-
-**Coordination Benefits**:
-- **Single Entry Point**: One `with` statement sets up both systems
-- **Synchronized Lifecycle**: Both start/stop together
-- **Shared Context**: Both have access to job_id, user_id, article_id
-- **Fail-Safe**: If one fails, the other continues (independent error handling)
-
----
-
-### Implementation Best Practices
-
-**When to Use JobTracker**:
-- In `process_job()` for article generation workflows
-- Any worker task that needs both progress tracking and token tracking
-- Long-running jobs where cleanup is critical
-
-**When NOT to Use JobTracker**:
-- Short synchronous operations (no need for context manager overhead)
-- Operations that don't involve CrewAI (no task progress to track)
-- Anonymous user operations where token tracking isn't needed (though JobTracker handles this gracefully)
-
-**Nested Context Pattern**:
-```python
-# Outer scope with existing callbacks
-litellm.callbacks = [some_other_tracker]
-
-with JobTracker(job_id, user_id, article_id) as tracker:
-    # Inner scope - JobTracker saves existing callbacks
-    result = run_crew(inputs)
-# Exit - JobTracker restores [some_other_tracker]
-
-# Outer callbacks still intact
-assert litellm.callbacks == [some_other_tracker]
-```
-
-**Error Handling**:
-```python
-try:
-    with JobTracker(job_id, user_id, article_id) as tracker:
-        result = run_crew(inputs)
-
-        # Check for task failures
-        if tracker.listener.task_failed:
-            logger.warning("Task failed", extra={"jobId": job_id})
-            update_article_status(article_id, 'failed')
-            return False
-
-except Exception as e:
-    # JobTracker cleanup still happens
-    logger.error("Job execution failed", extra={"error": str(e)})
-    return False
-```
-
-**Testing JobTracker**:
-```python
-def test_job_tracker_cleanup():
-    """Ensure callbacks are always restored."""
-    original = litellm.callbacks.copy()
-
-    try:
-        with JobTracker(job_id, user_id, article_id):
-            raise RuntimeError("Simulated failure")
-    except RuntimeError:
-        pass
-
-    # Verify cleanup happened
-    assert litellm.callbacks == original
-
-def test_anonymous_user_no_token_tracking():
-    """Anonymous users skip token tracking."""
-    with JobTracker(job_id, user_id=None, article_id) as tracker:
-        assert tracker.listener is not None  # Progress tracking always on
-        assert tracker.token_tracker is None  # Token tracking skipped
-```
-
-**Common Pitfalls**:
-- **Don't manually modify `litellm.callbacks` inside JobTracker context** - JobTracker manages this
-- **Don't nest multiple JobTrackers for same job** - Use single JobTracker instance
-- **Don't access tracker attributes after `__exit__`** - Context is cleaned up
-
-**Performance Considerations**:
-- JobTracker has minimal overhead (< 1ms for setup/teardown)
-- Progress updates: ~4-5 Redis writes per job
-- Token tracking: ~5-10 MongoDB writes per job
-- No impact on CrewAI execution time (tracking is async/callback-based)
-
-### Error Handling
-
-**Non-Fatal Tracking**:
-- All exceptions in `log_success_event()` are caught
-- Logged as warnings but never crash the worker
-- Article generation continues even if tracking fails
-- Rationale: Tracking is observability, not critical functionality
-
-**Cost Calculation Fallback**:
-```python
-try:
-    estimated_cost = litellm.completion_cost(completion_response=response_obj)
-except Exception as cost_err:
-    logger.debug("Could not calculate cost", extra={...})
-    # estimated_cost remains 0.0
-```
-- If cost calculation fails, tokens are still saved
-- Cost can be calculated retroactively from token counts
-- Token counts are always available (required field in LLM responses)
-
-### Anonymous User Handling
-
-**Conditional Tracking**:
-```python
-if ctx.user_id:
-    tracker = ArticleGenerationTokenTracker(...)
-    litellm.callbacks = [tracker]
-```
-
-- Only authenticated users are tracked (user_id exists)
-- Anonymous users skip token tracking entirely
-- Prevents null user_id records in MongoDB
-- Aligns with dictionary API authentication requirements
-
-### Security & Performance
-
-**Memory Leaks Prevention**:
-- `finally` block ensures `litellm.callbacks = []` always runs
-- Critical in long-running worker processes
-- Prevents callbacks from affecting subsequent jobs
-
-**User ID Validation**:
-- `user_id` passed from job queue (validated during job creation)
-- Worker trusts internal job queue data
-- No additional validation needed
-
-### Testing
-
-**Test File**: `src/worker/tests/test_token_tracker.py`
-
-**Coverage**:
-- Callback registration and cleanup
-- Successful LLM call tracking
-- Token extraction from response objects
-- Cost calculation (success and fallback)
-- MongoDB save integration
-- Error handling (non-fatal failures)
 
 ### Retrieval & Aggregation
 
@@ -2097,38 +1837,42 @@ print(f"Estimated cost: ${cost:.6f}")
 
 ---
 
-#### save_crew_token_usage()
+#### track_agent_usage()
 
-**Module**: `utils/token_usage.py`
+**Module**: `services/token_usage_service.py`
 
-**Description**: Save token usage for each CrewAI agent to MongoDB after article generation.
+**Description**: Track token usage for each agent after article generation. Framework-agnostic -- accepts a list of dicts rather than a CrewAI-specific result object.
 
 **Signature**:
 ```python
-def save_crew_token_usage(
-    result: CrewResult,
+def track_agent_usage(
+    repo: TokenUsageRepository,
+    agent_usage: list[dict],
     user_id: str,
     article_id: str | None,
-    job_id: str
+    job_id: str,
+    llm: LLMPort | None = None,
 ) -> None
 ```
 
 **Parameters**:
-- `result`: CrewResult containing crew_instance with agents
+- `repo`: `TokenUsageRepository` port for saving usage records
+- `agent_usage`: List of dicts from `CrewResult.get_agent_usage()` (or any compatible source)
 - `user_id`: User ID who initiated the generation
 - `article_id`: Article ID being generated (optional)
 - `job_id`: Job ID for metadata
+- `llm`: Optional `LLMPort` for cost estimation (if `None`, cost defaults to `0.0`)
 
 **Behavior**:
-1. Calls `result.get_agent_usage()` to get per-agent token metrics
+1. Iterates through `agent_usage` list
 2. Skips agents with zero token usage
-3. Calculates cost using `calculate_cost()` for each agent
-4. Saves each agent's usage as separate MongoDB record via `save_token_usage()`
-5. Logs total number of agents saved
+3. Resolves agent display name from `agent_name` with fallback to `agent_role`
+4. Creates `LLMCallResult` and delegates to `track_llm_usage()` for each agent
+5. Calculates cost via `llm.estimate_cost()` if `LLMPort` is provided
+6. Logs total number of agents saved
 
 **Error Handling**:
-- **Non-fatal**: Failures don't crash job processing
-- Logs warning with job_id and error details on failure
+- **Non-fatal**: All failures are caught, logged as warnings, and do not crash the worker
 - Article generation continues even if token tracking fails
 
 **Data Saved per Agent**:
@@ -2143,48 +1887,32 @@ def save_crew_token_usage(
   "total_tokens": 3500,
   "estimated_cost": 0.0525,
   "article_id": "article-uuid",
-  "metadata": {"job_id": "job-uuid"},
+  "metadata": {"job_id": "job-uuid", "agent_name": "Article Finder"},
   "created_at": "2026-01-30T10:00:00Z"
 }
 ```
 
-**Example**:
+**Integration in ArticleGenerationService**:
 ```python
-from crew.main import run as run_crew
-from utils.token_usage import save_crew_token_usage
+# services/article_generation_service.py
+from services.token_usage_service import track_agent_usage
 
-# Execute CrewAI
-result = run_crew(inputs={"language": "German", "level": "B1", ...})
-
-# Save token usage for all agents
-save_crew_token_usage(
-    result=result,
-    user_id="user-123",
-    article_id="article-456",
-    job_id="job-789"
+# After successful generation
+track_agent_usage(
+    repo=token_repo,
+    agent_usage=result.agent_usage,
+    user_id=user_id,
+    article_id=article_id,
+    job_id=job_id,
+    llm=llm,
 )
-```
-
-**Integration in Worker**:
-```python
-# src/worker/processor.py
-result = run_crew(inputs=ctx.inputs)
-
-# Save token usage after successful generation
-if ctx.user_id:
-    save_crew_token_usage(
-        result=result,
-        user_id=ctx.user_id,
-        article_id=ctx.article_id,
-        job_id=ctx.job_id
-    )
 ```
 
 ---
 
 ### CrewResult Class
 
-**Module**: `src/crew/main.py`
+**Module**: `adapter/crew/main.py`
 
 **Description**: Container for crew execution result with usage metrics extraction.
 
@@ -2202,6 +1930,7 @@ class CrewResult:
 **Attributes**:
 - `raw`: Raw output string from crew execution
 - `result`: Full CrewAI result object
+- `pydantic`: Property delegating to `result.pydantic` for structured output
 - `crew_instance`: Reference to the crew with agents
 
 #### get_agent_usage()
@@ -2218,6 +1947,7 @@ def get_agent_usage(self) -> list[dict]
 [
     {
         'agent_role': str,           # Agent role name (e.g., 'News Researcher')
+        'agent_name': str,           # Display name (e.g., 'Article Finder')
         'model': str,                # Model name (e.g., 'gpt-4.1')
         'prompt_tokens': int,        # Input tokens
         'completion_tokens': int,    # Output tokens
@@ -2232,16 +1962,17 @@ def get_agent_usage(self) -> list[dict]
 - Iterates through all agents in crew_instance
 - Skips agents without LLM configured
 - Uses `agent.llm.get_token_usage_summary()` for metrics
+- Resolves agent name from role-to-key mapping (via `ReadingMaterialCreator().get_role_to_key_map()`)
 - Safely handles missing attributes with defaults
 
 **Example**:
 ```python
-from crew.main import run as run_crew
+from adapter.crew.main import run as run_crew
 
 result = run_crew(inputs={"language": "German", "level": "B1", ...})
 
 for usage in result.get_agent_usage():
-    print(f"Agent: {usage['agent_role']}")
+    print(f"Agent: {usage['agent_role']} ({usage['agent_name']})")
     print(f"  Model: {usage['model']}")
     print(f"  Tokens: {usage['total_tokens']}")
     print(f"  Requests: {usage['successful_requests']}")

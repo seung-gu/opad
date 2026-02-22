@@ -1,533 +1,273 @@
-"""Dictionary lookup service with hybrid LLM + API approach.
+"""Dictionary lookup service — orchestrates the hybrid lookup pipeline.
 
-This service encapsulates all dictionary lookup logic, separating
-business logic from HTTP handling in the routes layer.
+Pipeline: Step 1 (lemma extraction) → Dictionary API → Step 2 (sense selection)
+Falls back to full LLM when the hybrid pipeline fails.
+Token usage is tracked per LLM call via token_usage_service.
 """
 
 import logging
-import re
-from dataclasses import dataclass
-from typing import Any
 
-from utils.dictionary_api import (
-    fetch_from_free_dictionary_api,
-    DictionaryAPIResult,
-    extract_entry_metadata,
-    get_language_code,
-)
-from utils.llm import TokenUsageStats, call_llm_with_tracking, parse_json_from_content
-from utils.prompts import build_word_definition_prompt, build_reduced_word_definition_prompt
+from domain.model.vocabulary import GrammaticalInfo, LookupResult
+from port.dictionary import DictionaryPort
+from port.llm import LLMPort
+from port.nlp import NLPPort
+from port.token_usage_repository import TokenUsageRepository
+from services.token_usage_service import track_llm_usage
+from json_repair import repair_json
+from services.lemma_extraction import LemmaResult, extract_lemma
+from services.sense_selection import select_best_sense
 
 logger = logging.getLogger(__name__)
 
-# Token limits for LLM calls
-REDUCED_PROMPT_MAX_TOKENS = 200
+# Token limits for full LLM fallback
 FULL_PROMPT_MAX_TOKENS = 2000
 
 # Default messages
 DEFAULT_DEFINITION = "Definition not found"
 
-# Languages with accurate IPA phonetics from Free Dictionary API
-PHONETICS_SUPPORTED_LANGUAGES = {"English"}
 
+async def lookup(
+    word: str,
+    sentence: str,
+    language: str,
+    dictionary: DictionaryPort,
+    llm: LLMPort,
+    nlp: NLPPort | None = None,
+    token_usage_repo: TokenUsageRepository | None = None,
+    user_id: str | None = None,
+    article_id: str | None = None,
+    reduced_llm_model: str = "openai/gpt-4.1-mini",
+    full_llm_model: str = "openai/gpt-4.1-mini",
+) -> LookupResult:
+    """Perform dictionary lookup using hybrid approach.
 
-@dataclass
-class LookupRequest:
-    """Request for dictionary lookup."""
-    word: str
-    sentence: str
-    language: str
-    article_id: str | None = None
-
-
-@dataclass
-class LookupResult:
-    """Result from dictionary lookup."""
-    lemma: str
-    definition: str
-    related_words: list[str] | None = None
-    level: str | None = None
-    pos: str | None = None
-    gender: str | None = None
-    phonetics: str | None = None
-    conjugations: dict[str, str] | None = None
-    examples: list[str] | None = None
-    source: str = "hybrid"
-
-
-class DictionaryService:
-    """Service for dictionary lookups using hybrid LLM + API approach.
-
-    This service combines:
-    1. LLM (reduced prompt): Extracts lemma, related_words, and CEFR level
-    2. Free Dictionary API: Provides definition, POS, pronunciation, and forms
-
-    Falls back to full LLM when API is unavailable.
-
-    Attributes:
-        reduced_llm_model: Model for reduced prompt calls.
-        full_llm_model: Model for full fallback calls.
+    Falls back to full LLM when hybrid pipeline fails.
+    Token usage is tracked per LLM call if token_usage_repo is provided.
     """
+    hybrid_result = await _perform_hybrid_lookup(
+        word, sentence, language, dictionary, llm, nlp,
+        reduced_llm_model, full_llm_model,
+        token_usage_repo, user_id, article_id,
+    )
+    if hybrid_result is not None:
+        return hybrid_result
+    return await _fallback_full_llm(
+        word, sentence, language, llm, full_llm_model,
+        token_usage_repo, user_id, article_id,
+    )
 
-    def __init__(
-        self,
-        reduced_llm_model: str = "openai/gpt-4.1-mini",
-        full_llm_model: str = "openai/gpt-4.1-mini"
-    ):
-        """Initialize dictionary service.
 
-        Args:
-            reduced_llm_model: Model for reduced prompt (lemma extraction).
-            full_llm_model: Model for full fallback (all fields).
-        """
-        self.reduced_llm_model = reduced_llm_model
-        self.full_llm_model = full_llm_model
-        self._last_stats: TokenUsageStats | None = None
+# ------------------------------------------------------------------
+# Hybrid pipeline
+# ------------------------------------------------------------------
 
-    @property
-    def last_token_stats(self) -> TokenUsageStats | None:
-        """Get token usage stats from the last lookup."""
-        return self._last_stats
+async def _perform_hybrid_lookup(
+    word: str,
+    sentence: str,
+    language: str,
+    dictionary: DictionaryPort,
+    llm: LLMPort,
+    nlp: NLPPort | None,
+    reduced_llm_model: str,
+    full_llm_model: str,
+    token_usage_repo: TokenUsageRepository | None,
+    user_id: str | None,
+    article_id: str | None,
+) -> LookupResult | None:
+    """Execute the hybrid pipeline: lemma → API → sense selection."""
+    # Step 1: Lemma extraction
+    lemma_data, lemma_stats = await extract_lemma(
+        word, sentence, language, llm, nlp=nlp, model=reduced_llm_model,
+    )
+    if lemma_data is None:
+        return None
 
-    async def lookup(self, request: LookupRequest) -> LookupResult:
-        """Perform dictionary lookup using hybrid approach.
+    # Track lemma extraction usage
+    if token_usage_repo and user_id:
+        track_llm_usage(
+            token_usage_repo, lemma_stats, user_id,
+            operation="dictionary_search",
+            article_id=article_id,
+            metadata={"word": word, "language": language, "step": "lemma_extraction"},
+        )
 
-        Args:
-            request: Lookup request with word, sentence, and language.
+    lemma = lemma_data["lemma"]
+    logger.info("Lemma extracted", extra={
+        "word": word, "lemma": lemma,
+        "related_words": lemma_data["related_words"],
+        "level": lemma_data["level"],
+    })
 
-        Returns:
-            LookupResult with merged data from LLM and API.
-        """
-        # Try hybrid approach first
-        hybrid_result = await self._perform_hybrid_lookup(request)
+    # Step 2: Dictionary API
+    entries = await dictionary.fetch(word=lemma, language=language)
+    if not entries:
+        logger.info("Dictionary API unavailable, falling back to full LLM",
+                     extra={"word": word, "lemma": lemma})
+        return None
 
-        if hybrid_result is not None:
-            return hybrid_result
+    # Step 3: Sense selection
+    sense, sense_label, sense_stats = await select_best_sense(
+        sentence, word, entries, dictionary, llm, model=full_llm_model,
+    )
 
-        # Fall back to full LLM
-        return await self._fallback_full_llm(request)
+    # Track sense selection usage
+    if token_usage_repo and user_id:
+        track_llm_usage(
+            token_usage_repo, sense_stats, user_id,
+            operation="dictionary_search",
+            article_id=article_id,
+            metadata={"word": word, "language": language, "step": "sense_selection"},
+        )
 
-    async def _perform_hybrid_lookup(self, request: LookupRequest) -> LookupResult | None:
-        """Perform hybrid lookup combining LLM and Dictionary API.
+    # Extract grammar via port
+    grammar = dictionary.extract_grammar(entries, sense_label, language)
 
-        Args:
-            request: Lookup request.
+    # Build final result
+    result = _build_result(lemma_data, grammar, sense)
 
-        Returns:
-            LookupResult on success, None if should fall back to full LLM.
-        """
-        # Step 1: Get lemma and level from LLM
-        llm_data, stats = await self._call_llm_reduced(request)
+    logger.info("Word definition extracted (hybrid)", extra={
+        "word": word, "lemma": result.lemma,
+        "related_words": result.related_words,
+        "pos": result.grammar.pos,
+        "gender": result.grammar.gender,
+        "level": result.level,
+        "language": language,
+    })
+    return result
 
-        if llm_data is None:
-            return None
 
-        # Step 2: Get definition and forms from Dictionary API
-        lemma = llm_data.get("lemma", request.word)
-        related_words = llm_data.get("related_words", [])
+# ------------------------------------------------------------------
+# Full LLM fallback
+# ------------------------------------------------------------------
 
-        logger.info("LLM reduced response", extra={
-            "word": request.word,
-            "lemma": lemma,
-            "related_words": related_words,
-            "level": llm_data.get("level"),
-            "api_lookup": lemma
+async def _fallback_full_llm(
+    word: str,
+    sentence: str,
+    language: str,
+    llm: LLMPort,
+    full_llm_model: str,
+    token_usage_repo: TokenUsageRepository | None,
+    user_id: str | None,
+    article_id: str | None,
+) -> LookupResult:
+    """Fallback to full LLM when hybrid pipeline fails."""
+    prompt = _build_full_prompt(
+        language=language, sentence=sentence, word=word,
+    )
+
+    content, stats = await llm.call(
+        messages=[{"role": "user", "content": prompt}],
+        model=full_llm_model,
+        max_tokens=FULL_PROMPT_MAX_TOKENS,
+        temperature=0,
+    )
+
+    # Track full LLM fallback usage
+    if token_usage_repo and user_id:
+        track_llm_usage(
+            token_usage_repo, stats, user_id,
+            operation="dictionary_search",
+            article_id=article_id,
+            metadata={"word": word, "step": "full_llm_fallback"},
+        )
+
+    result = repair_json(content, return_objects=True)
+    if isinstance(result, dict):
+        logger.info("Word definition extracted (full LLM fallback)", extra={
+            "word": word, "lemma": result.get("lemma", word),
+            "language": language,
         })
-        dict_data = await fetch_from_free_dictionary_api(
-            word=lemma,
-            language=request.language
-        )
-
-        if dict_data is None:
-            logger.info(
-                "Dictionary API returned None, falling back to full LLM",
-                extra={"word": request.word, "lemma": lemma}
-            )
-            return None
-
-        # Select best entry+sense from all entries
-        sense_stats = None
-        entries = dict_data.all_entries
-        if not entries:
-            logger.info(
-                "Dictionary API missing entries, falling back to full LLM",
-                extra={"word": request.word, "lemma": lemma}
-            )
-            return None
-
-        ei, si, ssi, sense_stats = await self._select_best_entry_sense(
-            request.sentence, request.word, entries
-        )
-
-        # Extract metadata from selected entry
-        language_code = get_language_code(request.language)
-        selected_entry = entries[ei]
-        if language_code:
-            metadata = extract_entry_metadata(selected_entry, language_code)
-            dict_data.pos = metadata["pos"]
-            dict_data.phonetics = metadata["phonetics"]
-            dict_data.forms = metadata["forms"]
-            dict_data.gender = metadata["gender"]
-
-        # Get definition from selected sense or subsense
-        definition, selected_sense = self._get_definition_from_selection(
-            selected_entry, si, ssi
-        )
-        dict_data.definition = definition
-        if selected_sense:
-            dict_data.examples = self._extract_examples_from_sense(selected_sense)
-
-        # Store stats for tracking (accumulate sense selection tokens)
-        if stats:
-            if sense_stats:
-                stats = TokenUsageStats(
-                    model=stats.model,
-                    prompt_tokens=stats.prompt_tokens + sense_stats.prompt_tokens,
-                    completion_tokens=stats.completion_tokens + sense_stats.completion_tokens,
-                    total_tokens=stats.total_tokens + sense_stats.total_tokens,
-                    estimated_cost=stats.estimated_cost + sense_stats.estimated_cost,
-                    provider=stats.provider,
-                )
-            self._last_stats = stats
-
-        # Merge results
-        result = self._merge_results(llm_data, dict_data, request.word)
-
-        # Apply language filters
-        result = self._apply_language_filters(result, request.language)
-
-        logger.info("Word definition extracted (hybrid)", extra={
-            "word": request.word,
-            "lemma": result.lemma,
-            "related_words": result.related_words,
-            "pos": result.pos,
-            "gender": result.gender,
-            "level": result.level,
-            "language": request.language,
-            "source": "hybrid"
-        })
-
-        return result
-
-    async def _call_llm_reduced(
-        self,
-        request: LookupRequest
-    ) -> tuple[dict[str, Any] | None, Any]:
-        """Call LLM with reduced prompt for lemma and level only.
-
-        Args:
-            request: Lookup request.
-
-        Returns:
-            Tuple of (parsed result dict, token stats) or (None, None) on error.
-        """
-        try:
-            prompt = build_reduced_word_definition_prompt(
-                language=request.language,
-                sentence=request.sentence,
-                word=request.word
-            )
-
-            content, stats = await call_llm_with_tracking(
-                messages=[{"role": "user", "content": prompt}],
-                model=self.reduced_llm_model,
-                max_tokens=REDUCED_PROMPT_MAX_TOKENS,
-                temperature=0
-            )
-
-            result = parse_json_from_content(content)
-
-            if result is None:
-                logger.warning(
-                    "Failed to parse JSON from LLM reduced prompt response",
-                    extra={
-                        "word": request.word,
-                        "language": request.language,
-                        "content_preview": content[:200] if content else None
-                    }
-                )
-
-            return result, stats
-
-        except Exception as e:
-            logger.error(
-                "Error in LLM reduced call",
-                extra={
-                    "word": request.word,
-                    "language": request.language,
-                    "error": str(e)
-                },
-                exc_info=True
-            )
-            return None, None
-
-    async def _fallback_full_llm(self, request: LookupRequest) -> LookupResult:
-        """Fallback to full LLM search when hybrid approach fails.
-
-        Args:
-            request: Lookup request.
-
-        Returns:
-            LookupResult with all fields from LLM.
-
-        Raises:
-            Exception: On LLM errors.
-        """
-        prompt = build_word_definition_prompt(
-            language=request.language,
-            sentence=request.sentence,
-            word=request.word
-        )
-
-        content, stats = await call_llm_with_tracking(
-            messages=[{"role": "user", "content": prompt}],
-            model=self.full_llm_model,
-            max_tokens=FULL_PROMPT_MAX_TOKENS,
-            temperature=0
-        )
-
-        # Store stats for tracking
-        self._last_stats = stats
-
-        result = parse_json_from_content(content)
-
-        if result:
-            logger.info("Word definition extracted (full LLM fallback)", extra={
-                "word": request.word,
-                "lemma": result.get("lemma", request.word),
-                "related_words": result.get("related_words"),
-                "pos": result.get("pos"),
-                "gender": result.get("gender"),
-                "level": result.get("level"),
-                "language": request.language,
-                "source": "llm"
-            })
-
-            return LookupResult(
-                lemma=result.get("lemma", request.word),
-                definition=result.get("definition", DEFAULT_DEFINITION),
-                related_words=result.get("related_words"),
+        return LookupResult(
+            lemma=result.get("lemma", word),
+            definition=result.get("definition", DEFAULT_DEFINITION),
+            related_words=result.get("related_words"),
+            level=result.get("level"),
+            grammar=GrammaticalInfo(
                 pos=result.get("pos"),
                 gender=result.get("gender"),
                 conjugations=result.get("conjugations"),
-                level=result.get("level"),
-                source="llm"
-            )
-
-        # Last resort: use raw content as definition
-        logger.warning("Failed to parse JSON in fallback, using content", extra={
-            "word": request.word,
-            "content_preview": content[:200]
-        })
-
-        return LookupResult(
-            lemma=request.word,
-            definition=DEFAULT_DEFINITION,
-            source="llm"
+            ),
         )
 
-    def _merge_results(
-        self,
-        llm_data: dict[str, Any],
-        dict_data: DictionaryAPIResult,
-        word: str
-    ) -> LookupResult:
-        """Merge LLM and Dictionary API results.
+    logger.warning("Failed to parse JSON in fallback", extra={
+        "word": word, "content_preview": content[:200] if content else None,
+    })
+    return LookupResult(
+        lemma=word,
+        definition=DEFAULT_DEFINITION,
+    )
 
-        Args:
-            llm_data: Parsed LLM response.
-            dict_data: Dictionary API result.
-            word: Original word for fallback.
 
-        Returns:
-            Merged LookupResult.
+# ------------------------------------------------------------------
+# Result building helpers
+# ------------------------------------------------------------------
+
+def _build_result(
+    lemma_data: LemmaResult,
+    grammar: GrammaticalInfo,
+    sense,
+) -> LookupResult:
+    """Merge lemma extraction, API metadata, and sense selection into LookupResult."""
+    return LookupResult(
+        lemma=lemma_data["lemma"],
+        definition=sense.definition or DEFAULT_DEFINITION,
+        related_words=lemma_data["related_words"],
+        level=lemma_data["level"],
+        grammar=GrammaticalInfo(
+            pos=grammar.pos,
+            gender=grammar.gender,
+            phonetics=grammar.phonetics,
+            conjugations=grammar.conjugations,
+            examples=sense.examples,
+        ),
+    )
+
+
+def _build_full_prompt(language: str, sentence: str, word: str) -> str:
+    """Build prompt for full LLM fallback — extracts lemma, definition, grammar."""
+    prompt = f"""You are analyzing a {language} sentence to find the complete dictionary form of a clicked word.
+
+Sentence: "{sentence}"
+Clicked word: "{word}"
+
+CRITICAL INSTRUCTIONS:
+1. The clicked word may be part of a SEPARABLE VERB or COMPOUND WORD where parts are split across the sentence.
+2. You MUST scan the ENTIRE sentence from start to end to find ALL parts that belong together with the clicked word.
+3. Common patterns include separable verbs (verb stem + prefix/particle), compound words (base + prefix/suffix), and inflected forms (return the infinitive/base form).
+4. The lemma MUST be the COMPLETE combined form as it appears in dictionaries, not just the clicked word or its stem.
+5. If you find separated parts, combine them in the correct order (prefix + stem, or stem + particle).
+
+Analyze the sentence structure carefully. Look for particles, prefixes, or other words that grammatically belong with "{word}".
+
+IMPORTANT: If the word is part of a separable verb or compound word, identify ONLY the grammatical components that form the same lexical unit (lemma). Do NOT include prepositions, objects, or other words that are grammatically separate, even if they are semantically related.
+
+Return ONLY valid JSON:
+{{
+  "lemma": "complete dictionary form (nouns: WITHOUT article, e.g. 'Rennfahren' not 'das Rennfahren')",
+  "definition": "meaning in this sentence context",
+  "related_words": ["only grammatical parts of the lemma from the sentence, NOT articles (der/die/das/dem/den/ein/eine)"],
+  "pos": "part of speech (noun/verb/adjective/adverb/preposition/conjunction/etc)",
+  "gender": "grammatical gender if applicable (der/die/das for German, le/la for French, el/la for Spanish nouns). Use null if not applicable.",
+  "conjugations": {{
+    "present": "3rd person singular present (for verbs only, null for non-verbs)",
+    "past": "3rd person singular past/preterite (for verbs only, null for non-verbs)",
+    "participle": "past participle (for verbs only, null for non-verbs)",
+    "auxiliary": "haben or sein (for German verbs only, null otherwise)",
+    "genitive": "genitive form (for nouns only, null for non-nouns)",
+    "plural": "plural form (for nouns only, null for non-nouns)"
+  }},
+  "level": "CEFR level of this word (A1/A2/B1/B2/C1/C2)"
+}}
+
+IMPORTANT: related_words must contain ONLY the grammatical parts of the lemma (e.g., separable verb prefix + stem, reflexive pronoun for reflexive verbs). The order in related_words must match the exact order these words appear in the provided sentence: {sentence}."""
+    if language == "German":
+        prompt += """
+
+IMPORTANT for German language:
+1. Separable verbs (trennbare Verben): If the clicked word is part of a separable verb with separable prefixes (ab-, aus-, ein-, mit-, vor-, etc.), identify ALL components including the prefix and any associated prepositions. The lemma must include the complete separable prefix.
+2. Reflexive verbs (reflexive Verben): If the clicked word is part of a reflexive verb construction requiring "sich", include "sich" in the related_words array. The lemma should be the complete reflexive form.
+3. Prepositional verbs (Präpositionalverben): If the verb requires a specific preposition (e.g., "von", "mit", "auf"), include that preposition in the related_words array.
+
+For all these cases, scan the ENTIRE sentence to find ALL words that belong to the same lexical unit and include them in related_words.
         """
-        conjugations = self._extract_conjugations(dict_data.forms)
-
-        return LookupResult(
-            lemma=llm_data.get("lemma", word),
-            definition=dict_data.definition or DEFAULT_DEFINITION,
-            related_words=llm_data.get("related_words"),
-            level=llm_data.get("level"),
-            pos=dict_data.pos,
-            gender=dict_data.gender,
-            phonetics=dict_data.phonetics,
-            conjugations=conjugations,
-            examples=dict_data.examples,
-            source="hybrid"
-        )
-
-    def _extract_conjugations(self, forms: dict[str, str] | None) -> dict[str, str] | None:
-        """Extract conjugations from API forms.
-
-        Args:
-            forms: Forms dict from API response.
-
-        Returns:
-            Conjugations dict or None.
-        """
-        if not forms:
-            return None
-
-        conjugations: dict[str, str] = {}
-
-        # Copy relevant form fields
-        for key in ("present", "past", "participle", "auxiliary", "genitive", "plural"):
-            if forms.get(key):
-                conjugations[key] = forms[key]
-
-        return conjugations or None
-
-    def _apply_language_filters(self, result: LookupResult, language: str) -> LookupResult:
-        """Apply language-specific post-processing filters.
-
-        Args:
-            result: Lookup result.
-            language: Language name.
-
-        Returns:
-            Filtered result.
-        """
-        if language not in PHONETICS_SUPPORTED_LANGUAGES:
-            result.phonetics = None
-        return result
-
-    @staticmethod
-    def _get_definition_from_selection(
-        entry: dict[str, Any],
-        sense_idx: int,
-        subsense_idx: int,
-    ) -> tuple[str, dict[str, Any] | None]:
-        """Extract definition from selected entry/sense/subsense indices.
-
-        Args:
-            entry: The selected dictionary entry.
-            sense_idx: Index of the selected sense.
-            subsense_idx: Index of the selected subsense (-1 for sense level).
-
-        Returns:
-            Tuple of (definition_string, selected_sense_dict_or_None).
-        """
-        senses = entry.get("senses", [])
-        if sense_idx >= len(senses):
-            return "", None
-
-        sense = senses[sense_idx]
-        subsenses = sense.get("subsenses", [])
-        if 0 <= subsense_idx < len(subsenses):
-            return subsenses[subsense_idx].get("definition", ""), sense
-        return sense.get("definition", ""), sense
-
-    @staticmethod
-    def _build_entry_sense_prompt(
-        sentence: str,
-        word: str,
-        entries: list[dict[str, Any]]
-    ) -> str:
-        """Build X.Y.Z format prompt for LLM entry+sense selection."""
-        options = []
-        for i, entry in enumerate(entries):
-            pos = entry.get("partOfSpeech", "unknown")
-            options.append(f"entries[{i}] ({pos}):")
-            for j, sense in enumerate(entry.get("senses", [])):
-                options.append(f"  {i}.{j} {sense.get('definition', '')}")
-                for k, sub in enumerate(sense.get("subsenses", [])):
-                    options.append(f"    {i}.{j}.{k} {sub.get('definition', '')}")
-
-        return f"""Sentence: "{sentence}"
-Word: "{word}"
-
-Which definition best matches the word usage in this sentence?
-Reply with the number only (e.g. 1.0 or 0.0.1 for a subsense).
-
-{chr(10).join(options)}"""
-
-    @staticmethod
-    def _parse_entry_sense_response(
-        content: str,
-        entries: list[dict[str, Any]]
-    ) -> tuple[int, int, int]:
-        """Parse LLM response into (entry_idx, sense_idx, subsense_idx) with clamping."""
-        match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", content)
-        if not match:
-            return 0, 0, -1
-
-        ei = max(0, min(int(match.group(1)), len(entries) - 1))
-        senses = entries[ei].get("senses", [])
-        si = max(0, min(int(match.group(2)), len(senses) - 1)) if senses else 0
-
-        ssi = -1
-        if match.group(3) is not None and senses:
-            subsenses = senses[si].get("subsenses", [])
-            ssi = max(0, min(int(match.group(3)), len(subsenses) - 1)) if subsenses else -1
-
-        return ei, si, ssi
-
-    async def _select_best_entry_sense(
-        self,
-        sentence: str,
-        word: str,
-        entries: list[dict[str, Any]]
-    ) -> tuple[int, int, int, TokenUsageStats | None]:
-        """Select the best entry, sense, and subsense based on sentence context.
-
-        Uses X.Y.Z format (entry.sense.subsense) matching the benchmark approach.
-
-        Args:
-            sentence: The sentence containing the word.
-            word: The word being looked up.
-            entries: All entries from the dictionary API.
-
-        Returns:
-            Tuple of (entry_idx, sense_idx, subsense_idx, token_stats).
-            subsense_idx is -1 when selection is at the sense level.
-        """
-        if not entries:
-            return 0, 0, -1, None
-
-        # Skip LLM if only one entry with one sense and no subsenses
-        total_senses = sum(len(e.get("senses", [])) for e in entries)
-        total_subsenses = sum(
-            len(s.get("subsenses", []))
-            for e in entries for s in e.get("senses", [])
-        )
-        if len(entries) == 1 and total_senses <= 1 and total_subsenses == 0:
-            return 0, 0, -1, None
-
-        prompt = self._build_entry_sense_prompt(sentence, word, entries)
-
-        try:
-            content, sense_stats = await call_llm_with_tracking(
-                messages=[{"role": "user", "content": prompt}],
-                model=self.full_llm_model,
-                temperature=0,
-                timeout=15,
-                max_tokens=10
-            )
-            ei, si, ssi = self._parse_entry_sense_response(content, entries)
-            return ei, si, ssi, sense_stats
-        except Exception as e:
-            logger.warning(
-                "Failed to select entry/sense via LLM, using defaults",
-                extra={"error": str(e)}
-            )
-
-        return 0, 0, -1, None
-
-    def _extract_examples_from_sense(self, sense: dict[str, Any], max_examples: int = 3) -> list[str] | None:
-        """Extract examples from a single sense.
-
-        Args:
-            sense: Sense dictionary from API.
-            max_examples: Maximum number of examples.
-
-        Returns:
-            List of example strings or None.
-        """
-        examples = []
-        for example in sense.get("examples", [])[:max_examples]:
-            if isinstance(example, str):
-                examples.append(example)
-            elif isinstance(example, dict) and "text" in example:
-                examples.append(example["text"])
-        return examples if examples else None
+    return prompt

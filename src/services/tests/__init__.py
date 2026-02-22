@@ -1,1 +1,1 @@
-"""Tests for services package."""
+"""Tests for services module."""

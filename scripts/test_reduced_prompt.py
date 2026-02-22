@@ -14,7 +14,7 @@ import time
 
 import litellm
 
-from utils.prompts import build_reduced_word_definition_prompt
+from services.lemma_extraction import _build_reduced_prompt as build_reduced_word_definition_prompt
 from scripts.test_cases import TEST_CASES_DE, TEST_CASES_EN
 
 # Use German test cases by default (imported from test_cases.py)

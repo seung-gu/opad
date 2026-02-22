@@ -1,40 +1,85 @@
-# 아키텍처 문서: 3-Service 분리
+# Architecture
 
-## 🎯 시스템 아키텍처
+> This document uses the [C4 model](https://c4model.com/) to structure architecture diagrams.
+> C4 defines four zoom levels: **Context** (L1) → **Container** (L2) → **Component** (L3) → **Code** (L4).
+> This document covers **L1** and **L2** in Mermaid. **L3** (Component) is provided as a draw.io diagram (`service_diagram.drawio`) with CQRS edge color-coding -- see [Component Diagram](#component-diagram-c4-level-3). L4 is the source code itself.
+
+## System Context Diagram (C4 Level 1)
+
+The Context diagram shows OPAD as a single box and every person or external system it interacts with. Internal details (services, databases) are hidden at this level.
+
+```mermaid
+%%{init: {"flowchart": {"curve": "linear"}} }%%
+graph TB
+    learner(["👤 Language Learner"])
+    admin(["👤 Admin"])
+
+    opad["OPAD"]
+
+    llm["LLM API"]
+    freedict["Free Dictionary API"]
+    serper["Serper API"]
+    news["News Websites"]
+
+    learner -->|reads articles, looks up words| opad
+    admin -->|views token usage| opad
+
+    opad -->|generates articles, extracts lemmas| llm
+    opad -->|looks up definitions, forms| freedict
+    opad -->|searches news| serper
+    opad -->|scrapes articles| news
+```
+
+| Element | Type | Description |
+|---------|------|-------------|
+| **Language Learner** | Person | Reads adapted articles and looks up unknown words |
+| **Admin** | Person | Monitors token usage and system health |
+| **OPAD** | System (ours) | Transforms news → educational reading materials; context-aware dictionary |
+| **LLM API** | External System | OpenAI / Anthropic — article generation, lemma extraction, sense selection |
+| **Free Dictionary API** | External System | Definitions, IPA pronunciation, grammatical forms |
+| **Serper API** | External System | Google News search for article discovery |
+| **News Websites** | External System | Source article content via web scraping |
+
+---
+
+## Container Diagram (C4 Level 2)
 
 ### System Overview
 
 ```mermaid
 graph TB
-    Web[Web<br/>Next.js] -->|HTTP| API[API<br/>FastAPI]
+    Web[Web<br/>Next.js] -->|HTTP/Proxy| API[API<br/>FastAPI]
     API -->|RPUSH| Redis[(Redis<br/>Queue + Status)]
     Redis -->|BLPOP| Worker[Worker<br/>Python]
     Worker -->|Execute| CrewAI[CrewAI]
     Worker -->|Save| MongoDB[(MongoDB<br/>Article + Vocabulary)]
-    
+
     API -.->|SET/GET| Redis
     Worker -.->|SET| Redis
-    
-    API -.->|utils/llm.py<br/>utils/prompts.py| OpenAI
-    
-    Web -->|HTTP<br/>Proxy| API
+
+    API -.->|Dictionary Lookup| LLM[LLM Provider]
+    CrewAI -.->|Article Generation| LLM
+
     API -->|Save/Query| MongoDB
-    
+
     style Web fill:#2196F3
     style API fill:#2196F3
     style Worker fill:#2196F3
     style CrewAI fill:#10a37f
     style Redis fill:#dc382d
     style MongoDB fill:#13aa52
-    style OpenAI fill:#10a37f
-    
+    style LLM fill:#10a37f
+
     linkStyle 0 stroke:#4a90e2,stroke-width:2px,color:#4a90e2
     linkStyle 1 stroke:#4a90e2,stroke-width:2px,color:#4a90e2
     linkStyle 2 stroke:#4a90e2,stroke-width:2px,color:#4a90e2
+    linkStyle 3 stroke:#10a37f,stroke-width:2px,color:#10a37f
+    linkStyle 4 stroke:#13aa52,stroke-width:2px,color:#13aa52
     linkStyle 5 stroke:#ff9500,stroke-width:2px,color:#ff9500
-    linkStyle 6 stroke:#13aa52,stroke-width:2px,color:#13aa52
+    linkStyle 6 stroke:#ff9500,stroke-width:2px,color:#ff9500
     linkStyle 7 stroke:#9c27b0,stroke-width:2px,color:#9c27b0
     linkStyle 8 stroke:#9c27b0,stroke-width:2px,color:#9c27b0
+    linkStyle 9 stroke:#13aa52,stroke-width:2px,color:#13aa52
 ```
 
 ### Article Generation 흐름
@@ -49,26 +94,30 @@ sequenceDiagram
     participant MongoDB
     
     Web->>API: POST /articles/generate
-    API->>MongoDB: Check duplicates
-    API->>MongoDB: Save article metadata
-    API->>Redis: RPUSH job
+    API->>API: article_submission_service.submit_generation()
+    API->>MongoDB: Check duplicates (repo.find_duplicate)
+    API->>MongoDB: Article.create() + repo.save()
+    API->>Redis: job_queue.enqueue() via JobQueuePort
     API-->>Web: Return job_id + article_id
-    
-    Worker->>Redis: BLPOP
-    Redis-->>Worker: job_data
-    
-    Worker->>CrewAI: Execute crew.kickoff()
-    CrewAI-->>Worker: Return article
-    
-    Worker->>MongoDB: Save article content
-    Worker->>Redis: Update status (completed)
+
+    Worker->>Redis: job_queue.dequeue() via JobQueuePort
+    Redis-->>Worker: JobContext
+
+    Worker->>Worker: article_generation_service.generate_article()
+    Worker->>CrewAI: generator.generate() via ArticleGeneratorPort
+    CrewAI-->>Worker: GenerationResult (domain DTO)
+
+    Worker->>Worker: article.complete(content, source, edit_history)
+    Worker->>MongoDB: repo.save(article)
+    Worker->>Redis: job_queue.update_status(completed)
 ```
 
 **특징:**
 - **실시간 응답**: 사용자가 단어를 클릭하면 즉시 정의 반환 (비동기 큐 사용 안 함)
 - **프록시 패턴**: Next.js API route가 FastAPI로 요청을 프록시
-- **공통 유틸 사용**: `utils/llm.py`와 `utils/prompts.py`로 재사용 가능한 구조
-- **에러 처리**: `get_llm_error_response()`로 일관된 에러 응답
+- **서비스 계층**: `services/article_submission_service.py`에서 article 제출 처리, `services/article_generation_service.py`에서 article 생성 처리, `services/lemma_extraction.py`, `services/sense_selection.py`에서 dictionary 파이프라인 단계 처리
+- **Stanza NLP**: 독일어 lemma 추출에 Stanza NLP 사용 (로컬 처리, ~51ms), 기타 언어는 LLM 사용
+- **에러 처리**: Port-level exceptions (`LLMTimeoutError`, `LLMRateLimitError`, `LLMAuthError`)를 route handler에서 catch하여 HTTP 상태 코드로 변환
 
 ### 서비스 간 통신
 
@@ -77,17 +126,18 @@ sequenceDiagram
 | **Web** | **API** | HTTP | Article 생성, Job enqueue, Token usage 조회 |
 | **Web** | **Next.js API** | HTTP | Dictionary API 요청 (프록시), Vocabulary CRUD 요청 (프록시), Dictionary Stats 요청 (프록시) |
 | **Next.js API** | **API** | HTTP | Dictionary API 프록시 요청, Vocabulary CRUD 프록시 요청, Dictionary Stats 프록시 요청 |
-| **API** | **MongoDB** | (via utils.mongodb) | 중복 체크, Article metadata 저장/조회, Vocabulary 저장/조회, Token usage 저장/조회 |
-| **API** | **Redis** | `RPUSH` | Job을 큐에 추가 |
-| **API** | **Redis** | `SET/GET` | Job 상태 저장/조회 (공통 모듈 `api.job_queue` 사용) |
-| **API** | **LLM** | HTTP (via utils.llm) | Dictionary API용 LLM 호출 (lemma extraction + entry/sense selection) + Token tracking |
+| **API** | **MongoDB** | (via Repository adapters) | 중복 체크, Article metadata 저장/조회 (ArticleRepository), Vocabulary 저장/조회 (VocabularyRepository), Token usage 저장/조회 (TokenUsageRepository), User 인증/조회 (UserRepository) |
+| **API** | **Redis** | `RPUSH` (via JobQueuePort / RedisJobQueueAdapter) | Job을 큐에 추가 |
+| **API** | **Redis** | `SET/GET` (via JobQueuePort / RedisJobQueueAdapter) | Job 상태 저장/조회 |
+| **API** | **Stanza NLP** | Local (via NLPPort / StanzaAdapter) | German lemma extraction (로컬 NLP, ~51ms) |
+| **API** | **LLM** | HTTP (via LLMPort / LiteLLMAdapter) | Dictionary API용 LLM 호출 (non-German lemma extraction + CEFR estimation + entry/sense selection) + Token tracking |
 | **API** | **API** | Internal | Token usage endpoints (`/usage/me`, `/usage/articles/{id}`) |
-| **Worker** | **Redis** | `BLPOP` | Job을 큐에서 꺼냄 (blocking) |
-| **Worker** | **Redis** | `SET` | Job 상태 업데이트 (공통 모듈 `api.job_queue` 사용) |
-| **Worker** | **CrewAI** | Function Call | Article 생성 |
-| **Worker** | **MongoDB** | (via utils.mongodb) | Article content 저장, Token usage 저장 |
+| **Worker** | **Redis** | `BLPOP` (via JobQueuePort / RedisJobQueueAdapter) | Job을 큐에서 꺼냄 (blocking) |
+| **Worker** | **Redis** | `SET` (via JobQueuePort / RedisJobQueueAdapter) | Job 상태 업데이트 |
+| **Worker** | **CrewAI** | Function Call (via ArticleGeneratorPort / CrewAIArticleGenerator) | Article 생성 |
+| **Worker** | **MongoDB** | (via Repository adapters) | Article content 저장 (ArticleRepository), Token usage 저장 (TokenUsageRepository) |
 
-**참고**: API와 Worker 모두 `api.job_queue` 모듈을 통해 Redis에 접근합니다. MongoDB 접근은 `utils.mongodb` 모듈을 통해 합니다.
+**참고**: API와 Worker 모두 `JobQueuePort` / `RedisJobQueueAdapter`를 통해 Redis에 접근합니다. Worker는 `ArticleGeneratorPort` / `CrewAIArticleGenerator`를 통해 CrewAI에 접근합니다. 모든 MongoDB 접근은 hexagonal architecture의 Repository 어댑터를 통해 합니다: `ArticleRepository`, `VocabularyRepository` (CRUD + aggregate queries), `TokenUsageRepository`, `UserRepository`. 외부 서비스 호출도 Port를 통해 합니다: `DictionaryPort` (Free Dictionary API), `LLMPort` (LLM 호출), `NLPPort` (Stanza NLP), `JobQueuePort` (Redis), `ArticleGeneratorPort` (CrewAI). API의 모든 Port/Repository는 `api/dependencies.py`(Composition Root)에서 생성되어 FastAPI `Depends()`로 주입됩니다. Worker의 Port/Adapter는 `worker/main.py`에서 직접 생성됩니다.
 
 ### Redis 데이터 구조
 
@@ -221,6 +271,311 @@ queued → running → completed / failed
 
 ---
 
+## Hexagonal Architecture (Ports and Adapters)
+
+> **[Interactive Architecture Diagram](https://seung-gu.github.io/opad/architecture-hexagonal.html)** — click any module to trace its data flow
+
+### Overview
+
+The project uses hexagonal architecture (ports and adapters) for both persistence and external service integration. This pattern decouples business logic from infrastructure concerns (MongoDB, Redis, external APIs, LLM providers) by introducing explicit boundaries between layers. All MongoDB access goes through Protocol-based repository interfaces (`adapter/mongodb/`), and all external service calls go through Protocol-based port interfaces with adapters in `adapter/external/` (production) and `adapter/fake/` (testing).
+
+**Motivation:**
+- Enable unit testing without MongoDB or external APIs (swap in fake adapters)
+- Make infrastructure decisions (MongoDB vs PostgreSQL, OpenAI vs Anthropic) implementation details, not architectural commitments
+- Enforce consistent data access patterns across API and Worker services
+- Decouple dictionary and LLM integrations from business logic via `DictionaryPort` and `LLMPort`
+
+**Dependency flow:**
+```
+api/worker (Driving) --> services --> domain <-- ports <-- adapters (Driven)
+```
+
+### Component Diagram (C4 Level 3)
+
+The file `service_diagram.drawio` provides a detailed component-level view of the hexagonal architecture. Open it with [draw.io](https://app.diagrams.net/) or the VS Code draw.io extension.
+
+The diagram contains **31 edges**, each color-coded by CQRS (Command Query Responsibility Segregation) pattern to visually distinguish data flow intent:
+
+| Color | Style | Category | Count | Description |
+|-------|-------|----------|-------|-------------|
+| Red `#C62828` | Solid, 2px | **Command (Write)** | 13 | State-changing operations (e.g., `articles_r` -> `job_queue` RPUSH, `dict_svc` -> `LLMPort` call, `token_usage_svc` -> `TokenUsageRepository` save, `proc` -> Redis status update) |
+| Green `#2E7D32` | Dashed, 2px | **Query (Read)** | 6 | Read-only operations (e.g., `usage_r` -> `TokenUsageRepository` read, `jobs_r` -> Redis poll status, `proc` -> `VocabularyRepository` find_lemmas, `dict_svc` -> `DictionaryPort` fetch) |
+| Gray `#757575` | Solid or dashed, 1px | **Infrastructure** | 12 | Entry points (`HTTP` -> `Routes`), port-to-adapter bindings (`LLMPort` -> `LiteLLMAdapter`), and adapter-to-external connections (`MongoArticleRepo` -> `MongoDB`) |
+
+**Diagram layers (top to bottom):**
+
+```
+API Service (FastAPI :8001)        Worker Service
+  Routes (Entrypoint)                processor.py -> run_worker_loop()
+    articles.py (generate, list)       -> process_job() -> generate_article()
+    dictionary.py (search)
+    vocabulary.py (CRUD + aggregates)
+  Service Layer
+    article_submission_service (submit_generation) / article_generation_service (generate_article)
+    dictionary_service / token_usage_service
+    lemma_extraction / sense_selection
+
+Domain
+  Article (+ SourceInfo, EditRecord, GenerationResult) / ArticleInputs / Articles
+  JobContext / CEFRLevel / LLMCallResult / TokenUsage / Vocabulary / Errors
+
+Ports (Protocol)
+  LLMPort / DictionaryPort / NLPPort / JobQueuePort / ArticleGeneratorPort
+  VocabularyRepository / TokenUsageRepository / ArticleRepository
+
+Adapters
+  LiteLLMAdapter / FreeDictionaryAdapter / StanzaAdapter
+  RedisJobQueueAdapter / CrewAIArticleGenerator
+  MongoVocabRepo / MongoTokenRepo / MongoArticleRepo
+
+External
+  OpenAI API / Free Dictionary API / Stanza NLP (local)
+  Redis / MongoDB / CrewAI Pipeline
+```
+
+A legend box at the bottom of the diagram summarizes the three edge categories.
+
+> **Note:** A complementary layered architecture view is available in `service_diagram_layers.drawio`.
+
+
+### Domain Models (`src/domain/model/`)
+
+All domain models are plain Python dataclasses with no database dependencies.
+
+#### Article (`domain/model/article.py`)
+
+Rich Domain Model with factory (`create()`), state transitions (`complete()`, `fail()`, `delete()`), and query methods (`is_deleted`, `has_content`, `is_owned_by()`).
+
+- **`Article`** — Mutable entity representing an article's full lifecycle. `create()` factory generates UUIDs and sets initial `RUNNING` status. State transitions encapsulate business rules and update `updated_at`.
+- **`ArticleStatus`** — Enum (`RUNNING`, `COMPLETED`, `FAILED`, `DELETED`). Extends `str` for JSON serialization.
+- **`ArticleInputs`** — Frozen value object holding generation parameters (`language`, `level`, `length`, `topic`).
+- **`SourceInfo`**, **`EditRecord`** — Frozen value objects preserving article provenance from CrewAI output.
+- **`GenerationResult`** — Framework-agnostic DTO returned by `ArticleGeneratorPort`, decoupling CrewAI output from domain.
+- **`Articles`** — Collection wrapper for paginated results (replaces raw `tuple[list, int]`).
+
+#### JobContext (`domain/model/job.py`)
+
+Typed container for job queue data, replacing raw dict passing. `from_dict()` validates and converts queue data once at dequeue time. Provides `log_extra` property for structured logging.
+
+#### User (`domain/model/user.py`)
+
+Standard user entity with `id`, `name`, `email`, authentication fields (`password_hash`, `provider`), and timestamps (`created_at`, `updated_at`, `last_login`).
+
+#### Vocabulary (`domain/model/vocabulary.py`)
+
+- **`Vocabulary`** — Rich Domain Model with factory (`create()`), ownership verification (`check_ownership()`), and identity tracking (`IDENTITY_FIELDS`). `create()` factory generates UUIDs and sets timestamps. `check_ownership()` raises `PermissionDeniedError` on mismatch.
+- **`GrammaticalInfo`** — Groups optional grammatical metadata (`pos`, `gender`, `phonetics`, `conjugations`, `examples`). No `level` -- level is on `Vocabulary`/`LookupResult`.
+- **`SenseResult`** — Holds definition and examples selected from dictionary entries.
+- **`LookupResult`** — Frozen value object returned by `dictionary_service.lookup()`. Combines lemma, definition, related_words, level, and `GrammaticalInfo`.
+- **`VocabularyCount`** — Composite model combining a vocabulary entry with its aggregated count and article IDs.
+
+#### Token Usage (`domain/model/token_usage.py`)
+
+- **`LLMCallResult`** — Frozen value object from a single LLM API call. Fields: `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `estimated_cost`, `provider`.
+- **`TokenUsage`** — Entity tracking who used how many tokens for which operation. Created by service layer, persisted by adapter.
+
+#### Domain Errors (`domain/model/errors.py`)
+
+| Exception | HTTP | Purpose |
+|-----------|------|---------|
+| `DomainError` | 503 | Base class |
+| `NotFoundError` | 404 | Resource not found |
+| `DuplicateError` | 409 | Generic duplicate |
+| `DuplicateArticleError` | 409 | Carries `article_id` + `job_data` for 409 response |
+| `PermissionDeniedError` | 403 | Ownership violation |
+| `ValidationError` | 422 | Input validation failure |
+| `EnqueueError` | 503 | Redis queue failure during article submission |
+
+Domain models and services raise these exceptions; route handlers catch and map to HTTP status codes. For example, `Vocabulary.check_ownership()` raises `PermissionDeniedError`, which the vocabulary route catches and maps to HTTP 403.
+
+### Ports (`src/port/`)
+
+Each port defines a contract using Python's `Protocol` (structural typing). No explicit inheritance required -- any class with matching method signatures satisfies the protocol, supporting duck typing with IDE/mypy type checking.
+
+**External Service Ports:**
+
+| Port | File | Purpose | Key Methods |
+|------|------|---------|-------------|
+| `DictionaryPort` | `port/dictionary.py` | Dictionary API integration. Encapsulates entry-structure knowledge so the service layer only deals with domain types. | `fetch()`, `build_sense_listing()`, `get_sense()`, `extract_grammar()` |
+| `LLMPort` | `port/llm.py` | Provider-agnostic LLM calls with token tracking. Also defines port-level exceptions (`LLMTimeoutError`, `LLMRateLimitError`, `LLMAuthError`). | `call(messages, model, timeout) -> (str, LLMCallResult)`, `estimate_cost()` |
+| `NLPPort` | `port/nlp.py` | Linguistic analysis (e.g., Stanza). Returns dict with `text`, `lemma`, `pos`, `xpos`, `gender`, `prefix`, `reflexive`, `parts`. | `extract(word, sentence) -> dict | None` |
+| `JobQueuePort` | `port/job_queue.py` | Job queue operations. API uses `enqueue()`, `get_status()`, `get_stats()`. Worker uses `dequeue()`, `update_status()`. | `enqueue()`, `dequeue()`, `get_status()`, `update_status()`, `get_stats()`, `ping()` |
+| `ArticleGeneratorPort` | `port/article_generator.py` | Article generation. Returns framework-agnostic `GenerationResult`, decoupling from CrewAI. | `generate(inputs, vocabulary) -> GenerationResult` |
+
+**Repository Ports (Persistence):**
+
+| Port | File | Purpose | Key Methods |
+|------|------|---------|-------------|
+| `ArticleRepository` | `port/article_repository.py` | Article CRUD + duplicate detection + paginated queries. | `save()`, `get_by_id()`, `find_many()`, `find_duplicate()`, `update_status()`, `delete()` |
+| `UserRepository` | `port/user_repository.py` | User CRUD + login tracking. | `create()`, `get_by_email()`, `get_by_id()`, `update_last_login()` |
+| `VocabularyRepository` | `port/vocabulary_repository.py` | Vocabulary entry CRUD + aggregate queries. | `save()`, `find_duplicate()`, `get_by_id()`, `find()`, `update_span_id()`, `delete()`, `count_by_lemma()`, `find_lemmas()` |
+| `TokenUsageRepository` | `port/token_usage_repository.py` | Token usage persistence and aggregation. `save()` accepts `TokenUsage` domain object. | `save(usage)`, `get_user_summary()`, `get_by_article()` |
+
+`MongoVocabularyRepository` satisfies `VocabularyRepository` via duck typing. The API injects `VocabularyRepository` for both CRUD and aggregate queries. The Worker uses `VocabularyRepository.find_lemmas()` for vocabulary-aware article generation.
+
+### Adapters
+
+#### MongoDB Adapters (`src/adapter/mongodb/`)
+
+All MongoDB adapters follow the same pattern:
+- Receive a `pymongo.Database` instance via constructor injection
+- Convert between MongoDB documents and domain objects via `_to_domain()` helper
+- All methods return `bool`, domain objects, or `None` (never raw MongoDB documents)
+- Each adapter has an `ensure_indexes()` method for index management
+
+| Adapter | File | Collection | Domain Model |
+|---------|------|------------|-------------|
+| `MongoArticleRepository` | `article_repository.py` | `articles` | `Article` |
+| `MongoUserRepository` | `user_repository.py` | `users` | `User` |
+| `MongoVocabularyRepository` | `vocabulary_repository.py` | `vocabularies` | `Vocabulary` |
+| `MongoTokenUsageRepository` | `token_usage_repository.py` | `token_usage` | `TokenUsage` |
+
+**Shared utilities in `adapter/mongodb/`:**
+- `indexes.py`: `create_index_safe()` with conflict resolution, `ensure_all_indexes(db)` called at app startup
+- `stats.py`: `get_database_stats(db)` and `get_vocabulary_stats(db)` for the `/stats` endpoint
+- `connection.py`: MongoDB client singleton (`get_mongodb_client()`, `DATABASE_NAME`)
+
+#### External Service Adapters (`src/adapter/external/`, `src/adapter/nlp/`, `src/adapter/queue/`, `src/adapter/crew/`)
+
+Adapters for outbound API calls (dictionary lookups, LLM calls), local NLP processing, job queue operations, and article generation. These implement the `DictionaryPort`, `LLMPort`, `NLPPort`, `JobQueuePort`, and `ArticleGeneratorPort` protocols respectively.
+
+| Adapter | File | Port | External Service |
+|---------|------|------|------------------|
+| `FreeDictionaryAdapter` | `adapter/external/free_dictionary.py` | `DictionaryPort` | Free Dictionary API |
+| `LiteLLMAdapter` | `adapter/external/litellm.py` | `LLMPort` | LLM providers via LiteLLM |
+| `StanzaAdapter` | `adapter/nlp/stanza.py` | `NLPPort` | Stanza NLP (local) |
+| `RedisJobQueueAdapter` | `adapter/queue/redis_job_queue.py` | `JobQueuePort` | Redis (queue + status) |
+| `CrewAIArticleGenerator` | `adapter/crew/article_generator.py` | `ArticleGeneratorPort` | CrewAI pipeline |
+
+**FreeDictionaryAdapter** (`adapter/external/free_dictionary.py`):
+- Implements all `DictionaryPort` methods: `fetch()`, `build_sense_listing()`, `get_sense()`, `extract_grammar()`
+- `fetch()`: Fetches raw dictionary entries from the Free Dictionary API with reflexive pronoun stripping, retry logic (3 attempts with exponential backoff), and error handling
+- `build_sense_listing()`: Formats entries into a numbered listing for LLM sense selection
+- `get_sense()`: Extracts definition and examples for the selected entry/sense/subsense by label (e.g., `"0.1.2"`)
+- `extract_grammar()`: Extracts POS, phonetics, forms, and gender from entries
+- Returns `list[dict] | None` from `fetch()` (raw entries, not DTOs)
+
+**LiteLLMAdapter** (`adapter/external/litellm.py`):
+- Implements `LLMPort.call()` and `estimate_cost()` using LiteLLM's `acompletion()` and `cost_per_token()`
+- Maps LiteLLM exceptions to port-level errors (`LLMTimeoutError`, `LLMRateLimitError`, `LLMAuthError`)
+- Returns `tuple[str, LLMCallResult]` with token counts and estimated cost
+
+**StanzaAdapter** (`adapter/nlp/stanza.py`):
+- Implements `NLPPort.extract()` -- runs Stanza German pipeline for dependency parsing
+- Returns a dict with linguistic primitives: `text`, `lemma`, `pos`, `xpos`, `gender`, `prefix`, `reflexive`, `parts`
+- Provides `preload()` method for eagerly loading the German pipeline (~349MB) at API startup
+- Singleton pattern via `get_nlp_port()` in `api/dependencies.py`
+
+**RedisJobQueueAdapter** (`adapter/queue/redis_job_queue.py`):
+- Implements all `JobQueuePort` methods: `enqueue()`, `dequeue()`, `get_status()`, `update_status()`, `get_stats()`, `ping()`
+- `enqueue()`: RPUSH job JSON to `opad:jobs` list
+- `dequeue()`: BLPOP from `opad:jobs`, returns parsed `JobContext` domain object
+- `get_status()` / `update_status()`: GET/SETEX on `opad:job:{job_id}` keys with 24h TTL
+- `get_stats()`: SCAN all `opad:job:*` keys, aggregate status counts
+- Cached Redis client with automatic reconnection and connection failure tracking
+- Used by both API (enqueue, status queries) and Worker (dequeue, status updates)
+
+**CrewAIArticleGenerator** (`adapter/crew/article_generator.py`):
+- Implements `ArticleGeneratorPort.generate()` -- runs the CrewAI pipeline and returns a `GenerationResult`
+- Receives `JobQueuePort` via constructor for progress tracking through `JobProgressListener`
+- `generate()` receives `job_id`/`article_id` as parameters (no mutable state) and passes them to `JobProgressListener`
+- Converts `ReviewedArticle` (CrewAI Pydantic model) to `GenerationResult` (domain DTO) with `SourceInfo` and `EditRecord` value objects
+- Uses `crewai_event_bus.scoped_handlers()` for isolated event listener lifecycle
+
+**CrewAI Pipeline** (`adapter/crew/`):
+- `crew.py`: `ReadingMaterialCreator` -- CrewAI crew definition with 4 agents and 4 tasks
+- `main.py`: `run()` function and `CrewResult` container with `get_agent_usage()` for token metrics
+- `models.py`: Pydantic models for CrewAI task outputs (`NewsArticle`, `SelectedArticle`, `ReviewedArticle`) with `to_source_info()` and `to_edit_record()` converters to domain value objects
+- `progress_listener.py`: `JobProgressListener` -- CrewAI event listener that updates job progress via `JobQueuePort` (no direct Redis dependency)
+- `guardrails.py`: JSON output repair for CrewAI task outputs
+- `config/agents.yaml`, `config/tasks.yaml`: Agent and task configuration
+
+#### Fake Adapters (`src/adapter/fake/`)
+
+In-memory adapters for unit testing. No external dependencies required.
+
+| Adapter | File | Port |
+|---------|------|------|
+| `FakeArticleRepository` | `article_repository.py` | `ArticleRepository` |
+| `FakeUserRepository` | `user_repository.py` | `UserRepository` |
+| `FakeVocabularyRepository` | `vocabulary_repository.py` | `VocabularyRepository` |
+| `FakeTokenUsageRepository` | `token_usage_repository.py` | `TokenUsageRepository` |
+| `FakeDictionaryAdapter` | `dictionary.py` | `DictionaryPort` |
+| `FakeLLMAdapter` | `llm.py` | `LLMPort` |
+| `FakeNLPAdapter` | `nlp.py` | `NLPPort` |
+| `FakeJobQueueAdapter` | `job_queue.py` | `JobQueuePort` |
+| `FakeArticleGenerator` | `article_generator.py` | `ArticleGeneratorPort` |
+
+**FakeDictionaryAdapter**: Returns preconfigured `entries` list. Implements all `DictionaryPort` methods (`fetch`, `build_sense_listing`, `get_sense`, `extract_grammar`). Records `last_word` and `last_language` for assertion.
+
+**FakeLLMAdapter**: Returns preconfigured `response` string and `LLMCallResult`. Records all calls in `self.calls` list for assertion.
+
+**FakeNLPAdapter**: Returns preconfigured `result` dict. Records all calls in `self.calls` list for assertion.
+
+**FakeJobQueueAdapter**: In-memory queue (deque) and status dict. Implements all `JobQueuePort` methods. Preserves existing status fields on update (mirrors Redis adapter behavior).
+
+**FakeArticleGenerator**: Returns preconfigured `GenerationResult` with default content. Tracks `generate_called` flag for assertion.
+
+### Composition Root (Dependency Injection)
+
+#### FastAPI (`src/api/dependencies.py`)
+
+Factory functions return port-typed instances, injected into route handlers via `Depends()`. A private `_get_db()` helper centralizes the database connection (raises 503 if unavailable).
+
+| Factory | Returns | Adapter |
+|---------|---------|---------|
+| `get_article_repo()` | `ArticleRepository` | `MongoArticleRepository` |
+| `get_user_repo()` | `UserRepository` | `MongoUserRepository` |
+| `get_token_usage_repo()` | `TokenUsageRepository` | `MongoTokenUsageRepository` |
+| `get_vocab_repo()` | `VocabularyRepository` | `MongoVocabularyRepository` |
+| `get_dictionary_port()` | `DictionaryPort` | `FreeDictionaryAdapter` |
+| `get_llm_port()` | `LLMPort` | `LiteLLMAdapter` |
+| `get_job_queue()` | `JobQueuePort` | `RedisJobQueueAdapter` |
+| `get_nlp_port()` | `NLPPort` | `StanzaAdapter` (singleton via `@lru_cache`) |
+
+Note: `get_vocab_repo()` returns `MongoVocabularyRepository`, which satisfies `VocabularyRepository` via duck typing.
+
+#### Worker (`src/worker/main.py`)
+
+The worker creates all adapters at startup and wires them together via `functools.partial`. The `generate` callable is a partially-applied `article_generation_service.generate_article()` with all infrastructure dependencies (`generator`, `repo`, `token_usage_repo`, `vocab`, `llm`) pre-bound. The worker loop receives `JobQueuePort` for dequeue/status operations and delegates generation to this pre-bound callable.
+
+### Port and Adapter Overview
+
+All database entities and external services use hexagonal architecture. Persistence goes through repository ports; external API calls go through service ports.
+
+**Repository Ports (Persistence):**
+
+| Entity | Port | Production Adapter | Fake Adapter |
+|--------|------|--------------------|--------------|
+| Article | `ArticleRepository` | `MongoArticleRepository` | `FakeArticleRepository` |
+| User | `UserRepository` | `MongoUserRepository` | `FakeUserRepository` |
+| Vocabulary | `VocabularyRepository` | `MongoVocabularyRepository` | `FakeVocabularyRepository` |
+| Token Usage | `TokenUsageRepository` | `MongoTokenUsageRepository` | `FakeTokenUsageRepository` |
+
+**External Service Ports:**
+
+| Service | Port | Production Adapter | Fake Adapter |
+|---------|------|--------------------|--------------|
+| Dictionary API | `DictionaryPort` | `FreeDictionaryAdapter` | `FakeDictionaryAdapter` |
+| LLM Provider | `LLMPort` | `LiteLLMAdapter` | `FakeLLMAdapter` |
+| NLP (Stanza) | `NLPPort` | `StanzaAdapter` | `FakeNLPAdapter` |
+| Job Queue (Redis) | `JobQueuePort` | `RedisJobQueueAdapter` | `FakeJobQueueAdapter` |
+| Article Generator (CrewAI) | `ArticleGeneratorPort` | `CrewAIArticleGenerator` | `FakeArticleGenerator` |
+
+**Additional components:**
+- `adapter/mongodb/indexes.py`: Centralized index management with `ensure_all_indexes(db)`
+- `adapter/mongodb/stats.py`: Database statistics for `/stats` endpoint
+- `adapter/crew/progress_listener.py`: CrewAI event listener for real-time job progress tracking via `JobQueuePort`
+- `services/article_submission_service.py`: Article submission (API-side: `submit_generation()` -- duplicate check, create, enqueue)
+- `services/article_generation_service.py`: Article generation (Worker-side: `generate_article()` -- vocabulary filtering, generation, save, token tracking)
+- `services/dictionary_service.py`: Dictionary lookup orchestrator (hybrid pipeline + full LLM fallback)
+- `services/lemma_extraction.py`: Step 1 of lookup pipeline (NLP for German, LLM for others)
+- `services/sense_selection.py`: Step 3 of lookup pipeline (LLM sense selection from dictionary entries)
+- `domain/model/job.py`: `JobContext` typed container for queue job data
+- `domain/model/errors.py`: Domain-level exceptions (`NotFoundError`, `PermissionDeniedError`, `DuplicateArticleError`, `EnqueueError`, `ValidationError`)
+
+---
+
 ## 💰 Token Usage Tracking
 
 ### Overview
@@ -228,87 +583,38 @@ The system tracks LLM API token usage and costs for all API calls, enabling cost
 
 ### Architecture
 
-#### 1. LLM Utility Module (`utils/llm.py`)
-Provider-agnostic LLM API calls using LiteLLM with automatic token tracking.
+#### 1. LLM Port and Adapter (`port/llm.py` + `adapter/external/litellm.py`)
+Provider-agnostic LLM API calls using LiteLLM with automatic token tracking, exposed via `LLMPort` protocol.
 
-**Functions**:
-- `call_llm_with_tracking()`: Makes LLM API calls and returns content + token statistics
-- `parse_json_from_content()`: Parses JSON from LLM responses (handles markdown code blocks)
-- `get_llm_error_response()`: Converts LLM exceptions to HTTP status codes
+- **`LLMPort.call()`**: Makes LLM API calls and returns `(content: str, stats: LLMCallResult)`
+- **`LLMPort.estimate_cost()`**: Calculates estimated cost using LiteLLM's pricing data
+- **Port-level exceptions**: `LLMTimeoutError`, `LLMRateLimitError`, `LLMAuthError`
 
-**TokenUsageStats Dataclass**:
-```python
-@dataclass
-class TokenUsageStats:
-    model: str              # Model name (e.g., "gpt-4.1-mini")
-    prompt_tokens: int      # Input tokens
-    completion_tokens: int  # Output tokens
-    total_tokens: int       # Total tokens used
-    estimated_cost: float   # Cost in USD (calculated by LiteLLM)
-    provider: str | None    # Provider name (openai, anthropic, google)
-```
+**LLMCallResult** (`domain/model/token_usage.py`): Frozen value object capturing a single LLM call's metrics -- `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `estimated_cost`, `provider`.
 
 **Supported Providers** (via LiteLLM):
-- OpenAI: `"gpt-4.1-mini"`, `"gpt-4.1"`
+- OpenAI: `"openai/gpt-4.1-mini"`, `"openai/gpt-4.1"`
 - Anthropic: `"anthropic/claude-4.5-sonnet"`
 - Google: `"gemini/gemini-2.0-flash"`
 
 **Example Usage**:
 ```python
-from utils.llm import call_llm_with_tracking, TokenUsageStats
-
-content, stats = await call_llm_with_tracking(
+content, stats = await llm.call(
     messages=[{"role": "user", "content": "Hello"}],
-    model="gpt-4.1-mini",
-    max_tokens=200
+    model="openai/gpt-4.1-mini", max_tokens=200,
 )
-
-# stats.model = "gpt-4.1-mini"
-# stats.prompt_tokens = 8
-# stats.completion_tokens = 12
-# stats.estimated_cost = 0.000015
+# stats.model = "openai/gpt-4.1-mini", stats.estimated_cost = 0.000015
 ```
 
-#### 2. MongoDB Storage (`utils/mongodb.py`)
+#### 2. MongoDB Storage (`adapter/mongodb/token_usage_repository.py`)
 
-**save_token_usage()**: Save token usage record
-```python
-def save_token_usage(
-    user_id: str,
-    operation: str,  # "dictionary_search" | "article_generation"
-    model: str,
-    prompt_tokens: int,
-    completion_tokens: int,
-    estimated_cost: float,
-    article_id: Optional[str] = None,
-    metadata: Optional[dict] = None
-) -> Optional[str]:
-    """Save token usage record to MongoDB."""
-```
+Token usage persistence is handled by `MongoTokenUsageRepository`, implementing the `TokenUsageRepository` protocol.
 
-**get_user_token_summary()**: Get user's token usage summary
-```python
-def get_user_token_summary(user_id: str, days: int = 30) -> dict:
-    """
-    Returns:
-    {
-        'total_tokens': int,
-        'total_cost': float,
-        'by_operation': {
-            'operation_type': {'tokens': int, 'cost': float, 'count': int}
-        },
-        'daily_usage': [
-            {'date': 'YYYY-MM-DD', 'tokens': int, 'cost': float}
-        ]
-    }
-    """
-```
+- **`save(usage: TokenUsage)`**: Save a `TokenUsage` domain object (ID and created_at set by service layer). Returns record ID or `None`.
+- **`get_user_summary(user_id, days=30)`**: Aggregated usage summary as `dict` (total_tokens, total_cost, by_operation, daily_usage). Days clamped to [1, 365].
+- **`get_by_article(article_id)`**: All token usage records for an article as `list[dict]`, sorted by created_at ascending.
 
-**get_article_token_usage()**: Get token usage for specific article
-```python
-def get_article_token_usage(article_id: str) -> list[dict]:
-    """Returns all token usage records for an article."""
-```
+Token usage records are created by `services/token_usage_service.py`, which converts `LLMCallResult` to `TokenUsage` domain objects before calling `save()`.
 
 #### 3. Token Usage Collection Schema (MongoDB)
 
@@ -341,38 +647,70 @@ def get_article_token_usage(article_id: str) -> list[dict]:
 
 #### Dictionary API (`src/api/routes/dictionary.py`)
 
+The route handler injects `DictionaryPort`, `LLMPort`, `NLPPort`, and `TokenUsageRepository` via `Depends()` and passes them to `dictionary_service.lookup()` (a module function, not a class method). Token usage tracking is handled internally by the service:
+
 ```python
 @router.post("/search", response_model=SearchResponse)
 async def search_word(
     request: SearchRequest,
-    current_user: User = Depends(get_current_user_required),
-    service: DictionaryService = Depends(get_dictionary_service)
+    current_user: UserResponse = Depends(get_current_user_required),
+    dictionary: DictionaryPort = Depends(get_dictionary_port),
+    llm: LLMPort = Depends(get_llm_port),
+    nlp: NLPPort = Depends(get_nlp_port),
+    token_usage_repo: TokenUsageRepo = Depends(get_token_usage_repo),
 ):
-    # Convert API request to service request
-    lookup_request = LookupRequest(
+    result = await dictionary_service.lookup(
         word=request.word,
         sentence=request.sentence,
         language=request.language,
-        article_id=request.article_id
+        dictionary=dictionary,
+        llm=llm,
+        nlp=nlp,
+        token_usage_repo=token_usage_repo,
+        user_id=current_user.id,
+        article_id=request.article_id,
     )
 
-    # Perform lookup via DictionaryService (hybrid LLM + API approach)
-    result = await service.lookup(lookup_request)
+    return SearchResponse(
+        lemma=result.lemma,
+        definition=result.definition,
+        related_words=result.related_words,
+        pos=result.grammar.pos,
+        gender=result.grammar.gender,
+        phonetics=result.grammar.phonetics,
+        conjugations=result.grammar.conjugations,
+        level=result.level,
+        examples=result.grammar.examples,
+    )
+```
 
-    # Track token usage (accumulated from reduced prompt + entry/sense selection)
-    stats = service.last_token_stats
-    if stats:
-        save_token_usage(
-            user_id=current_user.id,
-            operation="dictionary_search",
-            model=stats.model,
-            prompt_tokens=stats.prompt_tokens,
-            completion_tokens=stats.completion_tokens,
-            estimated_cost=stats.estimated_cost,
-            metadata={"query": request.word, "language": request.language}
-        )
+Note: `dictionary_service.lookup()` returns a `LookupResult` domain object (not a tuple). Token usage is tracked per LLM call internally by the service via `token_usage_service.track_llm_usage()`.
 
-    return SearchResponse(**result.__dict__)
+#### Vocabulary API (`src/api/routes/vocabulary.py`)
+
+Vocabulary CRUD endpoints are in a separate router from dictionary search. The route uses `Vocabulary.create()` (domain factory) for construction and `vocab.check_ownership()` (domain method) for authorization, then delegates persistence to the injected `VocabularyRepository`. This follows the same pattern as other routes (`r_jobs`, `r_usage`, `r_health`) -- route to port directly, no service layer:
+
+```python
+router = APIRouter(prefix="/dictionary", tags=["vocabulary"])
+
+@router.post("/vocabulary", response_model=VocabularyResponse)
+async def add_vocabulary(
+    request: VocabularyRequest,
+    current_user: UserResponse = Depends(get_current_user_required),
+    repo: VocabularyRepository = Depends(get_vocab_repo),
+): ...
+
+@router.get("/vocabularies", response_model=list[VocabularyCountResponse])
+async def get_vocabularies_list(
+    ...,
+    repo: VocabularyRepository = Depends(get_vocab_repo),
+): ...
+
+@router.delete("/vocabularies/{vocabulary_id}")
+async def delete_vocabulary_word(
+    ...,
+    repo: VocabularyRepository = Depends(get_vocab_repo),
+): ...
 ```
 
 #### Token Usage API Endpoints (`src/api/routes/usage.py`)
@@ -382,10 +720,11 @@ async def search_word(
 @router.get("/me", response_model=TokenUsageSummary)
 async def get_my_usage(
     days: int = Query(default=30, ge=1, le=365),
-    current_user: User = Depends(get_current_user_required)
+    current_user: UserResponse = Depends(get_current_user_required),
+    repo: TokenUsageRepository = Depends(get_token_usage_repo),
 ):
-    # Get aggregated summary from MongoDB
-    summary = get_user_token_summary(user_id=current_user.id, days=days)
+    # Get aggregated summary via injected repository
+    summary = repo.get_user_summary(user_id=current_user.id, days=days)
 
     # Convert to response models
     by_operation = {
@@ -406,22 +745,24 @@ async def get_my_usage(
 
 **GET /usage/articles/{article_id}**: Get token usage for specific article
 ```python
-@router.get("/articles/{article_id}", response_model=list[TokenUsageRecord])
+@router.get("/articles/{article_id}", response_model=list[TokenUsageResponse])
 async def get_article_usage(
     article_id: str,
-    current_user: User = Depends(get_current_user_required)
+    current_user: UserResponse = Depends(get_current_user_required),
+    article_repo: ArticleRepository = Depends(get_article_repo),
+    token_usage_repo: TokenUsageRepository = Depends(get_token_usage_repo),
 ):
-    # Verify article ownership
-    article = get_article(article_id)
+    # Verify article ownership via injected ArticleRepository
+    article = article_repo.get_by_id(article_id)
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
-    if article.get('user_id') != current_user.id:
+    if article.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You don't have permission")
 
-    # Get all usage records for article
-    usage_records = get_article_token_usage(article_id)
+    # Get all usage records via injected TokenUsageRepository
+    usage_records = token_usage_repo.get_by_article(article_id)
 
-    return [TokenUsageRecord(**record) for record in usage_records]
+    return [asdict(record) for record in usage_records]
 ```
 
 ### Token Usage Flow Diagram
@@ -441,10 +782,18 @@ sequenceDiagram
     Note over User,LLM: Dictionary Search with Token Tracking
     User->>WebUI: Click word
     WebUI->>API: POST /dictionary/search
-    API->>LLM: Step 1: Reduced prompt (lemma extraction)
-    LLM-->>API: {lemma, related_words, level} + stats
+
+    alt German language
+        API->>API: Step 1a: Stanza NLP (lemma + related_words, ~51ms)
+        API->>LLM: Step 1b: CEFR estimation (max_tokens=10)
+        LLM-->>API: {level} + stats
+    else Other languages
+        API->>LLM: Step 1: LLM reduced prompt (max_tokens=200)
+        LLM-->>API: {lemma, related_words, level} + stats
+    end
+
     API->>API: Step 2: Free Dictionary API (all entries)
-    API->>LLM: Step 3: Entry+sense selection (X.Y.Z)
+    API->>LLM: Step 3: Sense selection (X.Y.Z, max_tokens=10)
     LLM-->>API: Selected entry.sense.subsense + stats
     API->>MongoDB: save_token_usage() (accumulated stats)
     API-->>WebUI: Definition response
@@ -452,16 +801,19 @@ sequenceDiagram
     Note over User,MongoDB: Article Generation with Token Tracking
     User->>WebUI: Generate article
     WebUI->>API: POST /articles/generate
-    API->>Redis: Enqueue job
-    Redis-->>Worker: Dequeue job
-    Worker->>CrewAI: run_crew()
+    API->>API: article_submission_service.submit_generation()
+    API->>MongoDB: Article.create() + repo.save()
+    API->>Redis: job_queue.enqueue() (via JobQueuePort)
+    Redis-->>Worker: job_queue.dequeue() -> JobContext
+    Worker->>Worker: article_generation_service.generate_article()
+    Worker->>CrewAI: generator.generate() (via ArticleGeneratorPort)
     CrewAI->>LLM: Multiple API calls (agents execute)
     LLM-->>CrewAI: Responses (usage tracked internally)
-    CrewAI-->>Worker: CrewResult (with crew_instance)
-    Worker->>Worker: result.get_agent_usage()
-    Worker->>Worker: calculate_cost() per agent
-    Worker->>MongoDB: save_crew_token_usage() (per agent)
-    Worker->>MongoDB: Save article
+    CrewAI-->>Worker: GenerationResult (domain DTO)
+    Worker->>Worker: article.complete(content, source, edit_history)
+    Worker->>MongoDB: repo.save(article)
+    Worker->>Worker: track_agent_usage() + calculate_cost()
+    Worker->>MongoDB: token_usage_repo.save() (per agent)
 
     Note over User,MongoDB: Usage Summary Retrieval
     User->>WebUI: View usage page
@@ -482,25 +834,63 @@ sequenceDiagram
 
 ---
 
-## 🔧 Worker Token Tracking
+## 🔧 Worker Architecture
 
 ### Overview
 
-The Worker service tracks token usage during CrewAI article generation using **CrewAI's built-in token tracking**, which provides reliable per-agent usage metrics.
+The Worker service processes article generation jobs from the Redis queue via hexagonal architecture. All infrastructure access goes through ports: `JobQueuePort` (Redis), `ArticleGeneratorPort` (CrewAI), `ArticleRepository` (MongoDB).
 
-### Architecture
+### Article Generation Pipeline
 
 **Data Flow:**
 ```
-Worker → process_job() → run_crew() → CrewAI agents execute
-                                            ↓
-                                     CrewAI tracks usage internally
-                                            ↓
-                                     CrewResult.get_agent_usage()
-                                            ↓
-                                     calculate_cost() (LiteLLM pricing)
-                                            ↓
-                                     save_crew_token_usage() → MongoDB
+Worker main.py
+  └── run_worker_loop(repo, job_queue, generate)
+         └── job_queue.dequeue() -> JobContext
+         └── process_job(ctx, repo, job_queue, generate)
+                └── generate(article, user_id, inputs, job_id)
+                       = article_generation_service.generate_article(...)
+                            ├── 1. _get_vocabulary() via VocabularyRepository
+                            ├── 2. generator.set_job_context(job_id, article_id)
+                            ├── 3. generator.generate(inputs, vocab_list)
+                            │       └── CrewAIArticleGenerator
+                            │             ├── JobProgressListener (job_queue.update_status)
+                            │             └── run_crew(inputs) -> CrewResult -> GenerationResult
+                            ├── 4. article.complete(content, source, edit_history)
+                            ├── 5. repo.save(article) via ArticleRepository
+                            └── 6. track_agent_usage() via TokenUsageRepository
+```
+
+### Article Submission (API-side)
+
+The `article_submission_service.submit_generation()` function handles the API-side submission flow:
+
+```
+POST /articles/generate
+  └── article_submission_service.submit_generation(inputs, user_id, repo, job_queue, force)
+         ├── _check_duplicate(repo, job_queue, inputs, force, user_id)
+         │     └── raises DuplicateArticleError if duplicate found
+         ├── Article.create(inputs, user_id)  # factory with generated IDs
+         ├── repo.save(article)               # ArticleRepository
+         └── _enqueue_job(job_queue, repo, article)
+               ├── job_queue.update_status(job_id, 'queued', ...)
+               └── job_queue.enqueue(article)
+```
+
+### Worker Token Tracking
+
+The Worker tracks token usage during CrewAI article generation using **CrewAI's built-in token tracking**, which provides reliable per-agent usage metrics.
+
+**Token Tracking Data Flow:**
+```
+CrewAIArticleGenerator.generate()
+  └── run_crew(inputs) -> CrewResult
+         └── CrewResult.get_agent_usage()  # per-agent metrics
+                ↓
+article_generation_service.generate_article()
+  └── track_agent_usage(token_usage_repo, agent_usage, user_id, article_id, job_id, llm)
+         └── calculate_cost() per agent (LiteLLM pricing)
+         └── token_usage_repo.save() per agent -> MongoDB
 ```
 
 **Key Design Decision:**
@@ -509,79 +899,20 @@ CrewAI manages LLM calls internally through its agent.llm instances. Each agent 
 - No need to intercept LLM calls at the LiteLLM layer
 - Simpler implementation without callback lifecycle management
 
-### Token Usage Module
+### Token Usage Service Module (`services/token_usage_service.py`)
 
-**File**: `src/utils/token_usage.py`
+Cost calculation and token usage tracking. Previously in `utils/token_usage.py`, now consolidated in the service layer.
 
-**Purpose**: Token usage utilities for cost calculation and tracking. Provides functions to calculate LLM costs using LiteLLM's pricing database and save CrewAI agent token usage to MongoDB.
+- **`track_llm_usage(repo, stats, user_id, operation, ...)`**: Converts `LLMCallResult` to `TokenUsage` domain object and saves via `TokenUsageRepository`. Used by dictionary service for per-step tracking.
+- **`track_agent_usage(repo, agent_usage, user_id, article_id, job_id, llm)`**: Tracks CrewAI agent-level token usage. Iterates framework-agnostic agent dicts, calculates cost via `LLMPort.estimate_cost()`, saves each agent as separate record. Non-fatal -- failures are logged as warnings.
 
-**Functions**:
-
-#### calculate_cost()
-
-```python
-def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
-    """Calculate estimated cost using LiteLLM's pricing data.
-
-    Note: LiteLLM pricing may become outdated. Costs are estimates only.
-
-    Args:
-        model: Model name (e.g., 'gpt-4.1', 'gpt-4.1-mini')
-        prompt_tokens: Number of input tokens
-        completion_tokens: Number of output tokens
-
-    Returns:
-        Estimated cost in USD, or 0.0 if pricing unavailable
-    """
-```
-
-**Error Handling**:
-- Returns 0.0 if model not in LiteLLM pricing database
-- Gracefully handles KeyError, ValueError, AttributeError
-- Logs unexpected errors at debug level
-
-#### save_crew_token_usage()
-
-```python
-def save_crew_token_usage(
-    result: CrewResult,
-    user_id: str,
-    article_id: str | None,
-    job_id: str
-) -> None:
-    """Save token usage for each CrewAI agent to MongoDB.
-
-    Uses CrewAI's built-in token tracking (agent.llm.get_token_usage_summary())
-    to get per-agent, per-model usage metrics.
-    """
-```
-
-**Behavior**:
-- Iterates through all agents in CrewResult
-- Skips agents with zero token usage
-- Calculates cost using `calculate_cost()` with LiteLLM pricing
-- Saves each agent's usage as separate MongoDB record
-- Non-fatal: failures don't crash job processing
-
-**Data Saved per Agent**:
-```json
-{
-  "user_id": "user-uuid",
-  "operation": "article_generation",
-  "model": "gpt-4.1",
-  "prompt_tokens": 2000,
-  "completion_tokens": 1500,
-  "estimated_cost": 0.0525,
-  "article_id": "article-uuid",
-  "metadata": {"job_id": "job-uuid"}
-}
-```
+Cost estimation is handled by `LLMPort.estimate_cost()` (implemented in `LiteLLMAdapter` using LiteLLM's pricing database).
 
 ---
 
 ### CrewResult Class
 
-**File**: `src/crew/main.py`
+**File**: `src/adapter/crew/main.py`
 
 **Purpose**: Container for crew execution result with usage metrics extraction.
 
@@ -685,44 +1016,46 @@ The system now supports vocabulary-aware article generation, where CrewAI adjust
 - `level`: CEFR difficulty level (A1-C2) for vocabulary tracking and adaptive learning.
 - `examples`: Example sentences from Free Dictionary API showing word usage in context.
 
-#### VocabularyMetadata TypedDict (`src/utils/mongodb.py`)
+#### GrammaticalInfo Domain Model (`src/domain/model/vocabulary.py`)
 
-The `VocabularyMetadata` TypedDict provides type hints for optional grammatical metadata when saving vocabulary entries:
+The `GrammaticalInfo` dataclass holds optional grammatical metadata for vocabulary entries:
 
 ```python
-class VocabularyMetadata(TypedDict, total=False):
-    """Optional grammatical metadata for vocabulary entries."""
-    pos: str | None
-    gender: str | None
-    phonetics: str | None
-    conjugations: dict | None
-    level: str | None
-    examples: list[str] | None
+@dataclass
+class GrammaticalInfo:
+    pos: str | None = None
+    gender: str | None = None
+    phonetics: str | None = None
+    conjugations: dict | None = None
+    examples: list[str] | None = None
 ```
 
-**Usage**:
+Note: `level` (CEFR) is a top-level field on `Vocabulary` and `LookupResult`, not part of `GrammaticalInfo`.
+
+**Usage (via domain factory + repository)**:
 ```python
-from utils.mongodb import save_vocabulary, VocabularyMetadata
+from domain.model.vocabulary import Vocabulary, GrammaticalInfo
 
-metadata: VocabularyMetadata = {
-    'pos': 'noun',
-    'gender': 'der',
-    'phonetics': '/hʊnt/',
-    'conjugations': {'genitive': 'Hundes', 'plural': 'Hunde'},
-    'level': 'A1',
-    'examples': ['Der Hund bellt.', 'Ich habe einen Hund.']
-}
+grammar = GrammaticalInfo(
+    pos='noun',
+    gender='der',
+    phonetics='/hʊnt/',
+    conjugations={'genitive': 'Hundes', 'plural': 'Hunde'},
+    examples=['Der Hund bellt.', 'Ich habe einen Hund.'],
+)
 
-save_vocabulary(
+vocab = Vocabulary.create(
     article_id=article_id,
-    user_id=user_id,
     word='Hunde',
     lemma='Hund',
     definition='dog',
     sentence='Die Hunde spielen im Park.',
     language='German',
-    metadata=metadata
+    user_id=user_id,
+    level='A1',
+    grammar=grammar,
 )
+repo.save(vocab)
 ```
 
 #### VocabularyCount Model (Aggregated Response)
@@ -761,33 +1094,37 @@ All vocabulary endpoints require JWT authentication. Users can only:
 
 ### CEFR Vocabulary Level Filtering
 
-**Function**: `get_allowed_vocab_levels(target_level, max_above=1)`
+**Class**: `CEFRLevel`
 
-**File**: `src/utils/mongodb.py`
+**File**: `src/domain/model/cefr.py`
 
-**Purpose**: Filters vocabulary words to only include those appropriate for the target CEFR level when generating articles.
+**Purpose**: Domain rules for CEFR proficiency levels. Filters vocabulary words to only include those appropriate for the target CEFR level when generating articles.
 
-**Parameters**:
-- `target_level`: Target CEFR level (A1, A2, B1, B2, C1, C2)
-- `max_above`: Maximum levels above target to allow (default: 1)
+**Method**: `CEFRLevel.range(target, max_above=1)`
+- `target`: Center CEFR level (A1-C2). None/empty returns all.
+- `max_above`: Levels above target to include (default: 1).
 
-**Returns**: List of allowed CEFR levels
+**Returns**: List of allowed CEFR levels from A1 up to (target + max_above).
 
 **Examples**:
 ```python
-get_allowed_vocab_levels('A2', max_above=1)  # Returns: ['A1', 'A2', 'B1']
-get_allowed_vocab_levels('B1', max_above=1)  # Returns: ['A1', 'A2', 'B1', 'B2']
-get_allowed_vocab_levels('C2', max_above=1)  # Returns: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+from domain.model.cefr import CEFRLevel
+
+CEFRLevel.range('A2', max_above=1)  # Returns: ['A1', 'A2', 'B1']
+CEFRLevel.range('B1', max_above=1)  # Returns: ['A1', 'A2', 'B1', 'B2']
+CEFRLevel.range('C2', max_above=1)  # Returns: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+CEFRLevel.range(None)               # Returns: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 ```
 
-**Usage in Worker**:
+**Usage in Worker** (`article_generation_service._get_vocabulary()`):
 When generating articles, the worker fetches user vocabulary filtered by target level:
 ```python
-vocab = get_user_vocabulary_for_generation(
-    user_id=ctx.user_id,
-    language=ctx.inputs['language'],
-    target_level=ctx.inputs.get('level'),  # Filters vocab by CEFR level
-    limit=50
+levels = CEFRLevel.range(level, max_above=1)
+vocab_list = vocab.find_lemmas(
+    user_id=user_id,
+    language=language,
+    levels=levels,
+    limit=50,
 )
 ```
 
@@ -804,7 +1141,7 @@ vocab = get_user_vocabulary_for_generation(
 
 The CrewAI pipeline uses four specialized agents for article generation. Each agent is configured with a specific role, goal, and LLM model.
 
-**Agents** (`src/crew/config/agents.yaml`):
+**Agents** (`src/adapter/crew/config/agents.yaml`):
 
 | Agent | Role | Tools | LLM Model |
 |-------|------|-------|-----------|
@@ -833,7 +1170,7 @@ graph LR
     style D fill:#e8f5e9
 ```
 
-**Tasks** (`src/crew/config/tasks.yaml`):
+**Tasks** (`src/adapter/crew/config/tasks.yaml`):
 
 #### 1. find_news_articles
 - **Agent**: `article_finder`
@@ -875,7 +1212,7 @@ graph LR
 
 ### Pydantic Output Models
 
-**File**: `src/crew/models.py`
+**File**: `src/adapter/crew/models.py`
 
 #### ReviewedArticle
 Final output from the review task:
@@ -903,7 +1240,7 @@ class ReplacedSentence(BaseModel):
 
 **File**: `src/worker/processor.py`
 
-The worker processes the CrewAI result and extracts the reviewed article:
+The worker processes the CrewAI result and extracts the reviewed article. It uses the injected `ArticleRepository` (via `ctx.repo`) instead of calling `utils.mongodb` directly:
 
 ```python
 # Log replaced sentences from review
@@ -911,13 +1248,15 @@ reviewed = result.pydantic
 if isinstance(reviewed, ReviewedArticle) and reviewed.replaced_sentences:
     for change in reviewed.replaced_sentences:
         logger.info(
-            f"Sentence replaced: '{change.original}' → '{change.replaced}' ({change.rationale})",
+            f"Sentence replaced: '{change.original}' -> '{change.replaced}' ({change.rationale})",
             extra=ctx.log_extra
         )
 
-# Save to MongoDB
-content = reviewed.article_content if isinstance(reviewed, ReviewedArticle) else result.raw
-save_article(ctx.article_id, content, ctx.started_at)
+# Save via ArticleGenerationService (domain model pattern)
+article.complete(content=result.content, source=result.source, edit_history=result.edit_history)
+if not repo.save(article):
+    logger.error("Failed to save article", extra={"articleId": article.id})
+    return False
 ```
 
 **Benefits of the Review Step**:
@@ -933,22 +1272,65 @@ save_article(ctx.article_id, content, ctx.started_at)
 ```
 opad/
 ├── src/
+│   ├── domain/           # Domain layer (hexagonal architecture)
+│   │   └── model/
+│   │       ├── article.py       # Article, ArticleInputs, ArticleStatus
+│   │       ├── user.py          # User
+│   │       ├── vocabulary.py    # Vocabulary, GrammaticalInfo, VocabularyCount, LookupResult, SenseResult
+│   │       ├── token_usage.py   # LLMCallResult (Value Object), TokenUsage (Entity)
+│   │       └── errors.py        # DomainError, NotFoundError, PermissionDeniedError, DuplicateError, ValidationError
+│   │
+│   ├── port/             # Port layer (hexagonal architecture)
+│   │   ├── article_repository.py       # ArticleRepository Protocol
+│   │   ├── user_repository.py          # UserRepository Protocol
+│   │   ├── vocabulary_repository.py    # VocabularyRepository Protocol (CRUD + aggregate queries)
+│   │   ├── token_usage_repository.py   # TokenUsageRepository Protocol
+│   │   ├── dictionary.py               # DictionaryPort Protocol (fetch + sense parsing + grammar extraction)
+│   │   ├── llm.py                      # LLMPort Protocol (LLM calls)
+│   │   └── nlp.py                      # NLPPort Protocol (NLP extraction)
+│   │
+│   ├── adapter/          # Adapter layer (hexagonal architecture)
+│   │   ├── mongodb/
+│   │   │   ├── connection.py              # MongoDB client (get_mongodb_client)
+│   │   │   ├── article_repository.py      # MongoArticleRepository
+│   │   │   ├── user_repository.py         # MongoUserRepository
+│   │   │   ├── vocabulary_repository.py   # MongoVocabularyRepository (satisfies VocabularyRepository)
+│   │   │   ├── token_usage_repository.py  # MongoTokenUsageRepository
+│   │   │   ├── indexes.py                 # Shared index management (ensure_all_indexes)
+│   │   │   └── stats.py                   # Database statistics (get_database_stats)
+│   │   ├── external/
+│   │   │   ├── free_dictionary.py         # FreeDictionaryAdapter (DictionaryPort)
+│   │   │   └── litellm.py                # LiteLLMAdapter (LLMPort)
+│   │   ├── nlp/
+│   │   │   └── stanza.py                 # StanzaAdapter (NLPPort)
+│   │   └── fake/
+│   │       ├── article_repository.py      # FakeArticleRepository (testing)
+│   │       ├── user_repository.py         # FakeUserRepository (testing)
+│   │       ├── vocabulary_repository.py   # FakeVocabularyRepository (testing, satisfies both ports)
+│   │       ├── token_usage_repository.py  # FakeTokenUsageRepository (testing)
+│   │       ├── dictionary.py              # FakeDictionaryAdapter (testing)
+│   │       ├── llm.py                     # FakeLLMAdapter (testing)
+│   │       └── nlp.py                     # FakeNLPAdapter (testing)
+│   │
 │   ├── api/              # API 서비스 (FastAPI)
 │   │   ├── __init__.py
-│   │   ├── main.py       # FastAPI 앱 진입점
+│   │   ├── main.py       # FastAPI 앱 진입점 (lifespan pattern)
+│   │   ├── dependencies.py  # Composition root (all repository + port factories)
 │   │   ├── models.py     # Pydantic 모델 (Article, Job)
 │   │   ├── routes/       # API 엔드포인트
 │   │   │   ├── articles.py
 │   │   │   ├── jobs.py
 │   │   │   ├── health.py
-│   │   │   ├── endpoints.py
 │   │   │   ├── stats.py
-│   │   │   └── dictionary.py  # Dictionary API (word definition)
+│   │   │   ├── auth.py        # Authentication (register, login, me)
+│   │   │   ├── usage.py       # Token usage endpoints
+│   │   │   ├── dictionary.py  # Dictionary search (POST /dictionary/search)
+│   │   │   └── vocabulary.py  # Vocabulary CRUD (POST/GET/DELETE /dictionary/vocabularies)
 │   │   └── job_queue.py  # Redis 큐 관리
 │   │
 │   ├── worker/           # Worker 서비스 (Python)
 │   │   ├── __init__.py
-│   │   ├── main.py       # Worker 진입점
+│   │   ├── main.py       # Worker 진입점 (composition root)
 │   │   ├── processor.py  # Job 처리 로직
 │   │   ├── context.py    # JobContext helper
 │   │   └── tests/        # Worker tests
@@ -990,12 +1372,19 @@ opad/
 │   │       ├── agents.yaml  # 에이전트 정의 (article_finder, article_picker, article_rewriter, article_reviewer)
 │   │       └── tasks.yaml   # 태스크 정의 (find_news_articles, pick_best_article, adapt_news_article, review_article_quality)
 │   │
+│   ├── services/         # 서비스 계층 (business logic)
+│   │   ├── article_submission_service.py # Article submission (API-side: duplicate check, create, enqueue)
+│   │   ├── article_generation_service.py # Article generation (Worker-side: vocab filtering, generation, save)
+│   │   ├── dictionary_service.py  # Dictionary lookup orchestrator (Step 2 + full LLM fallback)
+│   │   ├── lemma_extraction.py    # Step 1: Lemma extraction (NLP for German, LLM for others)
+│   │   ├── sense_selection.py     # Step 3: Sense selection from dictionary entries via LLM
+│   │   ├── auth_service.py        # Authentication business logic
+│   │   └── token_usage_service.py # Token usage tracking (track_llm_usage, track_agent_usage)
+│   │
 │   └── utils/            # 공통 유틸리티 (공유)
-│       ├── mongodb.py    # MongoDB 연결 및 작업
 │       ├── logging.py    # Structured logging 설정
-│       ├── llm.py        # OpenAI API 공통 함수
-│       ├── prompts.py    # LLM 프롬프트 템플릿
-│       └── token_usage.py # Token usage calculation and tracking
+│       ├── language_metadata.py # Pure data constants (LANGUAGE_CODE_MAP, GENDER_MAP, REFLEXIVE_PREFIXES, etc.)
+│       └── cloudflare.py # Cloudflare 관련 유틸리티
 │
 └── Dockerfile.*          # 서비스별 Dockerfile (이슈 #9)
 ```
@@ -1003,96 +1392,117 @@ opad/
 ### 서비스 구분
 | 폴더 | 역할 | 런타임 | 포트 |
 |------|------|--------|------|
+| `src/domain/` | Domain models (Article, JobContext, User, Vocabulary, TokenUsage, Errors) | - | - |
+| `src/port/` | Port definitions (ArticleRepository, UserRepository, VocabularyRepository, TokenUsageRepository, DictionaryPort, LLMPort, NLPPort, JobQueuePort, ArticleGeneratorPort) | - | - |
+| `src/adapter/` | Infrastructure adapters (MongoDB, External APIs, Queue, Crew, Fake) | - | - |
+| `src/services/` | Business logic (article_submission_service, article_generation_service, dictionary_service) | - | - |
 | `src/api/` | CRUD + Job enqueue + Dictionary API | Python (FastAPI) | 8001 (default) |
-| `src/worker/` | CrewAI 실행 + Job/Token Tracking | Python | - |
+| `src/worker/` | Job dequeue + Article generation orchestration | Python | - |
 | `src/web/` | UI | Node.js (Next.js) | 3000 |
-| `src/crew/` | CrewAI 로직 (공유) | - | - |
 | `src/utils/` | 공통 유틸 (공유) | - | - |
 
 ### Worker 모듈 구성
 | 파일 | 역할 | 의존성 |
 |------|------|--------|
-| `worker/main.py` | Worker 진입점 (infinite loop) | `processor.py` |
-| `worker/processor.py` | Job 처리 로직 (process_job) | `crew/main.py`, `utils/token_usage.py` |
-| `worker/context.py` | JobContext helper (job data validation) | `api/job_queue.py` |
-| `crew/progress_listener.py` | JobProgressListener (CrewAI event listener) | `api/job_queue.py` |
+| `worker/main.py` | Worker 진입점 + composition root (adapters + partial generate) | `processor.py`, `adapter/mongodb/`, `adapter/queue/`, `adapter/crew/`, `services/article_generation_service` |
+| `worker/processor.py` | Job 처리 로직 (process_job, run_worker_loop) | `port/article_repository.py`, `port/job_queue.py` |
 
-### CrewAI 모듈 구성
+### CrewAI Adapter 모듈 구성
 | 파일 | 역할 | 출력 모델 |
 |------|------|----------|
-| `crew/crew.py` | ReadingMaterialCreator 클래스 (agents + tasks 정의) | - |
-| `crew/main.py` | `run()` 함수 - CrewAI 실행 엔트리포인트 | `CrewResult` |
-| `crew/models.py` | Pydantic 출력 모델 정의 | `NewsArticleList`, `SelectedArticle`, `ReviewedArticle` |
-| `crew/guardrails.py` | JSON 출력 복구 guardrail | - |
-| `crew/config/agents.yaml` | 에이전트 설정 (role, goal, backstory, llm) | - |
-| `crew/config/tasks.yaml` | 태스크 설정 (description, expected_output, context) | - |
+| `adapter/crew/crew.py` | ReadingMaterialCreator 클래스 (agents + tasks 정의) | - |
+| `adapter/crew/main.py` | `run()` 함수 - CrewAI 실행 엔트리포인트 | `CrewResult` |
+| `adapter/crew/article_generator.py` | `CrewAIArticleGenerator` - ArticleGeneratorPort 구현 | `GenerationResult` |
+| `adapter/crew/models.py` | Pydantic 출력 모델 + domain 변환 메서드 | `NewsArticle`, `SelectedArticle`, `ReviewedArticle` |
+| `adapter/crew/progress_listener.py` | `JobProgressListener` (CrewAI event listener, via JobQueuePort) | - |
+| `adapter/crew/guardrails.py` | JSON 출력 복구 guardrail | - |
+| `adapter/crew/config/agents.yaml` | 에이전트 설정 (role, goal, backstory, llm) | - |
+| `adapter/crew/config/tasks.yaml` | 태스크 설정 (description, expected_output, context) | - |
 
 ---
 
 ## 🔑 공통 유틸리티 모듈
 
-### LLM 유틸리티 (`utils/llm.py`)
-Provider-agnostic LLM API 호출 및 토큰 추적을 위한 공통 함수들 (LiteLLM 기반):
+### LLM 호출 (`adapter/external/litellm.py` + `port/llm.py`)
 
-- **`call_llm_with_tracking()`**: LLM API 호출 + 토큰 사용량 추적 (범용 함수)
-  - 반환값: `(content: str, stats: TokenUsageStats)`
-  - OpenAI, Anthropic, Google 등 다양한 프로바이더 지원
-  - 자동 비용 계산 (LiteLLM 내장 가격 데이터베이스 사용)
-- **`TokenUsageStats`**: 토큰 사용량 통계 dataclass
-  - 필드: `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `estimated_cost`, `provider`
-- **`parse_json_from_content()`**: LLM 응답에서 JSON 파싱 (다양한 형식 지원)
-  - 일반 JSON, 마크다운 코드 블록 (```json), 텍스트 내 JSON 추출 지원
-- **`get_llm_error_response()`**: LLM 관련 예외를 HTTP 상태 코드로 변환
+LLM 호출은 `LLMPort` 포트와 `LiteLLMAdapter` 어댑터로 추상화. 이전의 `utils/llm.py`는 삭제되었으며, 모든 LLM 관련 로직이 헥사고날 아키텍처로 이동.
 
-**사용 예시:**
-```python
-from utils.llm import call_llm_with_tracking, parse_json_from_content
-
-# LLM 호출 + 토큰 추적
-content, stats = await call_llm_with_tracking(
-    messages=[{"role": "user", "content": "Hello"}],
-    model="gpt-4.1-mini",
-    max_tokens=200
-)
-
-# 토큰 사용량 로깅
-logger.info("Token usage", extra=stats.to_dict())
-
-# JSON 파싱
-result = parse_json_from_content(content)
-```
+- **`LLMPort.call()`**: Provider-agnostic LLM API 호출. 반환값: `(content: str, stats: LLMCallResult)`
+- **`LLMPort.estimate_cost()`**: 모델별 비용 추정 (LiteLLM 가격 데이터 사용)
+- **`LLMCallResult`** (`domain/model/token_usage.py`): Frozen value object. 필드: `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `estimated_cost`, `provider`
+- **Port-level exceptions** (`port/llm.py`): `LLMTimeoutError`, `LLMRateLimitError`, `LLMAuthError` -- LiteLLM 예외를 포트 레벨로 변환
 
 **지원 프로바이더** (LiteLLM):
-- OpenAI: `"gpt-4.1-mini"`, `"gpt-4.1"`
+- OpenAI: `"openai/gpt-4.1-mini"`, `"openai/gpt-4.1"`
 - Anthropic: `"anthropic/claude-4.5-sonnet"`
 - Google: `"gemini/gemini-2.0-flash"`
 
-### 프롬프트 템플릿 (`utils/prompts.py`)
-재사용 가능한 LLM 프롬프트 빌더 함수들:
+### 토큰 사용량 추적 (`services/token_usage_service.py`)
 
-- **`build_reduced_word_definition_prompt()`**: 하이브리드 조회용 축소 프롬프트 생성 (lemma, related_words, level만 추출)
-  - 내부적으로 언어별 함수 사용: `build_reduced_prompt_de()` (독일어), `build_reduced_prompt_en()` (영어)
-  - 기타 언어는 범용 프롬프트 사용
-- **`build_word_definition_prompt()`**: Full LLM 폴백용 프롬프트 생성 (모든 필드 추출)
+LLM 호출 후 토큰 사용량을 `TokenUsage` 도메인 객체로 변환하여 저장하는 서비스 모듈.
+
+- **`track_llm_usage()`**: `LLMCallResult` -> `TokenUsage` 도메인 객체 생성 -> `TokenUsageRepository.save()` 호출
+- **`track_agent_usage()`**: CrewAI 에이전트별 사용량 추적. `LLMPort.estimate_cost()`로 비용 계산 후 에이전트별 `track_llm_usage()` 호출
+
+### Dictionary Lookup Pipeline Modules
+
+The dictionary lookup uses a 3-step pipeline, split across dedicated modules in the services layer:
+
+#### Step 1: Lemma Extraction (`services/lemma_extraction.py`)
+Extracts lemma + related_words + CEFR level from a word in context.
+
+- **`extract_lemma()`**: Main entry point. German uses `NLPPort` (Stanza, ~51ms); other languages use LLM reduced prompt (~800ms).
+- **`resolve_lemma()`**: Applies German grammar rules to determine lemma and related_words from NLP output.
+- **NLP path (German)**: `NLPPort.extract()` for dependency parsing, then a tiny LLM call for CEFR level estimation (max_tokens=10).
+- **LLM path (other languages)**: Language-specific reduced prompts (`_build_reduced_prompt_en`, `_build_reduced_prompt_de` fallback, `_build_reduced_prompt_generic`).
 
 **사용 예시:**
 ```python
-from utils.prompts import build_reduced_word_definition_prompt, build_word_definition_prompt
-
-# Hybrid approach: reduced prompt (lemma + level only)
-reduced_prompt = build_reduced_word_definition_prompt(
-    language="German",
-    sentence="Diese große Spanne hängt von mehreren Faktoren ab.",
-    word="hängt"
-)
-
-# Full LLM fallback: all fields
-full_prompt = build_word_definition_prompt(
-    language="German",
-    sentence="Diese große Spanne hängt von mehreren Faktoren ab.",
-    word="hängt"
-)
+result, stats = await extract_lemma(word="hängt", sentence="...", language="German")
+# result = {"lemma": "abhängen", "related_words": ["hängt", "ab"], "level": "B1"}
 ```
+
+#### Step 2: Dictionary Fetch (`services/dictionary_service.py` via `DictionaryPort`)
+Fetches dictionary entries using the lemma from Step 1.
+
+- `dictionary_service._perform_hybrid_lookup()` 에서 `DictionaryPort.fetch(word=lemma, language=language)` 호출
+- `FreeDictionaryAdapter.fetch()` 가 Free Dictionary API에 HTTP 요청 (reflexive pronoun stripping, 3회 retry with exponential backoff)
+- 반환값: `list[dict] | None` -- 원본 API 엔트리 또는 `None` (404/timeout)
+- entries가 `None`이면 hybrid pipeline 중단, Full LLM Fallback으로 전환
+
+#### Step 3: Sense Selection (`services/sense_selection.py`)
+Selects the best entry/sense/subsense from Free Dictionary API entries using LLM.
+
+- **`select_best_sense()`**: Given dictionary entries, selects the best sense matching the word usage in context. Uses `DictionaryPort.build_sense_listing()` to format entries and `DictionaryPort.get_sense()` to extract the selected sense.
+- **Trivial skip**: If `build_sense_listing()` returns `None` (single entry, single sense, no subsenses), skips LLM call entirely.
+- **X.Y.Z format**: LLM responds with entry.sense.subsense index (max_tokens=10).
+- **`SenseResult`**: Dataclass with `definition` and `examples` fields.
+
+**사용 예시:**
+```python
+sense, label, stats = await select_best_sense(
+    sentence="I saw the dog in the park.", word="saw",
+    entries=api_entries, dictionary=dictionary_port, llm=llm_port,
+)
+# sense.definition = "past tense of see"
+```
+
+#### Full LLM Fallback (`services/dictionary_service.py`)
+`_build_full_prompt()` 함수가 hybrid pipeline 실패 시 사용하는 full LLM fallback prompt를 생성 (max_tokens=2000). 이전의 `utils/prompts.py`는 삭제되었으며, fallback prompt가 `dictionary_service.py` 내부로 이동.
+
+- 모든 필드 생성: lemma, definition, related_words, pos, gender, conjugations, level
+- German 전용 추가 지시사항 포함 (trennbare Verben, reflexive Verben, Präpositionalverben)
+- Reduced prompts (lemma extraction)는 `services/lemma_extraction.py`에 위치
+- Sense selection prompts는 `services/sense_selection.py`에 위치
+
+#### Language Metadata (`utils/language_metadata.py`)
+Pure data module containing language-specific constants used by `adapter/external/free_dictionary.py`. No logic -- only data definitions.
+
+- **`LANGUAGE_CODE_MAP`** + **`get_language_code()`**: Full language name -> ISO 639-1 code 변환 (e.g., `"German"` -> `"de"`)
+- **`GENDER_MAP`**: Maps gender keywords to grammatical articles per language (e.g., `"masculine"` -> `"der"` for German)
+- **`REFLEXIVE_PREFIXES`**: Reflexive pronoun prefixes to strip before API lookup (e.g., `"sich "` for German)
+- **`REFLEXIVE_SUFFIXES`**: Reflexive verb suffix patterns (e.g., Spanish `"arse"`, `"erse"`, `"irse"`)
+- **`PHONETICS_SUPPORTED`**: Language codes supporting IPA phonetics (currently only `"en"`)
 
 ---
 
@@ -1100,31 +1510,41 @@ full_prompt = build_word_definition_prompt(
 
 ### Hybrid Dictionary Lookup Architecture
 
-The dictionary search uses a hybrid approach combining LLM capabilities with the Free Dictionary API for optimal results.
+The dictionary search uses a 3-step pipeline combining NLP (German via `NLPPort`), LLM capabilities (via `LLMPort`), and the Free Dictionary API (via `DictionaryPort`). The pipeline is split across dedicated modules in the services layer: `services/lemma_extraction.py` (Step 1), `DictionaryPort.fetch()` (Step 2), `services/sense_selection.py` (Step 3), and `services/dictionary_service.py` (orchestrator). All external dependencies are injected via ports.
 
 #### Overview
 
 ```mermaid
 graph TB
-    subgraph "Hybrid Dictionary Lookup"
-        Request[POST /dictionary/search] --> LLM[Step 1: LLM Reduced Prompt<br/>gpt-4.1-mini, max_tokens=200]
+    subgraph "Hybrid Dictionary Lookup Pipeline"
+        Request[POST /dictionary/search] --> LangCheck{German?}
 
-        LLM --> |lemma| API[Step 2: Free Dictionary API]
-        API --> |all entries| EntrySelect[Step 3: LLM Entry+Sense Selection<br/>X.Y.Z format, gpt-4.1-mini, max_tokens=10]
-        EntrySelect --> Metadata[Step 3b: Extract Metadata<br/>from selected entry]
+        LangCheck -->|Yes| Stanza[Step 1a: Stanza NLP<br/>lemma + related_words<br/>~51ms local]
+        Stanza --> CEFR[Step 1b: LLM CEFR<br/>gpt-4.1-mini, max_tokens=10]
+        CEFR --> DictAPI[Step 2: Free Dictionary API]
+
+        LangCheck -->|No| LLM[Step 1: LLM Reduced Prompt<br/>gpt-4.1-mini, max_tokens=200]
+        LLM --> DictAPI
+
+        DictAPI --> |all entries| SenseSelect[Step 3: LLM Sense Selection<br/>X.Y.Z format, max_tokens=10]
+        SenseSelect --> Metadata[Step 3b: Extract Metadata<br/>from selected entry]
         Metadata --> Merge[Step 4: Merge Results]
 
         Merge --> Response[SearchResponse]
 
+        Stanza -.-> |Stanza failure| LLM
         LLM -.-> |LLM failure| Fallback[Full LLM Fallback<br/>gpt-4.1-mini, max_tokens=2000]
-        API -.-> |404 / timeout / no entries| Fallback
+        DictAPI -.-> |404 / timeout / no entries| Fallback
         Fallback --> Response
     end
 
     style Request fill:#2196F3
+    style LangCheck fill:#e3f2fd
+    style Stanza fill:#9c27b0
+    style CEFR fill:#10a37f
     style LLM fill:#10a37f
-    style API fill:#ff9500
-    style EntrySelect fill:#10a37f
+    style DictAPI fill:#ff9500
+    style SenseSelect fill:#10a37f
     style Metadata fill:#9c27b0
     style Merge fill:#9c27b0
     style Response fill:#13aa52
@@ -1136,46 +1556,74 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant Client
-    participant API as FastAPI<br/>(/dictionary/search)
+    participant Service as dictionary_service<br/>(module functions)
+    participant Stanza as Stanza NLP<br/>(German only)
     participant LLM as LLM<br/>(gpt-4.1-mini)
     participant FreeDict as Free Dictionary API
 
-    Client->>API: POST {word, sentence, language}
+    Client->>Service: POST {word, sentence, language}
 
-    Note over API,LLM: Step 1: Get lemma from LLM
-    API->>LLM: Reduced prompt (max_tokens=200)
-    LLM-->>API: {lemma, related_words, level}
+    alt German language
+        Note over Service,Stanza: Step 1a: Stanza lemma extraction (~51ms)
+        Service->>Stanza: pipeline(sentence)
+        Stanza-->>Service: {lemma, related_words}
+        Note over Service,LLM: Step 1b: CEFR estimation
+        Service->>LLM: CEFR prompt (max_tokens=10)
+        LLM-->>Service: {level}
+    else Other languages
+        Note over Service,LLM: Step 1: LLM reduced prompt
+        Service->>LLM: Reduced prompt (max_tokens=200)
+        LLM-->>Service: {lemma, related_words, level}
+    end
 
-    Note over API,FreeDict: Step 2: Lookup using lemma
-    API->>FreeDict: GET /api/v1/entries/{lang}/{lemma}
-    FreeDict-->>API: {all_entries}
+    Note over Service,FreeDict: Step 2: Lookup using lemma
+    Service->>FreeDict: GET /api/v1/entries/{lang}/{lemma}
+    FreeDict-->>Service: {all_entries}
 
     alt API returns entries
         alt multiple entries/senses/subsenses
-            Note over API,LLM: Step 3: Select best entry+sense+subsense via LLM
-            API->>LLM: X.Y.Z selection prompt (max_tokens=10)
-            LLM-->>API: Selected X.Y.Z (entry.sense.subsense)
+            Note over Service,LLM: Step 3: Select best sense via LLM
+            Service->>LLM: X.Y.Z selection prompt (max_tokens=10)
+            LLM-->>Service: Selected X.Y.Z (entry.sense.subsense)
         end
-        Note over API: Step 3b: Extract metadata from selected entry
-        Note over API: Step 4: Merge LLM + API results
-        API-->>Client: SearchResponse (source: hybrid)
+        Note over Service: Step 3b: Extract metadata from selected entry
+        Note over Service: Step 4: Merge results
+        Service-->>Client: SearchResponse (source: hybrid)
     else API failure (404, timeout, no entries)
-        Note over API,LLM: Fallback: Full LLM prompt
-        API->>LLM: Full prompt (max_tokens=2000)
-        LLM-->>API: {lemma, definition, pos, gender, conjugations, level}
-        API-->>Client: SearchResponse (source: llm)
+        Note over Service,LLM: Fallback: Full LLM prompt
+        Service->>LLM: Full prompt (max_tokens=2000)
+        LLM-->>Service: {lemma, definition, pos, gender, conjugations, level}
+        Service-->>Client: SearchResponse (source: llm)
     end
 ```
+
+#### Pipeline Modules
+
+| Module | File | Responsibility | Output |
+|--------|------|----------------|--------|
+| **Lemma Extraction** | `services/lemma_extraction.py` | Step 1: Extract lemma + related_words + CEFR level. German uses `NLPPort` (Stanza, ~51ms), others use LLM reduced prompt (~800ms). Accepts `LLMPort` and `NLPPort`. | `LemmaResult{"lemma", "related_words", "level"}` + `LLMCallResult` |
+| **Dictionary Fetch** | `services/dictionary_service.py` | Step 2: Fetch dictionary entries via `DictionaryPort.fetch(lemma, language)`. Returns `None` on 404/timeout, triggering full LLM fallback. | `list[dict] | None` |
+| **Sense Selection** | `services/sense_selection.py` | Step 3: Select best entry/sense/subsense from dictionary entries via LLM (X.Y.Z format, max_tokens=10). Uses `DictionaryPort.build_sense_listing()` and `DictionaryPort.get_sense()`. | `(SenseResult, label, LLMCallResult)` |
+| **Dictionary Port** | `port/dictionary.py` | Protocol: `fetch()`, `build_sense_listing()`, `get_sense()`, `extract_grammar()` -- encapsulates entry-structure knowledge | Raw entry dicts / `SenseResult` / `GrammaticalInfo` |
+| **LLM Port** | `port/llm.py` | Protocol defining `call(messages, model, timeout) -> (str, LLMCallResult)` for LLM API calls. Also defines port-level exceptions. | `(content, LLMCallResult)` |
+| **NLP Port** | `port/nlp.py` | Protocol defining `extract(word, sentence) -> dict | None` for NLP analysis | Dict with `text`, `lemma`, `pos`, `xpos`, `gender`, `prefix`, `reflexive`, `parts` |
+| **Free Dictionary Adapter** | `adapter/external/free_dictionary.py` | Implements all `DictionaryPort` methods; HTTP calls to Free Dictionary API with retry logic. `extract_grammar()` extracts POS, phonetics, forms, gender. | `list[dict]`, `SenseResult`, `GrammaticalInfo` |
+| **LiteLLM Adapter** | `adapter/external/litellm.py` | Implements `LLMPort`; provider-agnostic LLM calls via LiteLLM with exception mapping | `(str, LLMCallResult)` |
+| **Stanza Adapter** | `adapter/nlp/stanza.py` | Implements `NLPPort`; German dependency parsing via Stanza | Dict with linguistic primitives |
+| **Language Metadata** | `utils/language_metadata.py` | Pure data constants: `LANGUAGE_CODE_MAP`, `GENDER_MAP`, `REFLEXIVE_PREFIXES`, `REFLEXIVE_SUFFIXES`, `PHONETICS_SUPPORTED` | Data only (no logic) |
+| **Dictionary Service** | `services/dictionary_service.py` | Orchestrator (module functions): `lookup()` wires Step 1 -> Step 2 -> Step 3, handles fallback. Full LLM fallback prompt (`_build_full_prompt()`) also lives here. | `LookupResult` |
 
 #### Components
 
 | Component | Responsibility | Output Fields |
 |-----------|----------------|---------------|
-| **LLM (Reduced Prompt)** | Context-aware lemma extraction, CEFR level classification (max_tokens=200) | `lemma`, `related_words`, `level` |
-| **Free Dictionary API** | Returns all dictionary entries with senses and subsenses | `all_entries` (containing `pos`, `senses`, `phonetics`, `forms` per entry) |
-| **LLM (Entry+Sense Selection)** | Selects best entry+sense+subsense using X.Y.Z format based on sentence context (max_tokens=10) | `definition`, `examples` (from selected sense/subsense) |
-| **Metadata Extraction** | Extracts POS, phonetics, forms, gender from the selected entry (not always entries[0]) | `pos`, `phonetics`, `forms`, `gender` |
-| **Merge Function** | Combines results, converts `forms` to `conjugations` format, accumulates token stats | All fields |
+| **NLP (German via NLPPort)** | Local dependency parsing for lemma + related_words (~51ms, ~349MB model) | `lemma`, `related_words` |
+| **LLM (CEFR Estimation)** | Tiny LLM call for CEFR level on NLP path (max_tokens=10) | `level` |
+| **LLM (Reduced Prompt)** | Context-aware lemma extraction for non-German languages (max_tokens=200) | `lemma`, `related_words`, `level` |
+| **Free Dictionary API (via DictionaryPort)** | Returns all dictionary entries with senses and subsenses | `all_entries` (containing `pos`, `senses`, `phonetics`, `forms` per entry) |
+| **LLM (Sense Selection)** | Selects best entry+sense+subsense using X.Y.Z format based on sentence context (max_tokens=10) | `definition`, `examples` (from selected sense/subsense) |
+| **Grammar Extraction (via DictionaryPort)** | Extracts POS, phonetics, forms, gender from the selected entry (not always entries[0]). Logic in `adapter/external/free_dictionary.py`. Data constants in `language_metadata.py`. | `GrammaticalInfo` (pos, phonetics, conjugations, gender) |
+| **Result Building** | Combines lemma data, grammar, and sense into `LookupResult` domain object | All fields |
 | **Full LLM Fallback** | Complete definition when hybrid fails (max_tokens=2000) | All fields except `phonetics` and `examples` |
 
 #### Supported Languages
@@ -1200,25 +1648,36 @@ The Free Dictionary API supports the following languages:
 
 The fallback to full LLM (gpt-4.1-mini) occurs in these scenarios:
 
-1. **LLM reduced prompt failure**: Failed to parse lemma from reduced prompt
-2. **Language not supported**: Language not in `LANGUAGE_CODE_MAP`
-3. **Word not found**: Free Dictionary API returns 404
-4. **API timeout**: Request exceeds 5-second timeout
-5. **API error**: HTTP error or network failure
-6. **Missing entries**: API response lacks entries (entry/sense/subsense selection requires entries)
+1. **Stanza failure (German)**: Stanza pipeline error or token not found -- falls through to LLM reduced prompt
+2. **LLM reduced prompt failure**: Failed to parse lemma from reduced prompt
+3. **Language not supported**: Language not in `LANGUAGE_CODE_MAP`
+4. **Word not found**: Free Dictionary API returns 404
+5. **API timeout**: Request exceeds 5-second timeout
+6. **API error**: HTTP error or network failure
+7. **Missing entries**: API response lacks entries (sense selection requires entries)
 
-**Fallback Flow**:
+**Fallback Chain**:
 ```
-Hybrid Lookup Failed (LLM or API)
-    |
-    v
-Full LLM Prompt (build_word_definition_prompt, gpt-4.1-mini)
-    |
-    v
-LLM returns all fields: lemma, definition, pos, gender, conjugations, level
-    |
-    v
-SearchResponse (without phonetics and examples)
+German path:
+  Stanza NLP (lemma + related_words)
+      |
+      v (failure)
+  LLM Reduced Prompt (fallback within Step 1)
+      |
+      v (failure)
+  Full LLM Fallback (all fields)
+
+Non-German path:
+  LLM Reduced Prompt (lemma + related_words + level)
+      |
+      v (failure)
+  Full LLM Fallback (all fields)
+
+Both paths after Step 1:
+  Free Dictionary API (Step 2)
+      |
+      v (404 / timeout / no entries)
+  Full LLM Fallback (all fields)
 ```
 
 **Note**: Fallback responses do NOT include `phonetics` or `examples` since these are only available from the Free Dictionary API.
@@ -1264,7 +1723,8 @@ if request.language != "English":
 
 Token usage is tracked for all dictionary searches:
 
-- **Hybrid success**: Reduced prompt tokens (~200 max) + entry+sense selection tokens (~10 max) accumulated (gpt-4.1-mini)
+- **Hybrid success (German)**: CEFR estimation tokens (~10 max) + sense selection tokens (~10 max) accumulated (gpt-4.1-mini). Stanza NLP uses no LLM tokens.
+- **Hybrid success (non-German)**: Reduced prompt tokens (~200 max) + sense selection tokens (~10 max) accumulated (gpt-4.1-mini)
 - **Fallback**: Full prompt tokens counted (~2000 max, gpt-4.1-mini)
 - **Source metadata**: Indicates `"hybrid"` or `"llm"` for cost analysis
 
@@ -1320,17 +1780,18 @@ Token usage is tracked for all dictionary searches:
 **Note**: `phonetics` is `null` for German (only available for English).
 
 **특징:**
-- **하이브리드 조회**: LLM + Free Dictionary API 결합으로 정확도와 비용 최적화 (X.Y.Z entry+sense+subsense 선택)
+- **3-Step Pipeline**: Step 1 (lemma extraction) -> Step 2 (Free Dictionary API) -> Step 3 (sense selection)
+- **Stanza NLP (German)**: 독일어는 Stanza NLP로 로컬 lemma 추출 (~51ms), CEFR만 LLM 호출
+- **LLM Reduced Prompt (non-German)**: 기타 언어는 LLM reduced prompt로 lemma + related_words + level 추출
 - **분리동사 처리**: 독일어 등에서 동사가 분리된 경우 전체 lemma 반환 (예: `hängt ... ab` → `abhängen`)
 - **복합어 처리**: 단어가 복합어의 일부인 경우 전체 형태 반환
 - **related_words**: 문장에서 같은 lemma에 속하는 모든 단어들을 배열로 반환 (예: 분리 동사의 경우 모든 부분 포함)
 - **문법적 메타데이터**: 품사(pos), 성(gender), 동사 활용형(conjugations), CEFR 레벨(level), IPA 발음(phonetics), 예문(examples) 추출
-- **공통 유틸 사용**: `utils/llm.py`의 `call_llm_with_tracking()` 함수 활용
-- **프롬프트 분리**: `utils/prompts.py`의 `build_reduced_word_definition_prompt()` (하이브리드), `build_word_definition_prompt()` (폴백) 사용
+- **모듈 구성**: `services/lemma_extraction.py` (Step 1), `services/dictionary_service.py` (Step 2 + 오케스트레이터 + full LLM fallback), `services/sense_selection.py` (Step 3)
 - **보안**: Regex injection 방지를 위한 `re.escape()` 적용
 
 **흐름**: 위 [Hybrid Dictionary Lookup Architecture](#hybrid-dictionary-lookup-architecture) 섹션의 Data Flow 참조.
-Frontend → Next.js API(`/api/dictionary/search`) → FastAPI(`/dictionary/search`) → DictionaryService 순으로 프록시됨.
+Frontend -> Next.js API(`/api/dictionary/search`) -> FastAPI(`/dictionary/search`) -> `dictionary_service.lookup()` (orchestrator, module function) -> Step 1 (`lemma_extraction` via `LLMPort` + `NLPPort`) -> Step 2 (`DictionaryPort.fetch()`) -> Step 3 (`sense_selection` via `LLMPort` + `DictionaryPort`) 순으로 처리됨.
 
 ---
 

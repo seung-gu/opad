@@ -34,12 +34,12 @@ from litellm import acompletion, cost_per_token
 sys.path.insert(0, "scripts")
 from test_cases import TEST_CASES_DE, TEST_CASES_EN
 
-from utils.dictionary_api import (
+from adapter.external.free_dictionary import (
     FREE_DICTIONARY_API_BASE_URL,
     API_TIMEOUT_SECONDS,
-    LANGUAGE_CODE_MAP,
+    _strip_reflexive_pronoun,
 )
-from utils.language_handlers import get_language_handler
+from utils.language_metadata import LANGUAGE_CODE_MAP
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -120,8 +120,7 @@ async def fetch_api_entries(lemma: str, language: str) -> dict[str, Any] | None:
     if not language_code:
         return None
 
-    handler = get_language_handler(language_code)
-    lookup_word = handler.strip_reflexive_pronoun(lemma)
+    lookup_word = _strip_reflexive_pronoun(lemma, language_code)
     cache_key = f"{language_code}:{lookup_word}"
 
     if cache_key in _api_cache:

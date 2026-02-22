@@ -4,6 +4,7 @@ import os
 import sys
 import logging
 import tomllib
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,9 +20,10 @@ load_dotenv()
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.routes import articles, jobs, health, stats, dictionary, auth, usage
+from api.routes import articles, jobs, health, stats, dictionary, vocabulary, auth, usage
 from utils.logging import setup_structured_logging
-from utils.mongodb import ensure_indexes
+from adapter.mongodb.connection import get_mongodb_client, DATABASE_NAME
+from adapter.mongodb.indexes import ensure_all_indexes
 
 # Set up structured JSON logging
 setup_structured_logging()
@@ -35,11 +37,39 @@ with open(_project_root / "pyproject.toml", "rb") as f:
 
 SERVICE_NAME = "One Story A Day API"
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: startup and shutdown logic."""
+    # Startup: ensure MongoDB indexes
+    client = get_mongodb_client()
+    if client:
+        db = client[DATABASE_NAME]
+        if ensure_all_indexes(db):
+            logger.info("MongoDB indexes verified/created successfully")
+        else:
+            logger.warning("Failed to create some MongoDB indexes")
+    else:
+        logger.warning("MongoDB unavailable, skipping index creation")
+
+    # Startup: preload Stanza German pipeline (~349MB)
+    try:
+        from api.dependencies import get_nlp_port
+        adapter = get_nlp_port()
+        if hasattr(adapter, 'preload'):
+            adapter.preload()
+    except Exception as e:
+        logger.warning("Failed to preload Stanza pipeline: %s", e)
+
+    yield  # App runs here
+
+
 # Create FastAPI app
 app = FastAPI(
     title=SERVICE_NAME,
     description="API service for One Story A Day - handles articles and job queue",
-    version=VERSION
+    version=VERSION,
+    lifespan=lifespan,
 )
 
 # CORS configuration for cross-origin requests from Next.js
@@ -78,18 +108,9 @@ app.include_router(jobs.router)
 app.include_router(health.router)
 app.include_router(stats.router)
 app.include_router(dictionary.router)
+app.include_router(vocabulary.router)
 app.include_router(auth.router)
 app.include_router(usage.router)
-
-
-@app.on_event("startup")
-async def startup():
-    """Initialize application on startup."""
-    # Ensure MongoDB indexes exist
-    if ensure_indexes():
-        logger.info("MongoDB indexes verified/created successfully")
-    else:
-        logger.warning("Failed to create MongoDB indexes (MongoDB may be unavailable)")
 
 
 @app.get("/")

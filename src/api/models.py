@@ -154,7 +154,7 @@ class VocabularyResponse(BaseModel):
     examples: Optional[list[str]] = Field(None, description="Example sentences from dictionary")
 
 
-class VocabularyCount(BaseModel):
+class VocabularyCountResponse(BaseModel):
     """Response model for vocabulary with count (grouped by lemma)."""
     id: str = Field(..., description="Most recent vocabulary ID")
     article_id: str = Field(..., description="Most recent article ID")
@@ -177,8 +177,8 @@ class VocabularyCount(BaseModel):
     examples: Optional[list[str]] = Field(None, description="Example sentences from most recent entry")
 
 
-class User(BaseModel):
-    """User model for authentication."""
+class UserResponse(BaseModel):
+    """User model for API responses and authentication."""
     id: str = Field(..., description="User ID (MongoDB _id)")
     email: str = Field(..., description="User email")
     name: str = Field(..., description="Display name")
@@ -217,8 +217,8 @@ class TokenUsageSummary(BaseModel):
     )
 
 
-class TokenUsageRecord(BaseModel):
-    """Single token usage record."""
+class TokenUsageResponse(BaseModel):
+    """Single token usage response."""
     id: str = Field(..., description="Usage record ID")
     user_id: str = Field(..., description="User ID who incurred the usage")
     operation: str = Field(..., description="Operation type: dictionary_search or article_generation")
