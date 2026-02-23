@@ -288,13 +288,14 @@
   <div class="n service" data-id="s_gen"    style="left:369px; top:497px">article_generation_svc</div>
 
   <!-- ════════════════ DOMAIN (inner hex) ════════════════ -->
-  <div class="n domain" data-id="d_article" style="left:457px; top:342px">Article</div>
-  <div class="n domain" data-id="d_vocab"   style="left:526px; top:342px">Vocabulary</div>
-  <div class="n domain" data-id="d_user"    style="left:456px; top:371px">User</div>
-  <div class="n domain" data-id="d_token"   style="left:528px; top:370px">TokenUsage</div>
-  <div class="n domain" data-id="d_cefr"    style="left:454px; top:398px">CEFRLevel</div>
-  <div class="n domain" data-id="d_job"     style="left:529px; top:398px">JobContext</div>
-  <div class="n domain" data-id="d_errors"  style="left:501px; top:427px">Errors</div>
+  <div class="n domain" data-id="d_article" style="left:458px; top:351px">Article</div>
+  <div class="n domain" data-id="d_vocab"   style="left:528px; top:350px">Vocabulary</div>
+  <div class="n domain" data-id="d_user"    style="left:457px; top:376px">User</div>
+  <div class="n domain" data-id="d_token"   style="left:529px; top:375px">TokenUsage</div>
+  <div class="n domain" data-id="d_cefr"    style="left:456px; top:401px">CEFRLevel</div>
+  <div class="n domain" data-id="d_job"     style="left:529px; top:401px">JobContext</div>
+  <div class="n domain" data-id="d_lang"    style="left:495px; top:326px">Language</div>
+  <div class="n domain" data-id="d_errors"  style="left:503px; top:427px">Errors</div>
 
   <!-- ════════════════ PORTS (right app ring) ════════════════ -->
   <div class="n port" data-id="p_dict"       style="left:513px; top:202px">DictionaryPort</div>
@@ -371,7 +372,7 @@ const FLOWS = {
       ['a_stanza',      'x_stanza',  ''],
       ['a_mongo_token', 'x_mongo',   ''],
     ],
-    domains: ['d_vocab', 'd_token', 'd_cefr'],
+    domains: ['d_vocab', 'd_token', 'd_cefr', 'd_lang'],
   },
 
   // ── Route: Vocabulary ──
@@ -485,7 +486,7 @@ const FLOWS = {
       ['s_sense', 'p_dict',  'get_sense()'],
       ['s_sense', 'p_llm',   'X.Y.Z'],
     ],
-    domains: ['d_vocab', 'd_cefr'],
+    domains: ['d_vocab', 'd_cefr', 'd_lang'],
   },
 
   // ── Service: Submission ──
@@ -519,6 +520,32 @@ const FLOWS = {
     ],
     domains: ['d_token'],
   },
+};
+
+// ── NODE_DOMAINS: per-node domain overrides for reverse flow ──
+// Prevents reverse flow from merging domains of ALL flows a node appears in.
+// Nodes NOT listed here fall back to the existing union-of-flows logic.
+const NODE_DOMAINS = {
+  // Ports
+  p_token:      ['d_token'],
+  p_vocab_repo: ['d_vocab'],
+  p_article:    ['d_article', 'd_errors'],
+  p_queue:      ['d_job'],
+  p_artgen:     ['d_article', 'd_cefr'],
+  p_nlp:        ['d_vocab', 'd_lang'],
+  p_dict:       ['d_vocab', 'd_lang'],
+  p_llm:        ['d_vocab', 'd_cefr', 'd_token', 'd_lang'],
+  p_user:       ['d_user'],
+  // Adapters
+  a_mongo_token:   ['d_token'],
+  a_mongo_vocab:   ['d_vocab'],
+  a_mongo_article: ['d_article'],
+  a_mongo_user:    ['d_user'],
+  a_redis:         ['d_job'],
+  a_freeapi:       ['d_vocab', 'd_lang'],
+  a_litellm:       [],
+  a_stanza:        ['d_vocab', 'd_lang'],
+  a_crewai:        ['d_article', 'd_cefr'],
 };
 
 // ════════════════════════════════════════════════════════════
@@ -669,24 +696,30 @@ function reset() {
 // Build reverse lookup — for nodes without their own FLOW
 function buildReverseFlow(nodeId) {
   const steps = [];
-  const domains = new Set();
-
   for (const [, flow] of Object.entries(FLOWS)) {
     for (const step of flow.steps) {
       if (step[0] === nodeId || step[1] === nodeId) {
         steps.push(step);
       }
     }
-    // Include domains if this node appears in the flow
-    if (flow.domains && flow.steps.some(s => s[0] === nodeId || s[1] === nodeId)) {
-      flow.domains.forEach(d => domains.add(d));
-    }
   }
-
   if (steps.length === 0) return null;
 
+  let domains;
+  if (NODE_DOMAINS[nodeId]) {
+    domains = NODE_DOMAINS[nodeId];
+  } else {
+    const domainSet = new Set();
+    for (const [, flow] of Object.entries(FLOWS)) {
+      if (flow.domains && flow.steps.some(s => s[0] === nodeId || s[1] === nodeId)) {
+        flow.domains.forEach(d => domainSet.add(d));
+      }
+    }
+    domains = [...domainSet];
+  }
+
   const label = el(nodeId)?.textContent || nodeId;
-  return { title: `${label} — all connections`, steps, domains: [...domains] };
+  return { title: `${label} — all connections`, steps, domains };
 }
 
 // ── Event Listeners ──
