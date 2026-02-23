@@ -4,7 +4,6 @@ Implements DictionaryPort by fetching entries from the Free Dictionary API.
 Also provides entry parsing utilities (metadata, phonetics, forms, gender).
 
 API Documentation: https://freedictionaryapi.com
-Supported languages: German (de), English (en), French (fr), Spanish (es)
 """
 
 import logging
@@ -21,11 +20,8 @@ from tenacity import (
     retry_if_exception_type,
 )
 
+from domain.model.language import Language, get_language
 from domain.model.vocabulary import GrammaticalInfo, SenseResult
-from utils.language_metadata import (
-    GENDER_MAP, REFLEXIVE_PREFIXES, REFLEXIVE_SUFFIXES, PHONETICS_SUPPORTED,
-    get_language_code,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -78,12 +74,12 @@ class FreeDictionaryAdapter:
     def extract_grammar(
         self, entries: list[dict[str, Any]], label: str, language: str,
     ) -> GrammaticalInfo:
-        language_code = get_language_code(language)
-        if not language_code:
+        lang = get_language(language)
+        if not lang:
             return GrammaticalInfo()
         index = _SenseIndex.from_label(label)
         ei = max(0, min(index.entry, len(entries) - 1))
-        return extract_entry_metadata(entries[ei], language_code)
+        return extract_entry_metadata(entries[ei], lang)
 
     async def fetch(self, word: str, language: str) -> list[dict] | None:
         """Fetch dictionary entries for a word.
@@ -95,9 +91,9 @@ class FreeDictionaryAdapter:
         Returns:
             List of entry dicts, or None on error / unsupported language.
         """
-        language_code = get_language_code(language)
+        lang = get_language(language)
 
-        if not language_code:
+        if not lang:
             logger.debug(
                 "Language not supported by Free Dictionary API",
                 extra={"language": language},
@@ -105,8 +101,8 @@ class FreeDictionaryAdapter:
             return None
 
         # Strip reflexive pronouns for API lookup (e.g., "sich gewöhnen" -> "gewöhnen")
-        lookup_word = _strip_reflexive_pronoun(word, language_code)
-        url = f"{FREE_DICTIONARY_API_BASE_URL}/{language_code}/{quote(lookup_word, safe='')}"
+        lookup_word = lang.strip_reflexive(word)
+        url = f"{FREE_DICTIONARY_API_BASE_URL}/{lang.code}/{quote(lookup_word, safe='')}"
 
         try:
             async with httpx.AsyncClient(timeout=API_TIMEOUT_SECONDS) as client:
@@ -178,39 +174,32 @@ async def _fetch_with_retry(client: httpx.AsyncClient, url: str) -> httpx.Respon
     return await client.get(url)
 
 
-def _strip_reflexive_pronoun(word: str, language_code: str) -> str:
-    """Strip reflexive pronouns from verb lemmas for API lookup."""
-    word_lower = word.lower()
-    for prefix in REFLEXIVE_PREFIXES.get(language_code, []):
-        if word_lower.startswith(prefix):
-            return word[len(prefix):]
-    for suffix in REFLEXIVE_SUFFIXES.get(language_code, []):
-        if word_lower.endswith(suffix):
-            return word[:-2]
-    return word
+# ── API-internal constants ────────────────────────────────────
+
+_PHONETICS_SUPPORTED: set[str] = {"en"}
 
 
 # ── Entry metadata extraction ────────────────────────────────
 
 
-def extract_entry_metadata(entry: dict[str, Any], language_code: str) -> GrammaticalInfo:
+def extract_entry_metadata(entry: dict[str, Any], lang: Language) -> GrammaticalInfo:
     """Extract grammatical metadata from a single dictionary entry.
 
     Args:
         entry: A single entry dict from API response.
-        language_code: ISO 639-1 language code.
+        lang: Language value object.
 
     Returns:
         GrammaticalInfo domain object with pos, gender, phonetics, conjugations.
     """
     pos = entry.get("partOfSpeech")
-    phonetics = _extract_phonetics(entry) if language_code in PHONETICS_SUPPORTED else None
+    phonetics = _extract_phonetics(entry) if lang.code in _PHONETICS_SUPPORTED else None
     forms = _extract_forms(entry)
     conjugations = _extract_conjugations(forms)
 
-    gender = _extract_gender_from_senses(entry, language_code)
+    gender = _extract_gender_from_senses(entry, lang)
     if gender is None and pos:
-        gender = _extract_gender_from_pos(pos, language_code)
+        gender = _extract_gender_from_pos(pos, lang)
 
     return GrammaticalInfo(
         pos=pos,
@@ -223,18 +212,18 @@ def extract_entry_metadata(entry: dict[str, Any], language_code: str) -> Grammat
 # ── Gender extraction ────────────────────────────────────────
 
 
-def _extract_gender_from_pos(pos: str, language_code: str) -> str | None:
+def _extract_gender_from_pos(pos: str, lang: Language) -> str | None:
     """Extract grammatical gender from part of speech string."""
     if not pos:
         return None
     pos_lower = pos.lower()
-    for keyword, article in GENDER_MAP.get(language_code, {}).items():
+    for keyword, article in lang.gender_articles.items():
         if keyword in pos_lower:
             return article
     return None
 
 
-def _extract_gender_from_senses(entry: dict[str, Any], language_code: str) -> str | None:
+def _extract_gender_from_senses(entry: dict[str, Any], lang: Language) -> str | None:
     """Extract grammatical gender from senses tags."""
     senses = entry.get("senses", [])
     if not senses:
@@ -244,9 +233,8 @@ def _extract_gender_from_senses(entry: dict[str, Any], language_code: str) -> st
     if not tags:
         return None
 
-    gender_map = GENDER_MAP.get(language_code, {})
     for tag in tags:
-        article = gender_map.get(tag.lower())
+        article = lang.gender_articles.get(tag.lower())
         if article:
             return article
     return None

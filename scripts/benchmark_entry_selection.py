@@ -37,9 +37,8 @@ from test_cases import TEST_CASES_DE, TEST_CASES_EN
 from adapter.external.free_dictionary import (
     FREE_DICTIONARY_API_BASE_URL,
     API_TIMEOUT_SECONDS,
-    _strip_reflexive_pronoun,
 )
-from utils.language_metadata import LANGUAGE_CODE_MAP
+from domain.model.language import get_language
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -116,17 +115,17 @@ _api_cache: dict[str, dict[str, Any] | None] = {}
 
 async def fetch_api_entries(lemma: str, language: str) -> dict[str, Any] | None:
     """Fetch all entries from Free Dictionary API (cached)."""
-    language_code = LANGUAGE_CODE_MAP.get(language)
-    if not language_code:
+    lang = get_language(language)
+    if not lang:
         return None
 
-    lookup_word = _strip_reflexive_pronoun(lemma, language_code)
-    cache_key = f"{language_code}:{lookup_word}"
+    lookup_word = lang.strip_reflexive(lemma)
+    cache_key = f"{lang.code}:{lookup_word}"
 
     if cache_key in _api_cache:
         return _api_cache[cache_key]
 
-    url = f"{FREE_DICTIONARY_API_BASE_URL}/{language_code}/{quote(lookup_word, safe='')}"
+    url = f"{FREE_DICTIONARY_API_BASE_URL}/{lang.code}/{quote(lookup_word, safe='')}"
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT_SECONDS) as client:
             response = await client.get(url)

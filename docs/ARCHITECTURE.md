@@ -369,6 +369,12 @@ Standard user entity with `id`, `name`, `email`, authentication fields (`passwor
 - **`LookupResult`** — Frozen value object returned by `dictionary_service.lookup()`. Combines lemma, definition, related_words, level, and `GrammaticalInfo`.
 - **`VocabularyCount`** — Composite model combining a vocabulary entry with its aggregated count and article IDs.
 
+#### Language (`domain/model/language.py`)
+
+- **`Language`** — Frozen value object (`@dataclass(frozen=True)`) encapsulating language-specific metadata: `name`, `code` (ISO 639-1), `gender_articles` (immutable `MappingProxyType`), `reflexive_prefixes`, and `reflexive_suffixes`. Provides `strip_reflexive(word)` to remove reflexive pronouns before dictionary API lookup.
+- **Pre-defined instances** — `GERMAN`, `ENGLISH`, `FRENCH`, `SPANISH`, `ITALIAN`, `KOREAN`, each configured with language-specific gender articles and reflexive patterns.
+- **`LANGUAGES`** — Registry dict (`{name: Language}`) for lookup. **`get_language(name)`** returns a `Language` or `None`.
+
 #### Token Usage (`domain/model/token_usage.py`)
 
 - **`LLMCallResult`** — Frozen value object from a single LLM API call. Fields: `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `estimated_cost`, `provider`.
@@ -1275,6 +1281,9 @@ opad/
 │   ├── domain/           # Domain layer (hexagonal architecture)
 │   │   └── model/
 │   │       ├── article.py       # Article, ArticleInputs, ArticleStatus
+│   │       ├── cefr.py          # CEFRLevel (vocabulary level filtering)
+│   │       ├── job.py           # JobContext (typed container for queue job data)
+│   │       ├── language.py      # Language VO (frozen dataclass: code, gender_articles, reflexive patterns, strip_reflexive())
 │   │       ├── user.py          # User
 │   │       ├── vocabulary.py    # Vocabulary, GrammaticalInfo, VocabularyCount, LookupResult, SenseResult
 │   │       ├── token_usage.py   # LLMCallResult (Value Object), TokenUsage (Entity)
@@ -1382,9 +1391,7 @@ opad/
 │   │   └── token_usage_service.py # Token usage tracking (track_llm_usage, track_agent_usage)
 │   │
 │   └── utils/            # 공통 유틸리티 (공유)
-│       ├── logging.py    # Structured logging 설정
-│       ├── language_metadata.py # Pure data constants (LANGUAGE_CODE_MAP, GENDER_MAP, REFLEXIVE_PREFIXES, etc.)
-│       └── cloudflare.py # Cloudflare 관련 유틸리티
+│       └── logging.py    # Structured logging 설정
 │
 └── Dockerfile.*          # 서비스별 Dockerfile (이슈 #9)
 ```
@@ -1392,14 +1399,14 @@ opad/
 ### 서비스 구분
 | 폴더 | 역할 | 런타임 | 포트 |
 |------|------|--------|------|
-| `src/domain/` | Domain models (Article, JobContext, User, Vocabulary, TokenUsage, Errors) | - | - |
+| `src/domain/` | Domain models (Article, JobContext, Language, User, Vocabulary, TokenUsage, CEFRLevel, Errors) | - | - |
 | `src/port/` | Port definitions (ArticleRepository, UserRepository, VocabularyRepository, TokenUsageRepository, DictionaryPort, LLMPort, NLPPort, JobQueuePort, ArticleGeneratorPort) | - | - |
 | `src/adapter/` | Infrastructure adapters (MongoDB, External APIs, Queue, Crew, Fake) | - | - |
 | `src/services/` | Business logic (article_submission_service, article_generation_service, dictionary_service) | - | - |
 | `src/api/` | CRUD + Job enqueue + Dictionary API | Python (FastAPI) | 8001 (default) |
 | `src/worker/` | Job dequeue + Article generation orchestration | Python | - |
 | `src/web/` | UI | Node.js (Next.js) | 3000 |
-| `src/utils/` | 공통 유틸 (공유) | - | - |
+| `src/utils/` | 공통 유틸 (logging) | - | - |
 
 ### Worker 모듈 구성
 | 파일 | 역할 | 의존성 |
@@ -1495,14 +1502,16 @@ sense, label, stats = await select_best_sense(
 - Reduced prompts (lemma extraction)는 `services/lemma_extraction.py`에 위치
 - Sense selection prompts는 `services/sense_selection.py`에 위치
 
-#### Language Metadata (`utils/language_metadata.py`)
-Pure data module containing language-specific constants used by `adapter/external/free_dictionary.py`. No logic -- only data definitions.
+#### Language Value Object (`domain/model/language.py`)
+Frozen dataclass (immutable via `@dataclass(frozen=True)`) encapsulating language-specific metadata used across the domain. Replaces the former `utils/language_metadata.py` data module by co-locating data with behavior.
 
-- **`LANGUAGE_CODE_MAP`** + **`get_language_code()`**: Full language name -> ISO 639-1 code 변환 (e.g., `"German"` -> `"de"`)
-- **`GENDER_MAP`**: Maps gender keywords to grammatical articles per language (e.g., `"masculine"` -> `"der"` for German)
-- **`REFLEXIVE_PREFIXES`**: Reflexive pronoun prefixes to strip before API lookup (e.g., `"sich "` for German)
-- **`REFLEXIVE_SUFFIXES`**: Reflexive verb suffix patterns (e.g., Spanish `"arse"`, `"erse"`, `"irse"`)
-- **`PHONETICS_SUPPORTED`**: Language codes supporting IPA phonetics (currently only `"en"`)
+- **`Language`**: Value object with `name`, `code` (ISO 639-1), `gender_articles` (`MappingProxyType` for immutability), `reflexive_prefixes`, and `reflexive_suffixes`.
+- **`Language.strip_reflexive(word)`**: Strips reflexive pronouns before API lookup (e.g., `"sich gewöhnen"` -> `"gewöhnen"`, `"levantarse"` -> `"levantar"`). Previously lived in the Free Dictionary adapter; now a domain method on Language.
+- **Pre-defined instances**: `GERMAN`, `ENGLISH`, `FRENCH`, `SPANISH`, `ITALIAN`, `KOREAN` -- each configured with language-specific gender articles and reflexive patterns.
+- **`LANGUAGES`**: Registry dict keyed by language name for lookup.
+- **`get_language(name)`**: Returns a `Language` instance by full name (e.g., `"German"`), or `None` for unsupported languages.
+
+**Note**: `PHONETICS_SUPPORTED` has been internalized as `_PHONETICS_SUPPORTED` in `adapter/external/free_dictionary.py` since it is API-specific (only the Free Dictionary adapter uses it). Gender extraction functions also remain in the adapter.
 
 ---
 
@@ -1610,7 +1619,7 @@ sequenceDiagram
 | **Free Dictionary Adapter** | `adapter/external/free_dictionary.py` | Implements all `DictionaryPort` methods; HTTP calls to Free Dictionary API with retry logic. `extract_grammar()` extracts POS, phonetics, forms, gender. | `list[dict]`, `SenseResult`, `GrammaticalInfo` |
 | **LiteLLM Adapter** | `adapter/external/litellm.py` | Implements `LLMPort`; provider-agnostic LLM calls via LiteLLM with exception mapping | `(str, LLMCallResult)` |
 | **Stanza Adapter** | `adapter/nlp/stanza.py` | Implements `NLPPort`; German dependency parsing via Stanza | Dict with linguistic primitives |
-| **Language Metadata** | `utils/language_metadata.py` | Pure data constants: `LANGUAGE_CODE_MAP`, `GENDER_MAP`, `REFLEXIVE_PREFIXES`, `REFLEXIVE_SUFFIXES`, `PHONETICS_SUPPORTED` | Data only (no logic) |
+| **Language VO** | `domain/model/language.py` | Frozen dataclass: `name`, `code`, `gender_articles`, `reflexive_prefixes/suffixes`, `strip_reflexive()`. Pre-defined instances (`GERMAN`, `ENGLISH`, etc.) + `LANGUAGES` registry + `get_language()` | `Language` value object |
 | **Dictionary Service** | `services/dictionary_service.py` | Orchestrator (module functions): `lookup()` wires Step 1 -> Step 2 -> Step 3, handles fallback. Full LLM fallback prompt (`_build_full_prompt()`) also lives here. | `LookupResult` |
 
 #### Components
@@ -1622,7 +1631,7 @@ sequenceDiagram
 | **LLM (Reduced Prompt)** | Context-aware lemma extraction for non-German languages (max_tokens=200) | `lemma`, `related_words`, `level` |
 | **Free Dictionary API (via DictionaryPort)** | Returns all dictionary entries with senses and subsenses | `all_entries` (containing `pos`, `senses`, `phonetics`, `forms` per entry) |
 | **LLM (Sense Selection)** | Selects best entry+sense+subsense using X.Y.Z format based on sentence context (max_tokens=10) | `definition`, `examples` (from selected sense/subsense) |
-| **Grammar Extraction (via DictionaryPort)** | Extracts POS, phonetics, forms, gender from the selected entry (not always entries[0]). Logic in `adapter/external/free_dictionary.py`. Data constants in `language_metadata.py`. | `GrammaticalInfo` (pos, phonetics, conjugations, gender) |
+| **Grammar Extraction (via DictionaryPort)** | Extracts POS, phonetics, forms, gender from the selected entry (not always entries[0]). Logic in `adapter/external/free_dictionary.py`. Language metadata from `domain/model/language.py` (`Language` VO). | `GrammaticalInfo` (pos, phonetics, conjugations, gender) |
 | **Result Building** | Combines lemma data, grammar, and sense into `LookupResult` domain object | All fields |
 | **Full LLM Fallback** | Complete definition when hybrid fails (max_tokens=2000) | All fields except `phonetics` and `examples` |
 
@@ -1650,7 +1659,7 @@ The fallback to full LLM (gpt-4.1-mini) occurs in these scenarios:
 
 1. **Stanza failure (German)**: Stanza pipeline error or token not found -- falls through to LLM reduced prompt
 2. **LLM reduced prompt failure**: Failed to parse lemma from reduced prompt
-3. **Language not supported**: Language not in `LANGUAGE_CODE_MAP`
+3. **Language not supported**: `get_language()` returns `None` (language not in `LANGUAGES` registry)
 4. **Word not found**: Free Dictionary API returns 404
 5. **API timeout**: Request exceeds 5-second timeout
 6. **API error**: HTTP error or network failure

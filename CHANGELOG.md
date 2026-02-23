@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-02-23
+
+### Added
+- **Language Value Object** — new domain model `src/domain/model/language.py` providing immutable language abstraction with MappingProxyType-enforced true immutability
+- **Language instances** — six pre-defined Language instances: German, English, French, Spanish, Italian, Korean with language-specific metadata (gender articles, reflexive patterns)
+- **LANGUAGES registry** — centralized `LANGUAGES: dict[str, Language]` enabling consistent language lookups across the codebase
+- **get_language()** function — public API for looking up Language VO by name returning `Language | None` for graceful handling of unsupported languages
+- **Language.strip_reflexive()** method — language-aware reflexive pronoun stripping for API lookups (e.g., "sich gewöhnen" → "gewöhnen" for German, "levantarse" → "levantar" for Spanish)
+- **Comprehensive Language VO test suite** — tests for immutability enforcement, instance registry, and reflexive stripping across all supported languages (Issue #102)
+- **Korean language support** — added Korean language instance to supported languages (previously excluded from registry)
+
+### Changed
+- **FreeDictionaryAdapter imports** — migrated from `utils.language_metadata` to `domain.model.language` for Language VO access
+- **FreeDictionaryAdapter method signatures** — changed `fetch()` to accept `language: str` (language name) matching hexagonal architecture semantics
+- **extract_entry_metadata()** signature — now accepts `lang: Language` parameter instead of language code string for type safety
+- **Reflexive pronoun stripping** — moved from `_strip_reflexive_pronoun()` utility function to `Language.strip_reflexive()` domain method for encapsulated language behavior
+- **PHONETICS_SUPPORTED** — internalized as `_PHONETICS_SUPPORTED` private module constant in free_dictionary.py adapter
+- **Test suite** — updated `src/api/tests/test_free_dictionary.py` to use Language VO instances instead of string codes (269 tests passing)
+- **Benchmark script** — `scripts/benchmark_entry_selection.py` updated to use Language VO API for consistency
+
+### Removed
+- **`src/utils/language_metadata.py`** — utility module replaced by Language Value Object domain model
+- **`_strip_reflexive_pronoun()` function** — replaced by Language.strip_reflexive() method with identical behavior
+- **LANGUAGE_CODE_MAP** — superseded by Language instances and LANGUAGES registry
+- Removed Portuguese, Dutch, Polish, Russian from language support (per product decision)
+
+### Technical Impact
+- **Domain-driven design**: Language-specific behavior now encapsulated in domain model, not scattered across adapters/utils
+- **Type safety**: Language signatures (`lang: Language`) replace error-prone string codes (`language_code: str`)
+- **Immutability**: MappingProxyType ensures gender_articles mapping cannot be mutated after Language construction
+- **Consistency**: Single source of truth for language metadata enables easier future language additions
+- **Testability**: Language VO can be instantiated with custom patterns in tests without global state mutation
+
+## [0.18.0] - 2026-02-20
+
+### Changed
+- **Architecture documentation** — updated architecture diagrams and REFERENCE.md with latest service structure
+
 ## [0.17.0] - 2026-02-20
 
 ### Added
