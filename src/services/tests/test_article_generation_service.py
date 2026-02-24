@@ -21,6 +21,7 @@ from domain.model.article import (
     EditRecord,
     GenerationResult,
 )
+from domain.model.token_usage import LLMCallResult
 
 
 TEST_INPUTS = ArticleInputs(language='German', level='B2', length='500', topic='AI')
@@ -146,7 +147,6 @@ class TestGenerateArticle(unittest.TestCase):
             repo=self.repo,
             token_usage_repo=None,
             vocab=None,
-            llm=None,
             job_id='job-123',
         )
 
@@ -302,14 +302,13 @@ class TestGenerateArticle(unittest.TestCase):
         """Test that token usage is tracked when available."""
         mock_generator = MagicMock()
         agent_usage = [
-            {
-                'agent_role': 'researcher',
-                'agent_name': 'ArticleResearcher',
-                'model': 'gpt-4',
-                'prompt_tokens': 100,
-                'completion_tokens': 50,
-                'total_tokens': 150,
-            },
+            ('ArticleResearcher', LLMCallResult(
+                model='gpt-4',
+                prompt_tokens=100,
+                completion_tokens=50,
+                total_tokens=150,
+                estimated_cost=0.001,
+            )),
         ]
         result = GenerationResult(
             content='Test article content',
@@ -323,7 +322,6 @@ class TestGenerateArticle(unittest.TestCase):
         mock_generator.generate.return_value = result
 
         mock_token_repo = MagicMock()
-        mock_llm = MagicMock()
 
         generate_article(
             article=self.article,
@@ -332,7 +330,6 @@ class TestGenerateArticle(unittest.TestCase):
             generator=mock_generator,
             repo=self.repo,
             token_usage_repo=mock_token_repo,
-            llm=mock_llm,
             job_id='job-123',
         )
 
@@ -348,11 +345,13 @@ class TestGenerateArticle(unittest.TestCase):
         """Test that token tracking is skipped if user_id is None."""
         mock_generator = MagicMock()
         agent_usage = [
-            {
-                'agent_role': 'researcher',
-                'model': 'gpt-4',
-                'total_tokens': 150,
-            },
+            ('ArticleResearcher', LLMCallResult(
+                model='gpt-4',
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=150,
+                estimated_cost=0.0,
+            )),
         ]
         result = GenerationResult(
             content='Test article content',
@@ -381,7 +380,7 @@ class TestGenerateArticle(unittest.TestCase):
             mock_track.assert_not_called()
 
     def test_generate_article_skips_token_tracking_if_no_usage_data(self):
-        """Test that token tracking is skipped if agent_usage is None."""
+        """Test that token tracking is skipped if agent_usage is empty."""
         mock_generator = MagicMock()
         result = GenerationResult(
             content='Test article content',
@@ -390,7 +389,7 @@ class TestGenerateArticle(unittest.TestCase):
                 source_name='Test Source',
             ),
             edit_history=[],
-            agent_usage=None,  # No usage data
+            agent_usage=[],  # No usage data
         )
         mock_generator.generate.return_value = result
 

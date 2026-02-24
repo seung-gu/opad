@@ -2,8 +2,10 @@
 import warnings
 import logging
 
+import litellm
 from adapter.crew.crew import ReadingMaterialCreator
-from utils.logging import setup_structured_logging
+from domain.model.token_usage import LLMCallResult
+
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
@@ -32,13 +34,13 @@ class CrewResult:
         """Delegate to underlying CrewAI result's pydantic attribute."""
         return self.result.pydantic
 
-    def get_agent_usage(self) -> list[dict]:
-        """Get token usage per agent with model info.
+    def get_agent_usage(self) -> list[tuple[str, LLMCallResult]]:
+        """Get token usage per agent with model info and estimated cost.
 
         Returns:
-            List of dicts with agent_role, model, prompt_tokens, completion_tokens, total_tokens
+            List of (agent_name, LLMCallResult) tuples.
         """
-        usage_list = []
+        usage_list: list[tuple[str, LLMCallResult]] = []
         agents = getattr(self.crew_instance, 'agents', None) or []
         for agent in agents:
             if not hasattr(agent, 'llm') or agent.llm is None:
@@ -47,18 +49,36 @@ class CrewResult:
             model = getattr(agent.llm, 'model', 'unknown')
             agent_role = getattr(agent, 'role', 'unknown')
             agent_key = _AGENT_KEYS.get(agent_role.strip())
-            agent_name = _format_agent_key(agent_key) if agent_key else getattr(agent, 'name', None)
+            agent_name = _format_agent_key(agent_key) if agent_key else getattr(agent, 'name', None) or agent_role
 
             usage = agent.llm.get_token_usage_summary()
-            usage_list.append({
-                'agent_role': agent_role,
-                'agent_name': agent_name,
-                'model': model,
-                'prompt_tokens': getattr(usage, 'prompt_tokens', 0),
-                'completion_tokens': getattr(usage, 'completion_tokens', 0),
-                'total_tokens': getattr(usage, 'total_tokens', 0),
-                'successful_requests': getattr(usage, 'successful_requests', 0),
-            })
+            prompt_tokens = getattr(usage, 'prompt_tokens', 0)
+            completion_tokens = getattr(usage, 'completion_tokens', 0)
+            total_tokens = getattr(usage, 'total_tokens', 0)
+
+            try:
+                prompt_cost, compl_cost = litellm.cost_per_token(
+                    model=model,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                )
+                estimated_cost = prompt_cost + compl_cost
+            except Exception as e:
+                logger.debug("Could not calculate cost for agent", extra={
+                    "model": model, "agent_name": agent_name, "error": str(e),
+                })
+                estimated_cost = 0.0
+
+            usage_list.append((
+                agent_name,
+                LLMCallResult(
+                    model=model,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                    estimated_cost=estimated_cost,
+                ),
+            ))
         return usage_list
 
 

@@ -130,7 +130,7 @@ sequenceDiagram
 | **API** | **Redis** | `RPUSH` (via JobQueuePort / RedisJobQueueAdapter) | Job을 큐에 추가 |
 | **API** | **Redis** | `SET/GET` (via JobQueuePort / RedisJobQueueAdapter) | Job 상태 저장/조회 |
 | **API** | **Stanza NLP** | Local (via NLPPort / StanzaAdapter) | German lemma extraction (로컬 NLP, ~51ms) |
-| **API** | **LLM** | HTTP (via LLMPort / LiteLLMAdapter) | Dictionary API용 LLM 호출 (non-German lemma extraction + CEFR estimation + entry/sense selection) + Token tracking |
+| **API** | **LLM** | HTTP (via LLMPort / LiteLLMAdapter) | Dictionary API용 LLM 호출 (non-German lemma extraction + CEFR estimation + entry/sense selection) |
 | **API** | **API** | Internal | Token usage endpoints (`/usage/me`, `/usage/articles/{id}`) |
 | **Worker** | **Redis** | `BLPOP` (via JobQueuePort / RedisJobQueueAdapter) | Job을 큐에서 꺼냄 (blocking) |
 | **Worker** | **Redis** | `SET` (via JobQueuePort / RedisJobQueueAdapter) | Job 상태 업데이트 |
@@ -350,7 +350,7 @@ Rich Domain Model with factory (`create()`), state transitions (`complete()`, `f
 - **`ArticleStatus`** — Enum (`RUNNING`, `COMPLETED`, `FAILED`, `DELETED`). Extends `str` for JSON serialization.
 - **`ArticleInputs`** — Frozen value object holding generation parameters (`language`, `level`, `length`, `topic`).
 - **`SourceInfo`**, **`EditRecord`** — Frozen value objects preserving article provenance from CrewAI output.
-- **`GenerationResult`** — Framework-agnostic DTO returned by `ArticleGeneratorPort`, decoupling CrewAI output from domain.
+- **`GenerationResult`** — Framework-agnostic DTO returned by `ArticleGeneratorPort`, decoupling CrewAI output from domain. `agent_usage` is typed as `list[tuple[str, LLMCallResult]]` -- the CrewAI adapter converts raw framework data to domain objects (including cost calculation via `litellm.cost_per_token()`) before returning.
 - **`Articles`** — Collection wrapper for paginated results (replaces raw `tuple[list, int]`).
 
 #### JobContext (`domain/model/job.py`)
@@ -378,7 +378,7 @@ Standard user entity with `id`, `name`, `email`, authentication fields (`passwor
 #### Token Usage (`domain/model/token_usage.py`)
 
 - **`LLMCallResult`** — Frozen value object from a single LLM API call. Fields: `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `estimated_cost`, `provider`.
-- **`TokenUsage`** — Entity tracking who used how many tokens for which operation. Created by service layer, persisted by adapter.
+- **`TokenUsage`** — Entity tracking who used how many tokens for which operation. Persisted by adapter. Provides `from_llm_result()` factory classmethod that creates a `TokenUsage` record from an `LLMCallResult`, setting ID, timestamps, and mapping fields automatically. Used by both dictionary service (per-step tracking) and token usage service (per-agent tracking).
 
 #### Domain Errors (`domain/model/errors.py`)
 
@@ -490,7 +490,7 @@ Adapters for outbound API calls (dictionary lookups, LLM calls), local NLP proce
 
 **CrewAI Pipeline** (`adapter/crew/`):
 - `crew.py`: `ReadingMaterialCreator` -- CrewAI crew definition with 4 agents and 4 tasks
-- `main.py`: `run()` function and `CrewResult` container with `get_agent_usage()` for token metrics
+- `main.py`: `run()` function and `CrewResult` container with `get_agent_usage()` returning `list[tuple[str, LLMCallResult]]` -- converts raw CrewAI data to domain objects including cost via `litellm.cost_per_token()`
 - `models.py`: Pydantic models for CrewAI task outputs (`NewsArticle`, `SelectedArticle`, `ReviewedArticle`) with `to_source_info()` and `to_edit_record()` converters to domain value objects
 - `progress_listener.py`: `JobProgressListener` -- CrewAI event listener that updates job progress via `JobQueuePort` (no direct Redis dependency)
 - `guardrails.py`: JSON output repair for CrewAI task outputs
@@ -543,7 +543,7 @@ Note: `get_vocab_repo()` returns `MongoVocabularyRepository`, which satisfies `V
 
 #### Worker (`src/worker/main.py`)
 
-The worker creates all adapters at startup and wires them together via `functools.partial`. The `generate` callable is a partially-applied `article_generation_service.generate_article()` with all infrastructure dependencies (`generator`, `repo`, `token_usage_repo`, `vocab`, `llm`) pre-bound. The worker loop receives `JobQueuePort` for dequeue/status operations and delegates generation to this pre-bound callable.
+The worker creates all adapters at startup and wires them together via `functools.partial`. The `generate` callable is a partially-applied `article_generation_service.generate_article()` with all infrastructure dependencies (`generator`, `repo`, `token_usage_repo`, `vocab`) pre-bound. The worker loop receives `JobQueuePort` for dequeue/status operations and delegates generation to this pre-bound callable. Note: `LiteLLMAdapter` is no longer instantiated in the worker -- cost calculation is handled by the CrewAI adapter, and `track_agent_usage()` no longer depends on `LLMPort`.
 
 ### Port and Adapter Overview
 
@@ -620,7 +620,7 @@ Token usage persistence is handled by `MongoTokenUsageRepository`, implementing 
 - **`get_user_summary(user_id, days=30)`**: Aggregated usage summary as `dict` (total_tokens, total_cost, by_operation, daily_usage). Days clamped to [1, 365].
 - **`get_by_article(article_id)`**: All token usage records for an article as `list[dict]`, sorted by created_at ascending.
 
-Token usage records are created by `services/token_usage_service.py`, which converts `LLMCallResult` to `TokenUsage` domain objects before calling `save()`.
+Token usage records are created via the `TokenUsage.from_llm_result()` domain factory method, which converts `LLMCallResult` to `TokenUsage` domain objects. The dictionary service calls this factory directly and saves via `TokenUsageRepository.save()`. The token usage service (`track_agent_usage()`) uses the same factory for article generation tracking.
 
 #### 3. Token Usage Collection Schema (MongoDB)
 
@@ -690,7 +690,7 @@ async def search_word(
     )
 ```
 
-Note: `dictionary_service.lookup()` returns a `LookupResult` domain object (not a tuple). Token usage is tracked per LLM call internally by the service via `token_usage_service.track_llm_usage()`.
+Note: `dictionary_service.lookup()` returns a `LookupResult` domain object (not a tuple). Token usage is tracked per LLM call internally by the service using `TokenUsage.from_llm_result()` (domain factory) and `TokenUsageRepository.save()` directly.
 
 #### Vocabulary API (`src/api/routes/vocabulary.py`)
 
@@ -818,7 +818,7 @@ sequenceDiagram
     CrewAI-->>Worker: GenerationResult (domain DTO)
     Worker->>Worker: article.complete(content, source, edit_history)
     Worker->>MongoDB: repo.save(article)
-    Worker->>Worker: track_agent_usage() + calculate_cost()
+    Worker->>Worker: track_agent_usage() + TokenUsage.from_llm_result()
     Worker->>MongoDB: token_usage_repo.save() (per agent)
 
     Note over User,MongoDB: Usage Summary Retrieval
@@ -857,14 +857,16 @@ Worker main.py
                 └── generate(article, user_id, inputs, job_id)
                        = article_generation_service.generate_article(...)
                             ├── 1. _get_vocabulary() via VocabularyRepository
-                            ├── 2. generator.set_job_context(job_id, article_id)
-                            ├── 3. generator.generate(inputs, vocab_list)
+                            ├── 2. generator.generate(inputs, vocab_list, job_id, article_id)
                             │       └── CrewAIArticleGenerator
                             │             ├── JobProgressListener (job_queue.update_status)
                             │             └── run_crew(inputs) -> CrewResult -> GenerationResult
-                            ├── 4. article.complete(content, source, edit_history)
-                            ├── 5. repo.save(article) via ArticleRepository
-                            └── 6. track_agent_usage() via TokenUsageRepository
+                            │                   └── get_agent_usage() -> list[tuple[str, LLMCallResult]]
+                            │                         (cost calculated via litellm.cost_per_token())
+                            ├── 3. article.complete(content, source, edit_history)
+                            ├── 4. repo.save(article) via ArticleRepository
+                            └── 5. track_agent_usage(repo, agent_usage, ...) via TokenUsageRepository
+                                    └── TokenUsage.from_llm_result() per agent (domain factory)
 ```
 
 ### Article Submission (API-side)
@@ -891,11 +893,11 @@ The Worker tracks token usage during CrewAI article generation using **CrewAI's 
 ```
 CrewAIArticleGenerator.generate()
   └── run_crew(inputs) -> CrewResult
-         └── CrewResult.get_agent_usage()  # per-agent metrics
-                ↓
+         └── CrewResult.get_agent_usage()  # per-agent LLMCallResult (with cost)
+                ↓                           # cost calculated via litellm.cost_per_token()
 article_generation_service.generate_article()
-  └── track_agent_usage(token_usage_repo, agent_usage, user_id, article_id, job_id, llm)
-         └── calculate_cost() per agent (LiteLLM pricing)
+  └── track_agent_usage(token_usage_repo, agent_usage, user_id, article_id, job_id)
+         └── TokenUsage.from_llm_result() per agent (domain factory)
          └── token_usage_repo.save() per agent -> MongoDB
 ```
 
@@ -907,12 +909,13 @@ CrewAI manages LLM calls internally through its agent.llm instances. Each agent 
 
 ### Token Usage Service Module (`services/token_usage_service.py`)
 
-Cost calculation and token usage tracking. Previously in `utils/token_usage.py`, now consolidated in the service layer.
+Agent-level token usage tracking for article generation.
 
-- **`track_llm_usage(repo, stats, user_id, operation, ...)`**: Converts `LLMCallResult` to `TokenUsage` domain object and saves via `TokenUsageRepository`. Used by dictionary service for per-step tracking.
-- **`track_agent_usage(repo, agent_usage, user_id, article_id, job_id, llm)`**: Tracks CrewAI agent-level token usage. Iterates framework-agnostic agent dicts, calculates cost via `LLMPort.estimate_cost()`, saves each agent as separate record. Non-fatal -- failures are logged as warnings.
+- **`track_agent_usage(repo, agent_usage, user_id, article_id, job_id)`**: Tracks CrewAI agent-level token usage. Accepts `list[tuple[str, LLMCallResult]]` -- each tuple contains an agent name and its usage metrics (already including cost, calculated by the CrewAI adapter). Uses `TokenUsage.from_llm_result()` domain factory to convert each entry to a `TokenUsage` entity, then saves via `TokenUsageRepository`. Non-fatal -- failures are logged as warnings.
 
-Cost estimation is handled by `LLMPort.estimate_cost()` (implemented in `LiteLLMAdapter` using LiteLLM's pricing database).
+Note: The previous `track_llm_usage()` function has been removed. Its responsibility (converting `LLMCallResult` to `TokenUsage`) is now handled by the `TokenUsage.from_llm_result()` domain factory method, called directly by the dictionary service and by `track_agent_usage()`.
+
+Cost estimation for article generation is handled by the CrewAI adapter (`adapter/crew/main.py`), which calculates cost via `litellm.cost_per_token()` directly in the anti-corruption layer before returning `LLMCallResult` objects. This means `track_agent_usage()` no longer depends on `LLMPort`.
 
 ---
 
@@ -920,7 +923,7 @@ Cost estimation is handled by `LLMPort.estimate_cost()` (implemented in `LiteLLM
 
 **File**: `src/adapter/crew/main.py`
 
-**Purpose**: Container for crew execution result with usage metrics extraction.
+**Purpose**: Container for crew execution result with usage metrics extraction. Acts as an anti-corruption layer, converting raw CrewAI framework data to domain objects (`LLMCallResult`) including cost calculation.
 
 ```python
 class CrewResult:
@@ -931,12 +934,11 @@ class CrewResult:
         self.result = result
         self.crew_instance = crew_instance
 
-    def get_agent_usage(self) -> list[dict]:
-        """Get token usage per agent with model info.
+    def get_agent_usage(self) -> list[tuple[str, LLMCallResult]]:
+        """Get token usage per agent with model info and estimated cost.
 
         Returns:
-            List of dicts with agent_role, model, prompt_tokens,
-            completion_tokens, total_tokens, successful_requests
+            List of (agent_name, LLMCallResult) tuples.
         """
 ```
 
@@ -945,11 +947,16 @@ class CrewResult:
 result = run_crew(inputs=ctx.inputs)
 agent_usage = result.get_agent_usage()
 # [
-#   {'agent_role': 'News Researcher', 'model': 'gpt-4.1', 'prompt_tokens': 500, ...},
-#   {'agent_role': 'Content Writer', 'model': 'gpt-4.1', 'prompt_tokens': 2000, ...},
+#   ('Article Finder', LLMCallResult(model='gpt-4.1', prompt_tokens=500, ...)),
+#   ('Content Writer', LLMCallResult(model='gpt-4.1', prompt_tokens=2000, ...)),
 #   ...
 # ]
 ```
+
+**Anti-Corruption Layer Responsibilities:**
+- Converts raw CrewAI agent data to `LLMCallResult` domain value objects
+- Calculates cost via `litellm.cost_per_token()` directly (no `LLMPort` dependency)
+- Resolves agent display names from role-to-key mapping
 
 **Why CrewAI Built-in Tracking?**
 - Each CrewAI agent has its own LLM instance with independent usage tracking
@@ -1388,7 +1395,7 @@ opad/
 │   │   ├── lemma_extraction.py    # Step 1: Lemma extraction (NLP for German, LLM for others)
 │   │   ├── sense_selection.py     # Step 3: Sense selection from dictionary entries via LLM
 │   │   ├── auth_service.py        # Authentication business logic
-│   │   └── token_usage_service.py # Token usage tracking (track_llm_usage, track_agent_usage)
+│   │   └── token_usage_service.py # Token usage tracking (track_agent_usage)
 │   │
 │   └── utils/            # 공통 유틸리티 (공유)
 │       └── logging.py    # Structured logging 설정
@@ -1435,7 +1442,7 @@ opad/
 LLM 호출은 `LLMPort` 포트와 `LiteLLMAdapter` 어댑터로 추상화. 이전의 `utils/llm.py`는 삭제되었으며, 모든 LLM 관련 로직이 헥사고날 아키텍처로 이동.
 
 - **`LLMPort.call()`**: Provider-agnostic LLM API 호출. 반환값: `(content: str, stats: LLMCallResult)`
-- **`LLMPort.estimate_cost()`**: 모델별 비용 추정 (LiteLLM 가격 데이터 사용)
+- **`LLMPort.estimate_cost()`**: 모델별 비용 추정 (LiteLLM 가격 데이터 사용). Dictionary 서비스에서 사용. Article generation 비용은 CrewAI 어댑터에서 `litellm.cost_per_token()`로 직접 계산.
 - **`LLMCallResult`** (`domain/model/token_usage.py`): Frozen value object. 필드: `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `estimated_cost`, `provider`
 - **Port-level exceptions** (`port/llm.py`): `LLMTimeoutError`, `LLMRateLimitError`, `LLMAuthError` -- LiteLLM 예외를 포트 레벨로 변환
 
@@ -1448,8 +1455,8 @@ LLM 호출은 `LLMPort` 포트와 `LiteLLMAdapter` 어댑터로 추상화. 이�
 
 LLM 호출 후 토큰 사용량을 `TokenUsage` 도메인 객체로 변환하여 저장하는 서비스 모듈.
 
-- **`track_llm_usage()`**: `LLMCallResult` -> `TokenUsage` 도메인 객체 생성 -> `TokenUsageRepository.save()` 호출
-- **`track_agent_usage()`**: CrewAI 에이전트별 사용량 추적. `LLMPort.estimate_cost()`로 비용 계산 후 에이전트별 `track_llm_usage()` 호출
+- **`track_agent_usage()`**: CrewAI 에이전트별 사용량 추적. `list[tuple[str, LLMCallResult]]`을 받아 `TokenUsage.from_llm_result()` 도메인 팩토리로 변환 후 `TokenUsageRepository.save()` 호출. `LLMPort` 의존성 없음 -- 비용은 CrewAI 어댑터에서 `litellm.cost_per_token()`로 이미 계산됨.
+- **`track_llm_usage()`**: 삭제됨. 역할이 `TokenUsage.from_llm_result()` 도메인 팩토리 메서드로 이동.
 
 ### Dictionary Lookup Pipeline Modules
 

@@ -31,9 +31,3 @@ class LLMPort(Protocol):
         timeout: float = 30.0,
         **kwargs,
     ) -> tuple[str, LLMCallResult]: ...
-
-    def estimate_cost(
-        self, model: str, prompt_tokens: int, completion_tokens: int,
-    ) -> float:
-        """Estimate LLM call cost."""
-        ...

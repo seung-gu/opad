@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Language.strip_reflexive()** method — language-aware reflexive pronoun stripping for API lookups (e.g., "sich gewöhnen" → "gewöhnen" for German, "levantarse" → "levantar" for Spanish)
 - **Comprehensive Language VO test suite** — tests for immutability enforcement, instance registry, and reflexive stripping across all supported languages (Issue #102)
 - **Korean language support** — added Korean language instance to supported languages (previously excluded from registry)
+- **TokenUsage.from_llm_result()** factory method — domain factory method creating TokenUsage records from LLMCallResult instances, improving separation of concerns between domain and service layers
 
 ### Changed
 - **FreeDictionaryAdapter imports** — migrated from `utils.language_metadata` to `domain.model.language` for Language VO access
@@ -24,12 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PHONETICS_SUPPORTED** — internalized as `_PHONETICS_SUPPORTED` private module constant in free_dictionary.py adapter
 - **Test suite** — updated `src/api/tests/test_free_dictionary.py` to use Language VO instances instead of string codes (269 tests passing)
 - **Benchmark script** — `scripts/benchmark_entry_selection.py` updated to use Language VO API for consistency
+- **Cost calculation in CrewAI adapter** — moved from service layer to `CrewAIArticleGenerator.get_agent_usage()` which now calls `litellm.cost_per_token()` directly for per-agent cost estimation
+- **GenerationResult.agent_usage type** — changed from `list[dict]` to `list[tuple[str, LLMCallResult]]` for structured, type-safe agent token usage representation
+- **Token usage service** — refactored `track_agent_usage()` to accept `LLMCallResult` directly instead of requiring `LLMPort` dependency, decoupling service from adapter
+- **Token usage domain model** — LLMCallResult now carries estimated cost alongside token counts
 
 ### Removed
 - **`src/utils/language_metadata.py`** — utility module replaced by Language Value Object domain model
 - **`_strip_reflexive_pronoun()` function** — replaced by Language.strip_reflexive() method with identical behavior
 - **LANGUAGE_CODE_MAP** — superseded by Language instances and LANGUAGES registry
 - Removed Portuguese, Dutch, Polish, Russian from language support (per product decision)
+- **`LLMPort` dependency from `track_agent_usage()`** — service now works directly with domain LLMCallResult values
+- **`LiteLLMAdapter` from worker** — cost calculation moved to CrewAI adapter, worker no longer requires LLM adapter for article generation
 
 ### Technical Impact
 - **Domain-driven design**: Language-specific behavior now encapsulated in domain model, not scattered across adapters/utils
@@ -37,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Immutability**: MappingProxyType ensures gender_articles mapping cannot be mutated after Language construction
 - **Consistency**: Single source of truth for language metadata enables easier future language additions
 - **Testability**: Language VO can be instantiated with custom patterns in tests without global state mutation
+- **Cleaner separation of concerns**: Cost calculation isolated in adapter, services depend on domain models not ports, worker simplified by removing unused adapter dependency
+- **Type-safe agent usage**: Structured tuple-based agent usage representation replaces loosely-typed dict format, enabling compile-time checks
 
 ## [0.18.0] - 2026-02-20
 

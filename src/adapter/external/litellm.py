@@ -124,25 +124,3 @@ class LiteLLMAdapter:
         })
 
         return content, stats
-
-    def estimate_cost(
-        self, model: str, prompt_tokens: int, completion_tokens: int,
-    ) -> float:
-        """Calculate estimated cost using LiteLLM's pricing data.
-
-        Note: LiteLLM pricing may become outdated. Costs are estimates only.
-        """
-        try:
-            prompt_cost, completion_cost = litellm.cost_per_token(
-                model=model,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens
-            )
-            return prompt_cost + completion_cost
-        except (KeyError, ValueError, AttributeError):
-            return 0.0
-        except Exception as e:
-            logger.debug("Unexpected error calculating cost", extra={
-                "model": model, "error": str(e),
-            })
-            return 0.0

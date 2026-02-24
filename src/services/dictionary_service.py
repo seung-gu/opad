@@ -6,14 +6,14 @@ Token usage is tracked per LLM call via token_usage_service.
 """
 
 import logging
+from json_repair import repair_json
 
 from domain.model.vocabulary import GrammaticalInfo, LookupResult
+from domain.model.token_usage import TokenUsage
 from port.dictionary import DictionaryPort
 from port.llm import LLMPort
 from port.nlp import NLPPort
 from port.token_usage_repository import TokenUsageRepository
-from services.token_usage_service import track_llm_usage
-from json_repair import repair_json
 from services.lemma_extraction import LemmaResult, extract_lemma
 from services.sense_selection import select_best_sense
 
@@ -83,13 +83,14 @@ async def _perform_hybrid_lookup(
         return None
 
     # Track lemma extraction usage
-    if token_usage_repo and user_id:
-        track_llm_usage(
-            token_usage_repo, lemma_stats, user_id,
+    if token_usage_repo and user_id and lemma_stats:
+        usage = TokenUsage.from_llm_result(
+            lemma_stats, user_id,
             operation="dictionary_search",
             article_id=article_id,
             metadata={"word": word, "language": language, "step": "lemma_extraction"},
         )
+        token_usage_repo.save(usage)
 
     lemma = lemma_data["lemma"]
     logger.info("Lemma extracted", extra={
@@ -111,13 +112,14 @@ async def _perform_hybrid_lookup(
     )
 
     # Track sense selection usage
-    if token_usage_repo and user_id:
-        track_llm_usage(
-            token_usage_repo, sense_stats, user_id,
+    if token_usage_repo and user_id and sense_stats:
+        usage = TokenUsage.from_llm_result(
+            sense_stats, user_id,
             operation="dictionary_search",
             article_id=article_id,
             metadata={"word": word, "language": language, "step": "sense_selection"},
         )
+        token_usage_repo.save(usage)
 
     # Extract grammar via port
     grammar = dictionary.extract_grammar(entries, sense_label, language)
@@ -163,13 +165,14 @@ async def _fallback_full_llm(
     )
 
     # Track full LLM fallback usage
-    if token_usage_repo and user_id:
-        track_llm_usage(
-            token_usage_repo, stats, user_id,
+    if token_usage_repo and user_id and stats:
+        usage = TokenUsage.from_llm_result(
+            stats, user_id,
             operation="dictionary_search",
             article_id=article_id,
             metadata={"word": word, "step": "full_llm_fallback"},
         )
+        token_usage_repo.save(usage)
 
     result = repair_json(content, return_objects=True)
     if isinstance(result, dict):

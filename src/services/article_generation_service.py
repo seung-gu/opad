@@ -9,7 +9,6 @@ from domain.model.article import Article, ArticleInputs
 from domain.model.cefr import CEFRLevel
 from port.article_generator import ArticleGeneratorPort
 from port.article_repository import ArticleRepository
-from port.llm import LLMPort
 from port.token_usage_repository import TokenUsageRepository
 from port.vocabulary_repository import VocabularyRepository
 from services.token_usage_service import track_agent_usage
@@ -25,7 +24,6 @@ def generate_article(
     repo: ArticleRepository,
     token_usage_repo: TokenUsageRepository | None = None,
     vocab: VocabularyRepository | None = None,
-    llm: LLMPort | None = None,
     job_id: str | None = None,
 ) -> bool:
     """Generate article content and save to repository.
@@ -59,7 +57,6 @@ def generate_article(
             user_id,
             article.id,
             job_id or "",
-            llm=llm,
         )
 
     return True

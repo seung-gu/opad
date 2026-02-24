@@ -9,10 +9,10 @@ Architecture:
 import logging
 from collections.abc import Callable
 
+from domain.model.article import ArticleStatus
 from domain.model.job import JobContext
 from port.article_repository import ArticleRepository
 from port.job_queue import JobQueuePort
-from domain.model.article import ArticleStatus
 
 logger = logging.getLogger(__name__)
 

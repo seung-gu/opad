@@ -1,7 +1,7 @@
 """In-memory implementation of ArticleGeneratorPort for testing."""
 
 from domain.model.article import (
-    ArticleInputs, GenerationResult, SourceInfo, EditRecord,
+    ArticleInputs, GenerationResult, SourceInfo,
 )
 
 

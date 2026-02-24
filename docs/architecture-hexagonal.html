@@ -361,8 +361,7 @@ const FLOWS = {
       ['s_dict',  's_sense',      'Step 3'],
       ['s_sense', 'p_dict',       'get_sense()'],
       ['s_sense', 'p_llm',        'X.Y.Z'],
-      ['s_dict',  's_token',      'track'],
-      ['s_token', 'p_token',      'save()'],
+      ['s_dict',  'p_token',      'from_llm_result() + save()'],
       ['p_dict',  'a_freeapi',    ''],
       ['p_llm',   'a_litellm',    ''],
       ['p_nlp',   'a_stanza',     ''],
@@ -459,13 +458,13 @@ const FLOWS = {
       ['p_vocab_repo', 'a_mongo_vocab', ''],
       ['a_mongo_vocab', 'x_mongo',      ''],
       ['s_gen',     'p_artgen',        'generate()'],
-      ['p_artgen',  'a_crewai',        ''],
-      ['a_crewai',  'x_crewai',        'run()'],
+      ['p_artgen',  'a_crewai',        '→ [(name, LLMCallResult)]'],
+      ['a_crewai',  'x_crewai',        'run() + cost_per_token()'],
       ['s_gen',     'p_article',       'save()'],
       ['p_article', 'a_mongo_article', ''],
       ['a_mongo_article', 'x_mongo',   ''],
       ['s_gen',     's_token',         'track_agent_usage()'],
-      ['s_token',   'p_token',         'save()'],
+      ['s_token',   'p_token',         'from_llm_result() + save()'],
       ['p_token',   'a_mongo_token',   ''],
       ['a_mongo_token', 'x_mongo',     ''],
     ],
@@ -480,13 +479,13 @@ const FLOWS = {
       ['s_dict',  's_sense', 'Step 3'],
       ['s_dict',  'p_dict',  'Step 2: fetch()'],
       ['s_dict',  'p_llm',   'fallback'],
-      ['s_dict',  's_token', 'track'],
+      ['s_dict',  'p_token', 'from_llm_result() + save()'],
       ['s_lemma', 'p_nlp',   'extract()'],
       ['s_lemma', 'p_llm',   'reduced'],
       ['s_sense', 'p_dict',  'get_sense()'],
       ['s_sense', 'p_llm',   'X.Y.Z'],
     ],
-    domains: ['d_vocab', 'd_cefr', 'd_lang'],
+    domains: ['d_vocab', 'd_cefr', 'd_lang', 'd_token'],
   },
 
   // ── Service: Submission ──
@@ -513,10 +512,9 @@ const FLOWS = {
 
   // ── Service: Token Usage ──
   s_token: {
-    title: 'Token Service — LLMCallResult → TokenUsage → persist',
+    title: 'Token Service — track_agent_usage: (name, LLMCallResult) → from_llm_result() → save()',
     steps: [
-      ['s_token', 'p_token', 'save()'],
-      ['s_token', 'p_llm',   'estimate_cost()'],
+      ['s_token', 'p_token', 'from_llm_result() + save()'],
     ],
     domains: ['d_token'],
   },
@@ -534,7 +532,7 @@ const NODE_DOMAINS = {
   p_artgen:     ['d_article', 'd_cefr'],
   p_nlp:        ['d_vocab', 'd_lang'],
   p_dict:       ['d_vocab', 'd_lang'],
-  p_llm:        ['d_vocab', 'd_cefr', 'd_token', 'd_lang'],
+  p_llm:        ['d_vocab', 'd_cefr', 'd_lang'],
   p_user:       ['d_user'],
   // Adapters
   a_mongo_token:   ['d_token'],
@@ -545,7 +543,7 @@ const NODE_DOMAINS = {
   a_freeapi:       ['d_vocab', 'd_lang'],
   a_litellm:       [],
   a_stanza:        ['d_vocab', 'd_lang'],
-  a_crewai:        ['d_article', 'd_cefr'],
+  a_crewai:        ['d_article', 'd_cefr', 'd_token'],
 };
 
 // ════════════════════════════════════════════════════════════

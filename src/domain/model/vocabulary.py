@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from domain.model.errors import PermissionDeniedError
 
 
-@dataclass
+@dataclass(frozen=True)
 class GrammaticalInfo:
     """Optional grammatical metadata for a vocabulary entry."""
     pos: str | None = None

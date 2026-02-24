@@ -1,9 +1,15 @@
 # domain/model/article.py
 
+from __future__ import annotations
+
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from domain.model.token_usage import LLMCallResult
 
 
 class ArticleStatus(str, Enum):
@@ -50,7 +56,7 @@ class GenerationResult:
     content: str
     source: SourceInfo
     edit_history: list[EditRecord]
-    agent_usage: list[dict]
+    agent_usage: list[tuple[str, LLMCallResult]]
 
 
 # ── Article Domain Model ─────────────────────────────────
