@@ -17,10 +17,9 @@ htmlcov/
 *.cover
 .pytest_cache/
 
-# Node.js / pnpm
+# Node.js
 node_modules/
 .next/
-pnpm-lock.yaml
 
 # Logs and databases
 *.log
