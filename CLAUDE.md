@@ -64,7 +64,7 @@ PYTHONPATH=src uvicorn api.main:app --reload --port 8001
 PYTHONPATH=src uv run python -m worker.main
 
 # Web (Next.js) - port 8000
-cd src/web && API_BASE_URL=http://localhost:8001 npm run dev
+cd client/web && API_BASE_URL=http://localhost:8001 pnpm dev
 ```
 
 ### Testing
