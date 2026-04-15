@@ -167,7 +167,7 @@ Cursor 또는 VS Code에서 다음 확장 프로그램을 설치하세요:
 2. **FastAPI**: IDE 디버거로 실행 ("Python: FastAPI (API Server)" 선택 → `F5`)
 3. **Worker**: 터미널에서 일반 실행 (필요 시)
    ```bash
-   PYTHONPATH=src uv run python -m worker.main
+   PYTHONPATH=server uv run python -m worker.main
    ```
 4. **Next.js**: 터미널에서 일반 실행
    ```bash
@@ -179,11 +179,11 @@ Cursor 또는 VS Code에서 다음 확장 프로그램을 설치하세요:
 1. **MongoDB/Redis**: Docker로 실행 (1단계)
 2. **FastAPI**: 터미널에서 일반 실행
    ```bash
-   PYTHONPATH=src uvicorn api.main:app --reload --port 8001
+   PYTHONPATH=server uvicorn api.main:app --reload --port 8001
    ```
 3. **Worker**: 터미널에서 일반 실행 (필요 시)
    ```bash
-   PYTHONPATH=src uv run python -m worker.main
+   PYTHONPATH=server uv run python -m worker.main
    ```
 4. **Next.js**: IDE 디버거로 실행 ("Next.js: Debug Server" 선택 → `F5`)
 
@@ -192,7 +192,7 @@ Cursor 또는 VS Code에서 다음 확장 프로그램을 설치하세요:
 1. **MongoDB/Redis**: Docker로 실행 (1단계)
 2. **FastAPI**: 터미널에서 일반 실행 (job을 enqueue하기 위해 필요)
    ```bash
-   PYTHONPATH=src uvicorn api.main:app --reload --port 8001
+   PYTHONPATH=server uvicorn api.main:app --reload --port 8001
    ```
 3. **Worker**: IDE 디버거로 실행 ("Python: Worker Service" 선택 → `F5`)
 4. **Next.js**: 터미널에서 일반 실행 (선택사항)

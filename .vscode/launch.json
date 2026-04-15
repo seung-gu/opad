@@ -16,7 +16,7 @@
       "jinja": true,
       "justMyCode": false,
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/src",
+        "PYTHONPATH": "${workspaceFolder}/server",
         "MONGO_URL": "mongodb://localhost:27017/",
         "MONGODB_DATABASE": "opad",
         "REDIS_URL": "redis://localhost:6379"
@@ -41,7 +41,7 @@
       "jinja": true,
       "justMyCode": false,
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/src",
+        "PYTHONPATH": "${workspaceFolder}/server",
         "MONGO_URL": "mongodb://localhost:27017/",
         "MONGODB_DATABASE": "opad",
         "REDIS_URL": "redis://localhost:6379"
@@ -58,7 +58,7 @@
       "jinja": true,
       "justMyCode": false,
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/src",
+        "PYTHONPATH": "${workspaceFolder}/server",
         "MONGO_URL": "mongodb://localhost:27017/",
         "MONGODB_DATABASE": "opad",
         "REDIS_URL": "redis://localhost:6379"
@@ -73,7 +73,7 @@
       "request": "launch",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:debug"],
-      "cwd": "${workspaceFolder}/src/web",
+      "cwd": "${workspaceFolder}/client/apps/web",
       "env": {
         "API_BASE_URL": "http://localhost:8001",
         "PORT": "8000"
@@ -91,7 +91,7 @@
       "type": "chrome",
       "request": "launch",
       "url": "http://localhost:8000",
-      "webRoot": "${workspaceFolder}/src/web",
+      "webRoot": "${workspaceFolder}/client/apps/web",
       "sourceMaps": true,
       "sourceMapPathOverrides": {
         "webpack:///./*": "${webRoot}/*",
@@ -107,7 +107,7 @@
       "console": "integratedTerminal",
       "justMyCode": false,
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/src",
+        "PYTHONPATH": "${workspaceFolder}/server",
         "MONGO_URL": "mongodb://localhost:27017/",
         "MONGODB_DATABASE": "opad",
         "REDIS_URL": "redis://localhost:6379"

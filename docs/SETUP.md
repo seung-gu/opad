@@ -125,13 +125,13 @@ pip install -e .
 ### 4. API 서비스 실행 (터미널 1)
 ```bash
 cd /Users/seung-gu/projects/opad
-PYTHONPATH=src uvicorn api.main:app --reload --port 8001
+PYTHONPATH=server uvicorn api.main:app --reload --port 8001
 ```
 
 ### 5. Worker 서비스 실행 (터미널 2)
 ```bash
 cd /Users/seung-gu/projects/opad
-PYTHONPATH=src uv run python -m worker.main
+PYTHONPATH=server uv run python -m worker.main
 ```
 
 ### 6. Web 서비스 실행 (터미널 3)
