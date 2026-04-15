@@ -118,7 +118,7 @@ pip install -e .
 
 **Stanza NLP 모델 다운로드** (자동):
 - API 서비스 첫 실행 시 Stanza German pipeline (~349MB)이 자동으로 다운로드됩니다.
-- 다운로드는 `src/api/main.py`의 `lifespan` 함수에서 `get_nlp_port().preload()`를 통해 실행됩니다 (NLPPort/StanzaAdapter).
+- 다운로드는 `server/api/main.py`의 `lifespan` 함수에서 `get_nlp_port().preload()`를 통해 실행됩니다 (NLPPort/StanzaAdapter).
 - 이후 실행 시에는 캐시된 모델을 사용하므로 추가 다운로드가 필요하지 않습니다.
 - 수동 다운로드: `uv run python -c "import stanza; stanza.download('de')"`
 
@@ -136,7 +136,7 @@ PYTHONPATH=src uv run python -m worker.main
 
 ### 6. Web 서비스 실행 (터미널 3)
 ```bash
-cd /Users/seung-gu/projects/opad/src/web
+cd /Users/seung-gu/projects/opad/client/apps/web
 npm install
 API_BASE_URL=http://localhost:8001 npm run dev
 ```
@@ -144,8 +144,8 @@ API_BASE_URL=http://localhost:8001 npm run dev
 ### 7. 테스트 (Optional)
 ```bash
 # Python 테스트 실행
-uv run pytest src/api/tests/ -v
-uv run pytest src/worker/tests/ -v
+uv run pytest server/api/tests/ -v
+uv run pytest server/worker/tests/ -v
 
 # 커버리지와 함께 실행
 uv run pytest --cov=src --cov-report=term-missing

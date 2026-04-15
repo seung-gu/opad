@@ -13,8 +13,8 @@
   역할: 2단계 entry+sense+subsense 선택 벤치마크 (이슈 #92).
     Free Dictionary API의 전체 entries를 X.Y.Z(entry.sense.subsense) 포맷으로 LLM에게 제시하고,
     별도 grading agent(Claude Sonnet)가 선택 정확도를 채점. 96.2% 정확도 달성.
-    Usage: PYTHONPATH=src uv run python scripts/benchmark_entry_selection.py
-           PYTHONPATH=src uv run python scripts/benchmark_entry_selection.py --language German --limit 10
+    Usage: PYTHONPATH=server uv run python scripts/benchmark_entry_selection.py
+           PYTHONPATH=server uv run python scripts/benchmark_entry_selection.py --language German --limit 10
   ────────────────────────────────────────
   파일: test_dictionary_agent.py
   역할: Agent 방식 벤치마크. LLM이 tool use로 사전 API를 직접 호출하는 접근법 테스트. 여러 모델(gemini/gpt/haiku) 비교, 로그 파일 생성. 이슈 #81 코멘트의

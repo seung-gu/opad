@@ -163,9 +163,9 @@ graph TD
 This diagram shows the complete flow when a duplicate is detected, including browser interaction and retry logic.
 
 **Files:**
-- FastAPI: `src/api/routes/articles.py:189` - Raises `HTTPException(status_code=409)`
-- Next.js API Route: `src/web/app/api/generate/route.ts:58-78` - Handles 409 and returns `NextResponse.json({ status: 409 })`
-- Browser: `src/web/app/page.tsx:235-273` - Fetches and handles 409 response
+- FastAPI: `server/api/routes/articles.py:189` - Raises `HTTPException(status_code=409)`
+- Next.js API Route: `client/apps/web/app/api/generate/route.ts:58-78` - Handles 409 and returns `NextResponse.json({ status: 409 })`
+- Browser: `client/apps/web/app/page.tsx:235-273` - Fetches and handles 409 response
 
 ```
 User submits form
@@ -202,8 +202,8 @@ New article + job created successfully! ✅
 This diagram shows how Next.js API Route communicates with FastAPI backend over HTTP network.
 
 **Files:**
-- Next.js API Route: `src/web/app/api/generate/route.ts:32-44` - Calls FastAPI with fetch
-- FastAPI: `src/api/routes/articles.py` - Receives HTTP request and responds
+- Next.js API Route: `client/apps/web/app/api/generate/route.ts:32-44` - Calls FastAPI with fetch
+- FastAPI: `server/api/routes/articles.py` - Receives HTTP request and responds
 
 ```
 Next.js API Route (route.ts)
@@ -1629,7 +1629,7 @@ Note: `LiteLLMAdapter` is no longer instantiated in the worker. Cost calculation
 
 ### ArticleSubmissionService (API-side)
 
-**Module**: `src/services/article_submission_service.py`
+**Module**: `server/services/article_submission_service.py`
 
 **`submit_generation()`**:
 ```python
@@ -1645,7 +1645,7 @@ def submit_generation(inputs, user_id, repo, job_queue, force=False) -> Article:
 
 ### ArticleGenerationService (Worker-side)
 
-**Module**: `src/services/article_generation_service.py`
+**Module**: `server/services/article_generation_service.py`
 
 **`generate_article()`**:
 ```python
@@ -1664,7 +1664,7 @@ Note: The `llm: LLMPort` parameter has been removed. Cost calculation is now han
 
 ### Progress Tracking
 
-**Module**: `src/adapter/crew/progress_listener.py`
+**Module**: `server/adapter/crew/progress_listener.py`
 
 `JobProgressListener` is a CrewAI event listener that updates job progress in real-time via `JobQueuePort` (no direct Redis dependency). Used within `CrewAIArticleGenerator.generate()` via `crewai_event_bus.scoped_handlers()`.
 
@@ -1677,13 +1677,13 @@ Note: The `llm: LLMPort` parameter has been removed. Cost calculation is now han
 | `review_article_quality` | 75 | 95 | Reviewing article quality |
 
 **Files**:
-- `src/worker/main.py` - Worker entry point and composition root
-- `src/worker/processor.py` - Job processing loop (`run_worker_loop`, `process_job`)
-- `src/services/article_submission_service.py` - API-side service (`submit_generation`)
-- `src/services/article_generation_service.py` - Worker-side service (`generate_article`)
-- `src/adapter/crew/article_generator.py` - CrewAI adapter (`CrewAIArticleGenerator`)
-- `src/adapter/crew/progress_listener.py` - Progress listener (`JobProgressListener`)
-- `src/adapter/queue/redis_job_queue.py` - Redis adapter (`RedisJobQueueAdapter`)
+- `server/worker/main.py` - Worker entry point and composition root
+- `server/worker/processor.py` - Job processing loop (`run_worker_loop`, `process_job`)
+- `server/services/article_submission_service.py` - API-side service (`submit_generation`)
+- `server/services/article_generation_service.py` - Worker-side service (`generate_article`)
+- `server/adapter/crew/article_generator.py` - CrewAI adapter (`CrewAIArticleGenerator`)
+- `server/adapter/crew/progress_listener.py` - Progress listener (`JobProgressListener`)
+- `server/adapter/queue/redis_job_queue.py` - Redis adapter (`RedisJobQueueAdapter`)
 
 ---
 
@@ -1995,27 +1995,27 @@ for agent_name, stats in result.get_agent_usage():
 - Total routes: 10
 
 - **GET** `/api/articles`
-  - File: `src/web/app/api/articles/route.ts`
+  - File: `client/apps/web/app/api/articles/route.ts`
 - **GET** `/api/status`
-  - File: `src/web/app/api/status/route.ts`
+  - File: `client/apps/web/app/api/status/route.ts`
 - **POST** `/api/generate`
-  - File: `src/web/app/api/generate/route.ts`
+  - File: `client/apps/web/app/api/generate/route.ts`
 - **GET** `/api/article`
-  - File: `src/web/app/api/article/route.ts`
+  - File: `client/apps/web/app/api/article/route.ts`
 - **GET** `/api/stats`
-  - File: `src/web/app/api/stats/route.ts`
+  - File: `client/apps/web/app/api/stats/route.ts`
 - **GET** `/api/articles/[id]`
-  - File: `src/web/app/api/articles/[id]/route.ts`
+  - File: `client/apps/web/app/api/articles/[id]/route.ts`
 - **POST** `/api/dictionary/search`
-  - File: `src/web/app/api/dictionary/search/route.ts`
+  - File: `client/apps/web/app/api/dictionary/search/route.ts`
 - **POST** `/api/dictionary/vocabularies`
-  - File: `src/web/app/api/dictionary/vocabularies/route.ts`
+  - File: `client/apps/web/app/api/dictionary/vocabularies/route.ts`
 - **GET** `/api/dictionary/vocabularies`
-  - File: `src/web/app/api/dictionary/vocabularies/route.ts`
+  - File: `client/apps/web/app/api/dictionary/vocabularies/route.ts`
 - **DELETE** `/api/dictionary/vocabularies/[id]`
-  - File: `src/web/app/api/dictionary/vocabularies/[id]/route.ts`
+  - File: `client/apps/web/app/api/dictionary/vocabularies/[id]/route.ts`
 - **GET** `/api/dictionary/stats`
-  - File: `src/web/app/api/dictionary/stats/route.ts`
+  - File: `client/apps/web/app/api/dictionary/stats/route.ts`
 
 ---
 
@@ -2023,7 +2023,7 @@ for agent_name, stats in result.get_agent_usage():
 
 ### Conjugations Model
 
-**File**: `src/api/models.py:12-21`
+**File**: `server/api/models.py:12-21`
 
 **Purpose**: Store verb conjugation forms across tenses (present, past, perfect).
 
@@ -2073,7 +2073,7 @@ if isinstance(v, Conjugations):
 
 ### VocabularyRequest Model
 
-**File**: `src/api/models.py:91-117`
+**File**: `server/api/models.py:91-117`
 
 **Purpose**: Request model for adding vocabulary with automatic type conversion.
 
@@ -2132,7 +2132,7 @@ request = VocabularyRequest(
 
 ### Web Testing with Vitest
 
-**Configuration File**: `src/web/vitest.config.ts`
+**Configuration File**: `client/apps/web/vitest.config.ts`
 
 **Framework**: Vitest 4.0.18 with jsdom environment
 
@@ -2155,7 +2155,7 @@ request = VocabularyRequest(
 - Excludes: node_modules, test files (`**/*.test.ts`, `**/*.test.tsx`), test directories
 
 **Path Aliases**:
-- `@` resolves to `src/web/` (matches Next.js tsconfig)
+- `@` resolves to `client/apps/web/` (matches Next.js tsconfig)
 
 **Available Commands** (`package.json`):
 ```bash
@@ -2600,7 +2600,7 @@ function VocabularyList() {
 
 Reusable error alert component for displaying error messages.
 
-**File**: `src/web/components/ErrorAlert.tsx`
+**File**: `client/apps/web/components/ErrorAlert.tsx`
 
 **Props**:
 ```typescript
@@ -2651,20 +2651,20 @@ function MyComponent() {
 ```
 
 **Used In**:
-- `src/web/app/vocabulary/page.tsx` - Vocabulary fetch errors
+- `client/apps/web/app/vocabulary/page.tsx` - Vocabulary fetch errors
 - Other pages with error states requiring user feedback
 
 ---
 
 ### MarkdownViewer Component
 
-**File**: `src/web/components/MarkdownViewer.tsx`
+**File**: `client/apps/web/components/MarkdownViewer.tsx`
 
 **Component Remounting Pattern**:
 
 To prevent React hydration mismatches when article content changes, MarkdownViewer uses a key prop pattern that forces component remount on content changes.
 
-**Pattern** (from `src/web/app/articles/[id]/page.tsx:266`):
+**Pattern** (from `client/apps/web/app/articles/[id]/page.tsx:266`):
 ```typescript
 <MarkdownViewer
   key={`${articleId}-${content.length}`}
@@ -2682,7 +2682,7 @@ To prevent React hydration mismatches when article content changes, MarkdownView
 - Key pattern `${articleId}-${content.length}` ensures unique key per content state
 - Component remount triggers `data-processed` reset (line 456), allowing word-clickable logic to re-run
 
-**Processing State Check** (`src/web/components/MarkdownViewer.tsx:456-458`):
+**Processing State Check** (`client/apps/web/components/MarkdownViewer.tsx:456-458`):
 ```typescript
 // Skip if already processed (component remounts on content change via key prop)
 if (containerRef.current.getAttribute('data-processed') === 'true') {
@@ -2705,7 +2705,7 @@ if (containerRef.current.getAttribute('data-processed') === 'true') {
 
 ### MarkdownViewer Security
 
-**File**: `src/web/components/MarkdownViewer.tsx`
+**File**: `client/apps/web/components/MarkdownViewer.tsx`
 
 **XSS Prevention Measures**:
 
@@ -2859,7 +2859,7 @@ strong.textContent = lemma
 
 Reusable empty state component for displaying when no data is available.
 
-**File**: `src/web/components/EmptyState.tsx`
+**File**: `client/apps/web/components/EmptyState.tsx`
 
 **Props**:
 ```typescript
@@ -2913,7 +2913,7 @@ function ArticleList() {
 ```
 
 **Used In**:
-- `src/web/app/vocabulary/page.tsx` - No vocabulary state
+- `client/apps/web/app/vocabulary/page.tsx` - No vocabulary state
 - Other list pages when data is empty
 
 ---

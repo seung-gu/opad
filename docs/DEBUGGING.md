@@ -84,9 +84,9 @@ Cursor 또는 VS Code에서 다음 확장 프로그램을 설치하세요:
 5. API 요청을 보내면 브레이크포인트에서 멈춤
 
 **브레이크포인트 설정 위치 예시:**
-- `src/api/routes/articles.py` - Article 엔드포인트
-- `src/api/routes/jobs.py` - Job 상태 엔드포인트
-- `src/adapter/mongodb/` - MongoDB repository adapters (article, user, vocabulary, token_usage)
+- `server/api/routes/articles.py` - Article 엔드포인트
+- `server/api/routes/jobs.py` - Job 상태 엔드포인트
+- `server/adapter/mongodb/` - MongoDB repository adapters (article, user, vocabulary, token_usage)
 
 ### 2. Worker 서비스 디버깅
 
@@ -100,8 +100,8 @@ Cursor 또는 VS Code에서 다음 확장 프로그램을 설치하세요:
 3. Worker가 Redis에서 job을 가져올 때 브레이크포인트에서 멈춤
 
 **브레이크포인트 설정 위치:**
-- `src/worker/processor.py` - `run_worker_loop()` 함수
-- `src/adapter/crew/crew.py` - CrewAI 실행 로직
+- `server/worker/processor.py` - `run_worker_loop()` 함수
+- `server/adapter/crew/crew.py` - CrewAI 실행 로직
 
 ### 3. 현재 파일 디버깅
 
@@ -130,9 +130,9 @@ Cursor 또는 VS Code에서 다음 확장 프로그램을 설치하세요:
 6. **디버깅**: 브레이크포인트에서 코드가 멈춤
 
 **브레이크포인트 설정 위치:**
-- `src/web/app/page.tsx` - 메인 페이지
-- `src/web/app/articles/page.tsx` - Article 리스트 페이지
-- `src/web/app/api/**/route.ts` - API 라우트 핸들러 (서버 사이드)
+- `client/apps/web/app/page.tsx` - 메인 페이지
+- `client/apps/web/app/articles/page.tsx` - Article 리스트 페이지
+- `client/apps/web/app/api/**/route.ts` - API 라우트 핸들러 (서버 사이드)
 
 ### 방법 2: Chrome DevTools 디버깅 (클라이언트 사이드만)
 
@@ -171,7 +171,7 @@ Cursor 또는 VS Code에서 다음 확장 프로그램을 설치하세요:
    ```
 4. **Next.js**: 터미널에서 일반 실행
    ```bash
-   cd src/web && API_BASE_URL=http://localhost:8001 npm run dev
+   cd client/apps/web && API_BASE_URL=http://localhost:8001 npm run dev
    ```
 
 #### 시나리오 2: Next.js 디버깅
@@ -197,7 +197,7 @@ Cursor 또는 VS Code에서 다음 확장 프로그램을 설치하세요:
 3. **Worker**: IDE 디버거로 실행 ("Python: Worker Service" 선택 → `F5`)
 4. **Next.js**: 터미널에서 일반 실행 (선택사항)
    ```bash
-   cd src/web && API_BASE_URL=http://localhost:8001 npm run dev
+   cd client/apps/web && API_BASE_URL=http://localhost:8001 npm run dev
    ```
 
 ### 권장 워크플로우
@@ -261,7 +261,7 @@ SERPER_API_KEY=your-key
 
 ### API 엔드포인트 디버깅
 
-1. `src/api/routes/articles.py`의 `get_article_endpoint` 함수에 브레이크포인트 설정
+1. `server/api/routes/articles.py`의 `get_article_endpoint` 함수에 브레이크포인트 설정
 2. "Python: FastAPI (API Server)" 실행
 3. 브라우저나 `curl`로 API 호출:
    ```bash
@@ -271,14 +271,14 @@ SERPER_API_KEY=your-key
 
 ### 프론트엔드 API 호출 디버깅
 
-1. `src/web/app/api/articles/route.ts`에 브레이크포인트 설정
+1. `client/apps/web/app/api/articles/route.ts`에 브레이크포인트 설정
 2. "Next.js: Debug Server" 실행
 3. 브라우저에서 `/articles` 페이지 접속
 4. 브레이크포인트에서 멈춤 → 요청/응답 확인
 
 ### Worker Job 처리 디버깅
 
-1. `src/worker/processor.py`의 `process_job` 함수에 브레이크포인트 설정
+1. `server/worker/processor.py`의 `process_job` 함수에 브레이크포인트 설정
 2. "Python: Worker Service" 실행
 3. API를 통해 job 생성
 4. Worker가 job을 처리할 때 브레이크포인트에서 멈춤
@@ -329,7 +329,7 @@ SERPER_API_KEY=your-key
 
 ### Next.js 소스맵이 작동하지 않음
 
-- `src/web/next.config.js`에 소스맵 설정 추가:
+- `client/apps/web/next.config.js`에 소스맵 설정 추가:
   ```js
   module.exports = {
     reactStrictMode: true,

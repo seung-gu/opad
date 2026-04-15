@@ -4,7 +4,7 @@ FROM node:20-slim
 # Install Node.js dependencies and build Next.js
 WORKDIR /app
 COPY . /app
-WORKDIR /app/client/web
+WORKDIR /app/client/apps/web
 
 # Install dependencies
 RUN npm install
