@@ -5,9 +5,9 @@ from unittest.mock import patch, MagicMock
 import sys
 from pathlib import Path
 
-# Add src to path
-# test_articles_route.py is at /app/src/api/tests/test_articles_route.py
-# src is at /app/src, so we go up 3 levels
+# Add server to path
+# test_articles_route.py is at /app/server/api/tests/test_articles_route.py
+# server is at /app/server, so we go up 3 levels
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from fastapi.testclient import TestClient

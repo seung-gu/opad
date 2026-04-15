@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
- * Unit tests for src/web/app/api/articles/route.ts
+ * Unit tests for client/apps/web/app/api/articles/route.ts
  *
  * Tests for:
  * - parseQueryParams: URL search params parsing with defaults and edge cases

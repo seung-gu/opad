@@ -521,7 +521,7 @@ export default function MarkdownViewer({
      * Parent components use key={`${articleId}-${content.length}`} to force remount
      * when content changes, ensuring this processing logic runs with clean DOM state.
      *
-     * See: src/web/app/articles/[id]/page.tsx:266
+     * See: client/apps/web/app/articles/[id]/page.tsx:266
      */
     if (containerRef.current.getAttribute(DATA_ATTR.PROCESSED) === 'true') {
       return

@@ -17,5 +17,9 @@ htmlcov/
 *.cover
 .pytest_cache/
 
+# Node.js
+node_modules/
+.next/
+
 # Logs and databases
 *.log

@@ -15,7 +15,7 @@ COPY . /app
 RUN pip install --no-cache-dir --break-system-packages -e .
 
 # Set Python path
-ENV PYTHONPATH=/app/src
+ENV PYTHONPATH=/app/server
 
 # Expose port (Railway will set PORT env var)
 EXPOSE 8000

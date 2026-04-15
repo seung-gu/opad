@@ -52,7 +52,7 @@ For detailed architecture documentation, see [ARCHITECTURE.md](./docs/ARCHITECTU
    uv pip install -e .
    
    # Node.js
-   cd src/web
+   cd client/apps/web
    npm install
    ```
 
@@ -74,13 +74,13 @@ For detailed architecture documentation, see [ARCHITECTURE.md](./docs/ARCHITECTU
 4. **Run services** (in separate terminals):
    ```bash
    # API (Terminal 1)
-   PYTHONPATH=src uvicorn api.main:app --reload --port 8001
+   PYTHONPATH=server uvicorn api.main:app --reload --port 8001
    
    # Worker (Terminal 2)
-   PYTHONPATH=src uv run python -m worker.main
+   PYTHONPATH=server uv run python -m worker.main
    
    # Web (Terminal 3)
-   cd src/web
+   cd client/apps/web
    API_BASE_URL=http://localhost:8001 npm run dev
    ```
 

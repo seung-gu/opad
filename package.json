@@ -1,0 +1,18 @@
+{
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter @opad/web dev",
+    "build:web": "pnpm --filter @opad/web build",
+    "test:web": "pnpm --filter @opad/web test",
+    "lint:web": "pnpm --filter @opad/web lint"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "overrides": {
+      "react": "^18.2.0",
+      "react-dom": "^18.2.0"
+    }
+  }
+}

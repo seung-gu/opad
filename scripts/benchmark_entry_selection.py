@@ -10,9 +10,9 @@ For each test case:
   4. Report accuracy
 
 Usage:
-    PYTHONPATH=src uv run python scripts/benchmark_entry_selection.py
-    PYTHONPATH=src uv run python scripts/benchmark_entry_selection.py --language German --limit 10
-    PYTHONPATH=src uv run python scripts/benchmark_entry_selection.py --shuffle --seed 123
+    PYTHONPATH=server uv run python scripts/benchmark_entry_selection.py
+    PYTHONPATH=server uv run python scripts/benchmark_entry_selection.py --language German --limit 10
+    PYTHONPATH=server uv run python scripts/benchmark_entry_selection.py --shuffle --seed 123
 """
 
 import argparse

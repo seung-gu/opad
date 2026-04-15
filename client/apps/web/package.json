@@ -1,5 +1,5 @@
 {
-  "name": "opad-viewer",
+  "name": "@opad/web",
   "version": "0.19.0",
   "private": true,
   "scripts": {

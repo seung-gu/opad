@@ -14,9 +14,9 @@ from dotenv import load_dotenv
 # Must be called before importing modules that read env vars (like auth middleware)
 load_dotenv()
 
-# Add src to path
-# main.py is at /app/src/api/main.py
-# src is at /app/src, so we go up 2 levels
+# Add server to path
+# main.py is at /app/server/api/main.py
+# server is at /app/server, so we go up 2 levels
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
