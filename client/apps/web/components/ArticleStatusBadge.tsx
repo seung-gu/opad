@@ -1,6 +1,6 @@
 'use client'
 
-import { ArticleStatus } from '@/types/article'
+import { ArticleStatus } from '@opad/libs'
 
 interface ArticleStatusBadgeProps {
   status: ArticleStatus

@@ -1,9 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { Article } from '@/types/article'
+import { Article } from '@opad/libs'
 import ArticleStatusBadge from './ArticleStatusBadge'
-import { formatDateTime } from '@/lib/formatters'
+import { formatDateTime } from '@opad/libs'
 
 interface ArticleCardProps {
   article: Article

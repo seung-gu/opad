@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Article, ArticleListResponse, ArticleStatus } from '@/types/article'
+import { Article, ArticleListResponse, ArticleStatus, formatArticleCount } from '@opad/libs'
 import ArticleList from '@/components/ArticleList'
 import ArticleFilter from '@/components/ArticleFilter'
 import { fetchWithAuth, parseErrorResponse } from '@/lib/api'
@@ -19,10 +19,6 @@ import { usePagination } from '@/hooks/usePagination'
  * - Link to individual article pages
  * - Handle loading and processing states
  */
-function formatArticleCount(total: number): string {
-  return `${total} article${total === 1 ? '' : 's'} found`
-}
-
 export default function ArticlesPage() {
   const [articles, setArticles] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)

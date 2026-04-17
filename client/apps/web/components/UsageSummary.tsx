@@ -8,46 +8,14 @@
  * - Responsive grid layout
  */
 
-import { TokenUsageSummary, OperationUsage } from '@/types/usage'
+import { TokenUsageSummary, OperationUsage, getOperationLabel, formatTokens, formatCost } from '@opad/libs'
 
 interface UsageSummaryProps {
   summary: TokenUsageSummary
   days: number
 }
 
-/**
- * Maps operation keys to human-readable labels.
- */
-const OPERATION_LABELS: Record<string, string> = {
-  dictionary_search: 'Dictionary Search',
-  article_generation: 'Article Generation',
-}
-
-/**
- * Get display label for an operation key.
- */
-function getOperationLabel(key: string): string {
-  return OPERATION_LABELS[key] || key.replaceAll('_', ' ').replaceAll(/\b\w/g, c => c.toUpperCase())
-}
-
-/**
- * Format token count with locale-aware formatting.
- */
-function formatTokens(tokens: number): string {
-  return tokens.toLocaleString()
-}
-
-/**
- * Format cost in USD with 4 decimal places.
- */
-function formatCost(cost: number): string {
-  return `$${cost.toFixed(4)}`
-}
-
-/**
- * Format date for display in chart.
- */
-function formatDate(dateStr: string): string {
+function formatChartDate(dateStr: string): string {
   const date = new Date(dateStr)
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
@@ -164,7 +132,7 @@ function DailyUsageChart({ dailyUsage, maxTokens }: Readonly<DailyUsageChartProp
         const percentage = (tokens / maxTokens) * 100
         const barWidth = Math.max(percentage, 2) // Minimum 2% for visibility
 
-        const formattedDate = formatDate(date)
+        const formattedDate = formatChartDate(date)
         const ariaLabel = `${formattedDate}: ${formatTokens(tokens)} tokens, ${formatCost(cost)}`
 
         return (

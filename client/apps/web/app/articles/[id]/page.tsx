@@ -6,39 +6,11 @@ import Link from 'next/link'
 import MarkdownViewer from '@/components/MarkdownViewer'
 import ArticleStatusBadge from '@/components/ArticleStatusBadge'
 import VocabularyList from '@/components/VocabularyList'
-import { Article, Vocabulary } from '@/types/article'
-import { TokenUsageRecord } from '@/types/usage'
+import { Article, Vocabulary, TokenUsageRecord, extractAgentName, formatOperationName } from '@opad/libs'
 import { fetchWithAuth } from '@/lib/api'
 import { useVocabularyDelete } from '@/hooks/useVocabularyDelete'
-import { formatDate } from '@/lib/formatters'
+import { formatDate } from '@opad/libs'
 import { useStatusPolling } from '@/hooks/useStatusPolling'
-
-/**
- * Extract agent name from metadata with proper type checking and fallback.
- */
-function extractAgentName(metadata?: { agent_name?: unknown; agent_role?: unknown }): string | undefined {
-  const rawAgentName = metadata?.agent_name
-  if (typeof rawAgentName === 'string' && rawAgentName) {
-    return rawAgentName
-  }
-  const rawAgentRole = metadata?.agent_role
-  if (typeof rawAgentRole === 'string' && rawAgentRole) {
-    return rawAgentRole
-  }
-  return undefined
-}
-
-/**
- * Helper to format operation names for display.
- */
-function formatOperationName(operation: string, agentName?: string): string {
-  // Use agent name if available (e.g., "Article Search", "Article Selection", "Article Rewrite")
-  if (agentName) {
-    return agentName
-  }
-  // Default: convert snake_case to Title Case
-  return operation.replaceAll('_', ' ').replaceAll(/\b\w/g, c => c.toUpperCase())
-}
 
 /**
  * Aggregated usage data for display.

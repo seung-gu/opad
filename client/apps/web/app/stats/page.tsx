@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { formatBytes, formatNumber } from '@opad/libs'
 
 interface DatabaseStats {
   collection: string
@@ -49,15 +50,6 @@ export default function StatsPage() {
     fetchStats()
   }, [])
 
-  const formatBytes = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-  }
-
-  const formatNumber = (num: number) => {
-    return num.toLocaleString()
-  }
 
   if (loading) {
     return (

@@ -1,6 +1,6 @@
 'use client'
 
-import { Vocabulary } from '@/types/article'
+import { Vocabulary } from '@opad/libs'
 import VocabularyCard from './VocabularyCard'
 
 interface VocabularyListProps {

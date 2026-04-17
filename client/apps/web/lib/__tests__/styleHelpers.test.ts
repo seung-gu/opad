@@ -4,7 +4,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { getLevelColor, getLevelLabel } from '../styleHelpers'
+import { getLevelColor } from '../styleHelpers'
+import { getCefrLabel as getLevelLabel } from '@opad/libs'
 
 describe('styleHelpers', () => {
   describe('getLevelColor', () => {

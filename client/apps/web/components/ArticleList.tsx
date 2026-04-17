@@ -1,6 +1,6 @@
 'use client'
 
-import { Article } from '@/types/article'
+import { Article } from '@opad/libs'
 import ArticleCard from './ArticleCard'
 
 interface ArticleListProps {

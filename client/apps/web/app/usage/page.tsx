@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { TokenUsageSummary } from '@/types/usage'
+import { TokenUsageSummary } from '@opad/libs'
 import { fetchWithAuth, parseErrorResponse } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import ErrorAlert from '@/components/ErrorAlert'
