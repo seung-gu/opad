@@ -71,3 +71,17 @@ export function formatDateTime(dateString: string): string {
     minute: '2-digit'
   })
 }
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
+export function formatNumber(num: number): string {
+  return num.toLocaleString()
+}
+
+export function formatArticleCount(total: number): string {
+  return `${total} article${total === 1 ? '' : 's'} found`
+}

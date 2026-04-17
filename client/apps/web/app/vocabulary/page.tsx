@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { VocabularyCount } from '@/types/article'
+import { VocabularyCount } from '@opad/libs'
 import { fetchWithAuth, parseErrorResponse } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import { useVocabularyDelete } from '@/hooks/useVocabularyDelete'

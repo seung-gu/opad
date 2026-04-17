@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { split } from 'sentence-splitter'
-import { Vocabulary } from '@/types/article'
+import { Vocabulary } from '@opad/libs'
 import { fetchWithAuth } from '@/lib/api'
 
 // Data attribute constants to avoid duplication

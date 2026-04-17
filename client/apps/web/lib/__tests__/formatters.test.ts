@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { formatDate, formatDateShort, formatDateTime } from '../formatters'
+import { formatDate, formatDateShort, formatDateTime } from '@opad/libs'
 
 describe('formatters', () => {
   describe('formatDate', () => {

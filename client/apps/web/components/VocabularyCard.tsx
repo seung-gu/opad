@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { getLevelColor } from '@/lib/styleHelpers'
-import { Conjugations } from '@/types/article'
+import { Conjugations } from '@opad/libs'
 
 export interface VocabularyCardProps {
   id: string
