@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.25.0",
     "litellm>=1.50.0",
     "tenacity>=9.0.0",
+    "json-repair",
 ]
 
 [project.optional-dependencies]
