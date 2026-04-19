@@ -78,6 +78,18 @@ uv run pytest server/worker/tests/ -v
 uv run pytest --cov=server --cov-report=term-missing
 ```
 
+### Python Dependencies
+
+Dependencies are split by service in `pyproject.toml`:
+```bash
+# Local development (install all)
+uv pip install -e ".[api,worker]"
+
+# Docker (service-specific)
+# Dockerfile.api:  pip install -e ".[api]"
+# Dockerfile.worker: pip install -e ".[worker]"
+```
+
 ### Python Commands
 
 Always use `uv run` for Python commands, never `python3` or `python`.
