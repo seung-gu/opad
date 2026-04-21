@@ -104,6 +104,13 @@ class StanzaAdapter:
         with self._lock:
             self._pipeline = None
             self._unload_timer = None
+        import gc
+        gc.collect()
+        try:
+            import ctypes
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except OSError:
+            pass  # macOS — no libc.so.6
         logger.info("Stanza pipeline unloaded (idle %dm)", _IDLE_TTL_SECONDS // 60)
 
     # ------------------------------------------------------------------
