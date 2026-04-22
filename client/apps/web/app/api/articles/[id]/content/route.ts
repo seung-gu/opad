@@ -12,10 +12,8 @@ export const fetchCache = 'force-no-store'
  * 2. Call FastAPI GET /articles/:id/content
  * 3. Return markdown content
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const articleId = params.id
 

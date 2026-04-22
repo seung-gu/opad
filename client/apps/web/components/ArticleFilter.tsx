@@ -1,5 +1,6 @@
 'use client'
 
+import type { ChangeEvent } from 'react'
 import { ArticleStatus } from '@opad/libs'
 
 interface ArticleFilterProps {
@@ -20,7 +21,7 @@ const STATUS_OPTIONS: { value: ArticleStatus | ''; label: string }[] = [
  * Provides status filtering dropdown.
  */
 export default function ArticleFilter({ selectedStatus, onStatusChange }: ArticleFilterProps) {
-  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleChange = (e: ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value
     onStatusChange(value === '' ? undefined : (value as ArticleStatus))
   }
