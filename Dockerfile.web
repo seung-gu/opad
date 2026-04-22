@@ -1,20 +1,22 @@
 # Dockerfile for Web service (Next.js)
 FROM node:20-slim
 
-# Install Node.js dependencies and build Next.js
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy project files
 WORKDIR /app
 COPY . /app
-WORKDIR /app/client/apps/web
 
-# Install dependencies
-RUN npm install
+# Install dependencies (pnpm workspace)
+RUN pnpm install --frozen-lockfile
 
 # Build Next.js
-RUN npm run build
+RUN pnpm --filter @opad/web build
 
 # Expose port (Railway will set PORT env var)
 EXPOSE 3000
 
 # Start Next.js server on Railway's PORT (default 3000)
+WORKDIR /app/client/apps/web
 CMD sh -c "npx next start -p ${PORT:-3000}"
-
