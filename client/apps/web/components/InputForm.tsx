@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 
 interface InputFormProps {
   onSubmit: (inputs: {
@@ -18,7 +18,7 @@ export default function InputForm({ onSubmit, loading = false }: InputFormProps)
   const [length, setLength] = useState('500')
   const [topic, setTopic] = useState('')
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     await onSubmit({ language, level, length, topic })
   }
