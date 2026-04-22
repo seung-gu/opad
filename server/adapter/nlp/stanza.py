@@ -7,6 +7,7 @@ only primitive dicts cross the boundary.
 
 import asyncio
 import logging
+import os
 import threading
 from typing import Any
 
@@ -20,10 +21,14 @@ _GENDER_ARTICLE_MAP = {
 }
 
 
+_IDLE_TTL_SECONDS = int(os.getenv("STANZA_IDLE_TTL_MIN", "60")) * 60
+
+
 class StanzaAdapter:
     """Adapter that extracts linguistic info using Stanza NLP pipeline.
 
-    Thread-safe singleton pipeline: loaded once, reused across requests.
+    Thread-safe singleton pipeline: loaded on first use, reused across requests.
+    Automatically unloads after idle timeout to reclaim ~800MB memory.
     The pipeline runs synchronously (~50ms), so extract() offloads it
     to a thread to avoid blocking the event loop.
     """
@@ -31,10 +36,12 @@ class StanzaAdapter:
     def __init__(self):
         self._pipeline = None
         self._lock = threading.Lock()
+        self._unload_timer: asyncio.TimerHandle | None = None
 
     def preload(self) -> None:
-        """Eagerly load the Stanza pipeline (call at service startup)."""
-        self._ensure_pipeline()
+        """Import stanza at startup to avoid memory fragmentation later (~400MB)."""
+        import stanza  # noqa: F401
+        logger.info("Stanza module imported (preload)")
 
     # ------------------------------------------------------------------
     # Public interface (implements NLPPort)
@@ -49,6 +56,7 @@ class StanzaAdapter:
         """
         try:
             pipeline = self._ensure_pipeline()
+            self._schedule_unload()
             parsed = await asyncio.to_thread(pipeline, sentence)
         except Exception as e:
             logger.warning("Stanza pipeline error", extra={"error": str(e)})
@@ -78,6 +86,32 @@ class StanzaAdapter:
                     )
                     logger.info("Stanza German pipeline loaded")
         return self._pipeline
+
+    def _schedule_unload(self) -> None:
+        """Schedule pipeline unload after idle timeout. Resets on each call."""
+        if self._unload_timer:
+            self._unload_timer.cancel()
+        try:
+            loop = asyncio.get_event_loop()
+            self._unload_timer = loop.call_later(
+                _IDLE_TTL_SECONDS, self._unload_pipeline,
+            )
+        except RuntimeError:
+            pass  # No event loop (e.g. testing)
+
+    def _unload_pipeline(self) -> None:
+        """Unload pipeline to reclaim ~800MB memory."""
+        with self._lock:
+            self._pipeline = None
+            self._unload_timer = None
+        import gc
+        gc.collect()
+        try:
+            import ctypes
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except OSError:
+            pass  # macOS — no libc.so.6
+        logger.info("Stanza pipeline unloaded (idle %dm)", _IDLE_TTL_SECONDS // 60)
 
     # ------------------------------------------------------------------
     # Word matching
