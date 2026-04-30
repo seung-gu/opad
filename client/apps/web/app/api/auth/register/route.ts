@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { apiBaseUrl } from '@/lib/api'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
@@ -22,11 +22,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const response = await fetch(`${apiBaseUrl}/auth/register`, {
+    const response = await fetchFromApi(`${apiBaseUrl}/auth/register`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify({ email, password, name }),
     })
 

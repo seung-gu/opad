@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { apiBaseUrl } from '@/lib/api'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 /**
  * Get database statistics from FastAPI.
@@ -11,12 +11,7 @@ import { apiBaseUrl } from '@/lib/api'
 export async function GET(_request: NextRequest) {
   try {
     // Call FastAPI to get database statistics
-    const response = await fetch(`${apiBaseUrl}/stats`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
+    const response = await fetchFromApi(`${apiBaseUrl}/stats`)
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))

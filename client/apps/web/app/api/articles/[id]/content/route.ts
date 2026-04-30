@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { apiBaseUrl } from '@/lib/api'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 // Prevent static optimization - only run at request time
 export const dynamic = 'force-dynamic'
@@ -34,12 +34,8 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     const authorization = request.headers.get('authorization')
 
     // Call FastAPI to get article content from MongoDB
-    const response = await fetch(`${apiBaseUrl}/articles/${articleId}/content`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(authorization ? { 'Authorization': authorization } : {}),
-      },
+    const response = await fetchFromApi(`${apiBaseUrl}/articles/${articleId}/content`, {
+      authorization,
     })
 
     if (!response.ok) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { apiBaseUrl } from '@/lib/api'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 // Prevent static optimization
 export const dynamic = 'force-dynamic'
@@ -22,15 +22,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Forward Authorization header from client
-    const authHeader = request.headers.get('Authorization')
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    }
-    if (authHeader) {
-      headers['Authorization'] = authHeader
-    }
-
     // Forward request to FastAPI
     // Only include article_id if it's a valid non-empty string
     const requestBody: Record<string, string> = {
@@ -42,10 +33,10 @@ export async function POST(request: NextRequest) {
       requestBody.article_id = article_id
     }
 
-    const response = await fetch(`${apiBaseUrl}/dictionary/search`, {
+    const response = await fetchFromApi(`${apiBaseUrl}/dictionary/search`, {
       method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody)
+      authorization: request.headers.get('Authorization'),
+      body: JSON.stringify(requestBody),
     })
 
     if (!response.ok) {

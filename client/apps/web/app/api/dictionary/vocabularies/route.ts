@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { apiBaseUrl } from '@/lib/api'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 // Prevent static optimization
 export const dynamic = 'force-dynamic'
@@ -14,20 +14,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    // Forward Authorization header from client
-    const authHeader = request.headers.get('Authorization')
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    }
-    if (authHeader) {
-      headers['Authorization'] = authHeader
-    }
-
     // Forward request to FastAPI
-    const response = await fetch(`${apiBaseUrl}/dictionary/vocabulary`, {
+    const response = await fetchFromApi(`${apiBaseUrl}/dictionary/vocabulary`, {
       method: 'POST',
-      headers,
-      body: JSON.stringify(body)
+      authorization: request.headers.get('Authorization'),
+      body: JSON.stringify(body),
     })
 
     if (!response.ok) {
@@ -63,19 +54,9 @@ export async function GET(request: NextRequest) {
 
     const url = `${apiBaseUrl}/dictionary/vocabularies${queryParams.toString() ? '?' + queryParams.toString() : ''}`
 
-    // Forward Authorization header from client
-    const authHeader = request.headers.get('Authorization')
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    }
-    if (authHeader) {
-      headers['Authorization'] = authHeader
-    }
-
     // Forward request to FastAPI
-    const response = await fetch(url, {
-      method: 'GET',
-      headers
+    const response = await fetchFromApi(url, {
+      authorization: request.headers.get('Authorization'),
     })
 
     if (!response.ok) {

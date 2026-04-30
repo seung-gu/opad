@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { apiBaseUrl } from '@/lib/api'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 // Prevent static optimization - only run at request time
 export const dynamic = 'force-dynamic'
@@ -36,18 +36,12 @@ export async function POST(request: NextRequest) {
       message: `Calling FastAPI at ${apiBaseUrl}`
     }))
 
-    // Get Authorization header from client request
-    const authorization = request.headers.get('authorization')
-
     // Call unified endpoint: duplicate check + article creation + job enqueue
     const force = body.force === true
     const generateUrl = `${apiBaseUrl}/articles/generate${force ? '?force=true' : ''}`
-    const generateResponse = await fetch(generateUrl, {
+    const generateResponse = await fetchFromApi(generateUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(authorization ? { 'Authorization': authorization } : {}),
-      },
+      authorization: request.headers.get('authorization'),
       body: JSON.stringify({
         language,
         level,

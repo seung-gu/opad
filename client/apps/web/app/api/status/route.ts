@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { apiBaseUrl } from '@/lib/api'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 // Prevent static optimization - only run at request time
 export const dynamic = 'force-dynamic'
@@ -29,12 +29,7 @@ export async function GET(request: NextRequest) {
     }
 
     // FastAPI에서 job 상태 조회
-    const response = await fetch(`${apiBaseUrl}/jobs/${jobId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
+    const response = await fetchFromApi(`${apiBaseUrl}/jobs/${jobId}`)
 
     if (!response.ok) {
       if (response.status === 404) {

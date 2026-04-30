@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { apiBaseUrl } from '@/lib/api'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 // Prevent static optimization
 export const dynamic = 'force-dynamic'
@@ -13,19 +13,10 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
   try {
     const vocabularyId = params.id
 
-    // Forward Authorization header from client
-    const authHeader = request.headers.get('Authorization')
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    }
-    if (authHeader) {
-      headers['Authorization'] = authHeader
-    }
-
     // Forward request to FastAPI
-    const response = await fetch(`${apiBaseUrl}/dictionary/vocabularies/${vocabularyId}`, {
+    const response = await fetchFromApi(`${apiBaseUrl}/dictionary/vocabularies/${vocabularyId}`, {
       method: 'DELETE',
-      headers
+      authorization: request.headers.get('Authorization'),
     })
 
     if (!response.ok) {

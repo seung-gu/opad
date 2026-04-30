@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { apiBaseUrl } from '@/lib/api'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
@@ -21,12 +21,8 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const response = await fetch(`${apiBaseUrl}/auth/me`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': authorization,
-      },
+    const response = await fetchFromApi(`${apiBaseUrl}/auth/me`, {
+      authorization,
     })
 
     const data = await response.json()

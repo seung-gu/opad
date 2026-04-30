@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { apiBaseUrl } from '@/lib/api'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 // Prevent static optimization
 export const dynamic = 'force-dynamic'
@@ -16,18 +16,11 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     const articleId = params.id
 
     // Forward Authorization header from client
-    const authHeader = request.headers.get('Authorization')
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    }
-    if (authHeader) {
-      headers['Authorization'] = authHeader
-    }
+    const authorization = request.headers.get('Authorization')
 
     // Forward request to FastAPI
-    const response = await fetch(`${apiBaseUrl}/articles/${articleId}/vocabularies`, {
-      method: 'GET',
-      headers
+    const response = await fetchFromApi(`${apiBaseUrl}/articles/${articleId}/vocabularies`, {
+      authorization,
     })
 
     if (!response.ok) {
