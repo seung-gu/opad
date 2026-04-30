@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
@@ -10,9 +11,6 @@ export const fetchCache = 'force-no-store'
  */
 export async function GET(request: NextRequest) {
   try {
-    // FastAPI base URL
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
-
     // Get Authorization header from client request
     const authorization = request.headers.get('authorization')
 
@@ -23,12 +21,8 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const response = await fetch(`${apiBaseUrl}/auth/me`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': authorization,
-      },
+    const response = await fetchFromApi(`${apiBaseUrl}/auth/me`, {
+      authorization,
     })
 
     const data = await response.json()

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 // Prevent static optimization - only run at request time
 export const dynamic = 'force-dynamic'
@@ -22,9 +23,6 @@ export async function GET(request: NextRequest) {
     // Extract query parameters
     const days = searchParams.get('days') || '30'
 
-    // FastAPI base URL
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
-
     // Build query string
     const queryParams = new URLSearchParams()
     queryParams.set('days', days)
@@ -42,13 +40,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Call FastAPI to get usage summary
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': authorization,
-      },
-    })
+    const response = await fetchFromApi(url, { authorization })
 
     if (!response.ok) {
       if (response.status === 401) {

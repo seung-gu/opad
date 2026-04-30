@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
@@ -21,14 +22,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // FastAPI base URL
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
-
-    const response = await fetch(`${apiBaseUrl}/auth/login`, {
+    const response = await fetchFromApi(`${apiBaseUrl}/auth/login`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify({ email, password }),
     })
 

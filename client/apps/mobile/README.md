@@ -10,7 +10,14 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    npm install
    ```
 
-2. Start the app
+2. Configure environment
+
+   ```bash
+   cp .env.example .env.local
+   # Then edit .env.local to set EXPO_PUBLIC_API_BASE_URL for your environment.
+   ```
+
+3. Start the app
 
    ```bash
    npx expo start
@@ -24,6 +31,27 @@ In the output, you'll find options to open the app in a
 - [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+
+## API Base URL
+
+The mobile app calls the FastAPI backend directly (no Next.js proxy). The base URL must be configured via `EXPO_PUBLIC_API_BASE_URL` in `.env.local`.
+
+| Environment       | Value                                      | Notes                                     |
+|-------------------|--------------------------------------------|-------------------------------------------|
+| iOS Simulator     | `http://localhost:8001`                    | Same machine, `localhost` works           |
+| Android Emulator  | `http://10.0.2.2:8001`                     | `10.0.2.2` = host machine from emulator   |
+| Physical device   | `http://<your-LAN-IP>:8001`                | e.g. `http://192.168.0.42:8001`. Same Wi-Fi as your dev machine. Find LAN IP with `ifconfig` (Mac/Linux) or `ipconfig` (Windows). |
+| Production        | `https://api.opad.example.com`             | Set at EAS Build time                     |
+
+Use the `apiUrl` helper from `lib/api.ts` to build full URLs:
+
+```ts
+import { apiUrl } from '@/lib/api'
+
+const res = await fetch(apiUrl('/articles'))
+```
+
+> CORS does **not** apply to native mobile calls (only browsers enforce CORS). The FastAPI server's `CORS_ORIGINS` setting is irrelevant for the mobile app, except when running via Expo Web.
 
 ## Get a fresh project
 

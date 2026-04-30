@@ -1,16 +1,17 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
- * Unit tests for client/apps/web/app/api/articles/route.ts
+ * Unit tests for client/apps/web/app/api/articles/route.ts and lib/api.ts
  *
  * Tests for:
  * - parseQueryParams: URL search params parsing with defaults and edge cases
- * - fetchFromApi: API fetch with timeout handling, error cases, and abort control
+ * - fetchFromApi: API fetch with timeout handling, error cases, body/method support
  * - buildQueryString: Query string construction from ArticleQueryParams
  * - Integration: Route GET handler behavior with various inputs
  */
 
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
+import { fetchFromApi, apiBaseUrl } from '@/lib/api'
 
 // Mock the Next.js modules
 vi.mock('next/server', () => ({
@@ -67,36 +68,6 @@ function parseQueryParams(searchParams: URLSearchParams): ArticleQueryParams {
     language: searchParams.get('language') || undefined,
     level: searchParams.get('level') || undefined,
     user_id: searchParams.get('user_id') || undefined
-  }
-}
-
-async function fetchFromApi(
-  url: string,
-  authorization: string | null,
-  apiBaseUrl: string
-): Promise<Response> {
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 30000)
-
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(authorization ? { 'Authorization': authorization } : {}),
-      },
-      signal: controller.signal,
-    })
-    clearTimeout(timeoutId)
-    return response
-  } catch (fetchError: unknown) {
-    clearTimeout(timeoutId)
-    const error = fetchError instanceof Error ? fetchError : new Error('Unknown fetch error')
-    const isTimeout = error.name === 'AbortError'
-    const errorMsg = isTimeout
-      ? `Connection timeout: API server at ${apiBaseUrl} did not respond within 30 seconds`
-      : `Failed to connect to API server at ${apiBaseUrl}: ${error.message}`
-    throw new Error(errorMsg)
   }
 }
 
@@ -544,7 +515,7 @@ describe('fetchFromApi', () => {
   })
 
   describe('successful requests', () => {
-    test('should fetch with correct headers', async () => {
+    test('should default to GET with Content-Type: application/json', async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({ success: true })
@@ -552,7 +523,7 @@ describe('fetchFromApi', () => {
       globalThis.fetch = mockFetch
 
       const url = 'http://api.example.com/articles'
-      const result = await fetchFromApi(url, null, 'http://api.example.com')
+      await fetchFromApi(url)
 
       expect(mockFetch).toHaveBeenCalledWith(
         url,
@@ -574,19 +545,19 @@ describe('fetchFromApi', () => {
 
       const url = 'http://api.example.com/articles'
       const authorization = 'Bearer token123'
-      await fetchFromApi(url, authorization, 'http://api.example.com')
+      await fetchFromApi(url, { authorization })
 
       expect(mockFetch).toHaveBeenCalledWith(
         url,
         expect.objectContaining({
           headers: expect.objectContaining({
-            'Authorization': authorization
+            Authorization: authorization
           })
         })
       )
     })
 
-    test('should not include Authorization header when null', async () => {
+    test('should not include Authorization header when null/missing', async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({ success: true })
@@ -594,7 +565,7 @@ describe('fetchFromApi', () => {
       globalThis.fetch = mockFetch
 
       const url = 'http://api.example.com/articles'
-      await fetchFromApi(url, null, 'http://api.example.com')
+      await fetchFromApi(url, { authorization: null })
 
       const callArgs = mockFetch.mock.calls[0][1] as any
       expect(callArgs.headers).not.toHaveProperty('Authorization')
@@ -610,7 +581,7 @@ describe('fetchFromApi', () => {
       globalThis.fetch = mockFetch
 
       const url = 'http://api.example.com/articles'
-      const result = await fetchFromApi(url, null, 'http://api.example.com')
+      const result = await fetchFromApi(url)
 
       expect(result).toEqual(mockResponse)
     })
@@ -625,37 +596,69 @@ describe('fetchFromApi', () => {
       const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout')
       const url = 'http://api.example.com/articles'
 
-      await fetchFromApi(url, null, 'http://api.example.com')
+      await fetchFromApi(url)
 
       expect(clearTimeoutSpy).toHaveBeenCalled()
     })
   })
 
-  describe('timeout handling', () => {
-    test('should throw timeout error when request exceeds 30 seconds', async () => {
-      const mockFetch = vi.fn().mockImplementation(() => {
-        return new Promise(() => {
-          // Never resolves - simulates timeout
-        })
+  describe('method and body support', () => {
+    test('should send POST with body and forward authorization', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ id: 'abc' })
       })
       globalThis.fetch = mockFetch
 
-      const url = 'http://api.example.com/articles'
-      const apiBaseUrl = 'http://api.example.com'
+      const url = 'http://api.example.com/auth/login'
+      const body = JSON.stringify({ email: 'a@b.c', password: 'pw' })
+      await fetchFromApi(url, {
+        method: 'POST',
+        body,
+        authorization: 'Bearer xyz'
+      })
 
-      const promise = fetchFromApi(url, null, apiBaseUrl)
-
-      // Advance timers to trigger abort
-      vi.useFakeTimers()
-      setTimeout(() => {
-        // This would trigger the AbortController
-      }, 30000)
-
-      // Note: This is a simplified test. In real scenarios, we'd need to properly
-      // simulate the AbortController behavior
+      expect(mockFetch).toHaveBeenCalledWith(
+        url,
+        expect.objectContaining({
+          method: 'POST',
+          body,
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer xyz'
+          })
+        })
+      )
     })
 
-    test('should return timeout error message with correct format', async () => {
+    test('should send DELETE without body', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
+      globalThis.fetch = mockFetch
+
+      await fetchFromApi('http://api.example.com/items/42', { method: 'DELETE' })
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://api.example.com/items/42',
+        expect.objectContaining({ method: 'DELETE' })
+      )
+    })
+
+    test('should merge extra headers without overriding Content-Type', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
+      globalThis.fetch = mockFetch
+
+      await fetchFromApi('http://api.example.com/x', {
+        headers: { 'X-Custom': 'value' }
+      })
+
+      const callArgs = mockFetch.mock.calls[0][1] as any
+      expect(callArgs.headers['Content-Type']).toBe('application/json')
+      expect(callArgs.headers['X-Custom']).toBe('value')
+    })
+  })
+
+  describe('timeout handling', () => {
+    test('should produce timeout error message in expected format', async () => {
       const abortError = new Error('Aborted')
       abortError.name = 'AbortError'
 
@@ -663,10 +666,9 @@ describe('fetchFromApi', () => {
       globalThis.fetch = mockFetch
 
       const url = 'http://api.example.com/articles'
-      const apiBaseUrl = 'http://api.example.com'
 
       try {
-        await fetchFromApi(url, null, apiBaseUrl)
+        await fetchFromApi(url)
         throw new Error('Should have thrown')
       } catch (error) {
         expect(error).toBeInstanceOf(Error)
@@ -676,37 +678,30 @@ describe('fetchFromApi', () => {
       }
     })
 
-    test('should include apiBaseUrl in timeout error message', async () => {
+    test('should respect custom timeoutMs in error message', async () => {
       const abortError = new Error('Aborted')
       abortError.name = 'AbortError'
 
       const mockFetch = vi.fn().mockRejectedValue(abortError)
       globalThis.fetch = mockFetch
 
-      const url = 'http://custom-api.com/articles'
-      const apiBaseUrl = 'http://custom-api.com'
-
       try {
-        await fetchFromApi(url, null, apiBaseUrl)
+        await fetchFromApi('http://api.example.com/x', { timeoutMs: 5000 })
         throw new Error('Should have thrown')
       } catch (error) {
-        const errorMessage = (error as Error).message
-        expect(errorMessage).toContain(apiBaseUrl)
+        expect((error as Error).message).toContain('5 seconds')
       }
     })
   })
 
   describe('error handling', () => {
-    test('should throw on network error', async () => {
+    test('should throw on network error with friendly message', async () => {
       const networkError = new Error('Network error')
       const mockFetch = vi.fn().mockRejectedValue(networkError)
       globalThis.fetch = mockFetch
 
-      const url = 'http://api.example.com/articles'
-      const apiBaseUrl = 'http://api.example.com'
-
       try {
-        await fetchFromApi(url, null, apiBaseUrl)
+        await fetchFromApi('http://api.example.com/articles')
         throw new Error('Should have thrown')
       } catch (error) {
         expect(error).toBeInstanceOf(Error)
@@ -715,16 +710,13 @@ describe('fetchFromApi', () => {
       }
     })
 
-    test('should include error details in error message', async () => {
+    test('should include underlying error details in error message', async () => {
       const fetchError = new Error('ECONNREFUSED')
       const mockFetch = vi.fn().mockRejectedValue(fetchError)
       globalThis.fetch = mockFetch
 
-      const url = 'http://api.example.com/articles'
-      const apiBaseUrl = 'http://api.example.com'
-
       try {
-        await fetchFromApi(url, null, apiBaseUrl)
+        await fetchFromApi('http://api.example.com/articles')
         throw new Error('Should have thrown')
       } catch (error) {
         const errorMessage = (error as Error).message
@@ -736,11 +728,8 @@ describe('fetchFromApi', () => {
       const mockFetch = vi.fn().mockRejectedValue('string error')
       globalThis.fetch = mockFetch
 
-      const url = 'http://api.example.com/articles'
-      const apiBaseUrl = 'http://api.example.com'
-
       try {
-        await fetchFromApi(url, null, apiBaseUrl)
+        await fetchFromApi('http://api.example.com/articles')
         throw new Error('Should have thrown')
       } catch (error) {
         expect(error).toBeInstanceOf(Error)
@@ -753,10 +742,9 @@ describe('fetchFromApi', () => {
       globalThis.fetch = mockFetch
 
       const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout')
-      const url = 'http://api.example.com/articles'
 
       try {
-        await fetchFromApi(url, null, 'http://api.example.com')
+        await fetchFromApi('http://api.example.com/articles')
       } catch {
         // Expected to throw
       }
@@ -764,7 +752,7 @@ describe('fetchFromApi', () => {
       expect(clearTimeoutSpy).toHaveBeenCalled()
     })
 
-    test('should handle null error message gracefully', async () => {
+    test('should handle empty error message gracefully', async () => {
       const abortError = new Error()
       abortError.name = 'AbortError'
       abortError.message = ''
@@ -772,11 +760,8 @@ describe('fetchFromApi', () => {
       const mockFetch = vi.fn().mockRejectedValue(abortError)
       globalThis.fetch = mockFetch
 
-      const url = 'http://api.example.com/articles'
-      const apiBaseUrl = 'http://api.example.com'
-
       try {
-        await fetchFromApi(url, null, apiBaseUrl)
+        await fetchFromApi('http://api.example.com/articles')
         throw new Error('Should have thrown')
       } catch (error) {
         expect(error).toBeInstanceOf(Error)
@@ -794,7 +779,7 @@ describe('fetchFromApi', () => {
       globalThis.fetch = mockFetch
 
       const longUrl = 'http://api.example.com/articles?' + 'param=value&'.repeat(100)
-      await fetchFromApi(longUrl, null, 'http://api.example.com')
+      await fetchFromApi(longUrl)
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('param=value'),
@@ -809,15 +794,14 @@ describe('fetchFromApi', () => {
       })
       globalThis.fetch = mockFetch
 
-      const url = 'http://api.example.com/articles'
-      await fetchFromApi(url, null, 'http://api.example.com')
+      await fetchFromApi('http://api.example.com/articles')
 
       const callArgs = mockFetch.mock.calls[0][1] as any
       expect(callArgs.signal).toBeDefined()
       expect(callArgs.signal).toBeInstanceOf(AbortSignal)
     })
 
-    test('should handle various HTTP status codes without throwing on fetch error', async () => {
+    test('should return non-2xx response without throwing', async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
@@ -826,29 +810,11 @@ describe('fetchFromApi', () => {
       })
       globalThis.fetch = mockFetch
 
-      const url = 'http://api.example.com/articles'
-      const result = await fetchFromApi(url, null, 'http://api.example.com')
+      const result = await fetchFromApi('http://api.example.com/articles')
 
-      // fetchFromApi returns response regardless of status
-      // Error handling is done at a higher level
+      // fetchFromApi returns response regardless of status; caller decides handling.
       expect(result.ok).toBe(false)
       expect(result.status).toBe(404)
-    })
-
-    test('should handle api with different base URLs', async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ success: true })
-      })
-      globalThis.fetch = mockFetch
-
-      const url = 'https://custom-api.io/v2/articles'
-      await fetchFromApi(url, null, 'https://custom-api.io')
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://custom-api.io/v2/articles',
-        expect.any(Object)
-      )
     })
   })
 })

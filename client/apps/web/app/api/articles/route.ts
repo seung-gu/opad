@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 // Prevent static optimization - only run at request time
 export const dynamic = 'force-dynamic'
@@ -47,40 +48,6 @@ function parseQueryParams(searchParams: URLSearchParams): ArticleQueryParams {
   }
 }
 
-async function fetchFromApi(
-  url: string,
-  authorization: string | null,
-  apiBaseUrl: string
-): Promise<Response> {
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 30000)
-
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(authorization ? { 'Authorization': authorization } : {}),
-      },
-      signal: controller.signal,
-    })
-    clearTimeout(timeoutId)
-    return response
-  } catch (fetchError: unknown) {
-    clearTimeout(timeoutId)
-    const error = fetchError instanceof Error ? fetchError : new Error('Unknown fetch error')
-    const isTimeout = error.name === 'AbortError'
-    logError(
-      isTimeout ? 'Fetch timeout after 30s' : `Fetch error: ${error.message}`,
-      { errorType: error.name, url, apiBaseUrl }
-    )
-    const errorMsg = isTimeout
-      ? `Connection timeout: API server at ${apiBaseUrl} did not respond within 30 seconds`
-      : `Failed to connect to API server at ${apiBaseUrl}: ${error.message}`
-    throw new Error(errorMsg)
-  }
-}
-
 /**
  * Get article list from FastAPI.
  * 
@@ -100,12 +67,11 @@ async function fetchFromApi(
 export async function GET(request: NextRequest) {
   try {
     const params = parseQueryParams(request.nextUrl.searchParams)
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
     const queryString = buildQueryString(params)
     const url = `${apiBaseUrl}/articles${queryString ? '?' + queryString : ''}`
     const authorization = request.headers.get('authorization')
 
-    const response = await fetchFromApi(url, authorization, apiBaseUrl)
+    const response = await fetchFromApi(url, { authorization })
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))

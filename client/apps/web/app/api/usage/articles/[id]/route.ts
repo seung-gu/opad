@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
 
 // Prevent static optimization - only run at request time
 export const dynamic = 'force-dynamic'
@@ -17,8 +18,6 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
   try {
     const { id: articleId } = params
 
-    // FastAPI base URL
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
     const url = `${apiBaseUrl}/usage/articles/${articleId}`
 
     // Get Authorization header from client request
@@ -32,13 +31,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     }
 
     // Call FastAPI to get article usage
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': authorization,
-      },
-    })
+    const response = await fetchFromApi(url, { authorization })
 
     if (!response.ok) {
       if (response.status === 401) {
