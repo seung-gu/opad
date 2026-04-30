@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiBaseUrl } from '@/lib/api'
 
 // Prevent static optimization
 export const dynamic = 'force-dynamic'
@@ -21,12 +22,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get FastAPI URL from environment
-    // Try multiple env var names for compatibility
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL ||
-                   process.env.API_BASE_URL ||
-                   'http://localhost:8001'
-
     // Forward Authorization header from client
     const authHeader = request.headers.get('Authorization')
     const headers: Record<string, string> = {
@@ -47,7 +42,7 @@ export async function POST(request: NextRequest) {
       requestBody.article_id = article_id
     }
 
-    const response = await fetch(`${apiUrl}/dictionary/search`, {
+    const response = await fetch(`${apiBaseUrl}/dictionary/search`, {
       method: 'POST',
       headers,
       body: JSON.stringify(requestBody)

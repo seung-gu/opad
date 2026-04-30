@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiBaseUrl } from '@/lib/api'
 
 // Prevent static optimization - only run at request time
 export const dynamic = 'force-dynamic'
@@ -100,7 +101,6 @@ async function fetchFromApi(
 export async function GET(request: NextRequest) {
   try {
     const params = parseQueryParams(request.nextUrl.searchParams)
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
     const queryString = buildQueryString(params)
     const url = `${apiBaseUrl}/articles${queryString ? '?' + queryString : ''}`
     const authorization = request.headers.get('authorization')

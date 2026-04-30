@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiBaseUrl } from '@/lib/api'
 
 // Prevent static optimization
 export const dynamic = 'force-dynamic'
@@ -13,11 +14,6 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    // Get FastAPI URL from environment
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL ||
-                   process.env.API_BASE_URL ||
-                   'http://localhost:8001'
-
     // Forward Authorization header from client
     const authHeader = request.headers.get('Authorization')
     const headers: Record<string, string> = {
@@ -28,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Forward request to FastAPI
-    const response = await fetch(`${apiUrl}/dictionary/vocabulary`, {
+    const response = await fetch(`${apiBaseUrl}/dictionary/vocabulary`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body)
@@ -59,18 +55,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const language = searchParams.get('language')
 
-    // Get FastAPI URL from environment
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL ||
-                   process.env.API_BASE_URL ||
-                   'http://localhost:8001'
-
     // Build query string for aggregated vocabulary list
     const queryParams = new URLSearchParams()
     if (language) {
       queryParams.append('language', language)
     }
 
-    const url = `${apiUrl}/dictionary/vocabularies${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+    const url = `${apiBaseUrl}/dictionary/vocabularies${queryParams.toString() ? '?' + queryParams.toString() : ''}`
 
     // Forward Authorization header from client
     const authHeader = request.headers.get('Authorization')

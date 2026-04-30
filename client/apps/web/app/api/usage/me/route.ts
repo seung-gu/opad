@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiBaseUrl } from '@/lib/api'
 
 // Prevent static optimization - only run at request time
 export const dynamic = 'force-dynamic'
@@ -21,9 +22,6 @@ export async function GET(request: NextRequest) {
 
     // Extract query parameters
     const days = searchParams.get('days') || '30'
-
-    // FastAPI base URL
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
 
     // Build query string
     const queryParams = new URLSearchParams()

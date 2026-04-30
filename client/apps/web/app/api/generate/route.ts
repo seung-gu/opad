@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiBaseUrl } from '@/lib/api'
 
 // Prevent static optimization - only run at request time
 export const dynamic = 'force-dynamic'
@@ -27,9 +28,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-
-    // FastAPI base URL (Environment variable or default value)
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:8001'
 
     console.log(JSON.stringify({
       source: 'web',
