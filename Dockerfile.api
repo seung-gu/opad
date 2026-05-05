@@ -18,8 +18,11 @@ COPY . /app
 RUN pip install --no-cache-dir --break-system-packages \
     torch --index-url https://download.pytorch.org/whl/cpu
 
-# Install rest of dependencies (torch requirement already satisfied above)
-RUN pip install --no-cache-dir --break-system-packages -e ".[api]"
+# Install rest of dependencies — --upgrade-strategy=only-if-needed prevents
+# pip from re-pulling the default (GPU) torch wheel from PyPI when resolving
+# Stanza's `torch>=1.13.0` (already satisfied by the CPU wheel above)
+RUN pip install --no-cache-dir --break-system-packages \
+    --upgrade-strategy=only-if-needed -e ".[api]"
 
 # Use jemalloc to prevent glibc malloc arena fragmentation (see #157)
 # PyTorch CPU tensors (via Stanza) leak ~800MB on idle unload with default glibc
