@@ -11,12 +11,12 @@ export interface VocabularyCardProps {
   word: string
   definition: string
   sentence: string
-  gender?: string
-  phonetics?: string
-  pos?: string
-  level?: string
-  conjugations?: Conjugations
-  examples?: string[]
+  gender?: string | null
+  phonetics?: string | null
+  pos?: string | null
+  level?: string | null
+  conjugations?: Conjugations | null
+  examples?: string[] | null
   // Optional fields for VocabularyCount
   count?: number
   articleId?: string

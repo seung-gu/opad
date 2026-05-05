@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -e
+
+if git diff --cached --name-only | grep -E '^server/api/(main\.py|models\.py|routes/.*\.py|dependencies\.py)$' >/dev/null 2>&1; then
+  echo "API contract changed. Regenerating OpenAPI JSON and TypeScript types..."
+  pnpm export:openapi
+  pnpm generate:types
+  git add server/openapi.json client/libs/types/api.generated.ts
+fi

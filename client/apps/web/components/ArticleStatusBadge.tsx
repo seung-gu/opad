@@ -3,7 +3,7 @@
 import { ArticleStatus } from '@opad/libs'
 
 interface ArticleStatusBadgeProps {
-  status: ArticleStatus
+  status: ArticleStatus | string
   className?: string
 }
 
@@ -36,7 +36,7 @@ export default function ArticleStatusBadge({ status, className = '' }: ArticleSt
     }
   }
 
-  const config = statusConfig[status] || statusConfig.running
+  const config = (statusConfig as Record<string, { label: string; colorClass: string }>)[status] || statusConfig.running
 
   return (
     <span
