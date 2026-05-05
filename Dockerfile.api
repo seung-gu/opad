@@ -19,6 +19,10 @@ RUN pip install --no-cache-dir --break-system-packages -e ".[api]"
 # PyTorch CPU tensors (via Stanza) leak ~800MB on idle unload with default glibc
 ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
+# Disable Transparent Huge Pages — THP pins 2MB chunks even when only a small
+# object is alive, blocking jemalloc from returning memory to the OS (see #157)
+ENV MALLOC_CONF=thp:never
+
 # Set Python path
 ENV PYTHONPATH=/app/server
 
