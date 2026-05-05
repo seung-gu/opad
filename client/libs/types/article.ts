@@ -7,53 +7,12 @@
 import type { components } from './api.generated';
 
 // Wrap generated types for backward compatibility
-export type ArticleStatus = 'running' | 'completed' | 'failed' | 'deleted';
-export type Article = Omit<components['schemas']['ArticleResponse'], 'status'> & {
-  status: ArticleStatus;
-};
-
-export type Vocabulary = Omit<components['schemas']['VocabularyResponse'],
-  | 'conjugations'
-  | 'examples'
-  | 'gender'
-  | 'phonetics'
-  | 'pos'
-  | 'level'
-  | 'related_words'
-  | 'span_id'
-> & {
-  conjugations?: Conjugations | null;
-  examples?: string[] | null;
-  gender?: string | null;
-  phonetics?: string | null;
-  pos?: string | null;
-  level?: string | null;
-  related_words?: string[] | null;
-  span_id?: string | null;
-};
-
-export type VocabularyCount = Omit<components['schemas']['VocabularyCountResponse'],
-  | 'conjugations'
-  | 'examples'
-  | 'gender'
-  | 'phonetics'
-  | 'pos'
-  | 'level'
-  | 'related_words'
-  | 'span_id'
-> & {
-  conjugations?: Conjugations | null;
-  examples?: string[] | null;
-  gender?: string | null;
-  phonetics?: string | null;
-  pos?: string | null;
-  level?: string | null;
-  related_words?: string[] | null;
-  span_id?: string | null;
-};
-
-// Wrap User type from AuthResponse
+export type Article = components['schemas']['ArticleResponse'];
+export type ArticleStatus = components['schemas']['ArticleStatus'];
+export type Vocabulary = components['schemas']['VocabularyResponse'];
+export type VocabularyCount = components['schemas']['VocabularyCountResponse'];
 export type User = components['schemas']['AuthResponse']['user'];
+export type Conjugations = components['schemas']['Conjugations'];
 
 export interface ArticleListResponse {
   articles: Article[]
@@ -71,7 +30,7 @@ export interface ArticleListFilters {
 /**
  * Verb conjugation forms and noun declension forms.
  */
-export interface Conjugations {
+export interface ConjugationsLegacy {
   /** Present tense form (3rd person singular) */
   present?: string
   /** Past/preterite tense form */
