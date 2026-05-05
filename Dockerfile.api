@@ -12,7 +12,13 @@ WORKDIR /app
 # Copy project files
 COPY . /app
 
-# Install Python dependencies
+# Install PyTorch CPU-only wheel first (see #157):
+# Default Linux x86_64 torch wheel ships ~955MB of libs including CUDA stubs
+# we never use; cpu-only wheel is ~250MB → ~700MB image savings, ~300MB RSS savings
+RUN pip install --no-cache-dir --break-system-packages \
+    torch --index-url https://download.pytorch.org/whl/cpu
+
+# Install rest of dependencies (torch requirement already satisfied above)
 RUN pip install --no-cache-dir --break-system-packages -e ".[api]"
 
 # Use jemalloc to prevent glibc malloc arena fragmentation (see #157)
