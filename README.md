@@ -150,12 +150,12 @@ This project uses **openapi-typescript** to automatically generate TypeScript ty
    ```
    Generates: `client/libs/types/api.generated.ts`
 
-3. **Wrap Generated Types**: Wrapper types in `client/libs/types/article.ts` provide backward compatibility and handle API nullability:
+3. **Wrap Generated Types (Domain Models)**: We create domain-specific wrapper types (e.g., `Article`, `Vocabulary`) based on the raw generated types (e.g., `ArticleResponse`, `VocabularyResponse`). This allows us to safely handle API nullability and maintain backward compatibility for frontend-specific Enums:
    ```typescript
+   // Example from client/libs/types/article.ts
    export type Article = Omit<components['schemas']['ArticleResponse'], 'status'> & {
-     status: ArticleStatus;
+     status: ArticleStatus; // Override string with frontend-specific Enum
    };
-   ```
 
 ### Automatic Type Regeneration
 
