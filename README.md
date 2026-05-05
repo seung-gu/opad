@@ -50,11 +50,17 @@ For detailed architecture documentation, see [ARCHITECTURE.md](./docs/ARCHITECTU
    # Python
    pip install uv
    uv pip install -e .
-   
-   # Node.js
-   cd client/apps/web
-   npm install
+
+   # Node.js / monorepo
+   pnpm install
+   pnpm prepare
    ```
+
+   > If you make backend API changes under `server/api`, regenerate the shared client types with:
+   > ```bash
+   > pnpm export:openapi
+   > pnpm generate:types
+   > ```
 
 3. **Set environment variables**:
    ```bash
@@ -125,6 +131,72 @@ For detailed local setup instructions, see [SETUP.md](./docs/SETUP.md).
 4. **Deploy**: Railway automatically builds and deploys from your repository
 
 For detailed Railway deployment instructions, see [SETUP.md](./docs/SETUP.md).
+
+## API Type Generation
+
+This project uses **openapi-typescript** to automatically generate TypeScript types from the FastAPI OpenAPI schema. This ensures client and server types stay in sync.
+
+### How It Works
+
+1. **Export OpenAPI Schema**: FastAPI introspects the application and exports the OpenAPI specification:
+   ```bash
+   pnpm export:openapi
+   ```
+   Generates: `server/openapi.json`
+
+2. **Generate TypeScript Types**: openapi-typescript converts the OpenAPI schema to TypeScript:
+   ```bash
+   pnpm generate:types
+   ```
+   Generates: `client/libs/types/api.generated.ts`
+
+3. **Wrap Generated Types**: Wrapper types in `client/libs/types/article.ts` provide backward compatibility and handle API nullability:
+   ```typescript
+   export type Article = Omit<components['schemas']['ArticleResponse'], 'status'> & {
+     status: ArticleStatus;
+   };
+   ```
+
+### Automatic Type Regeneration
+
+A **Husky pre-commit hook** automatically regenerates types when you modify API contracts:
+
+```bash
+# Triggered when modifying any of these files:
+server/api/main.py
+server/api/models.py
+server/api/routes/*.py
+server/api/dependencies.py
+```
+
+The hook runs:
+```bash
+pnpm export:openapi && pnpm generate:types
+```
+
+Then stages the generated files for commit.
+
+### Manual Type Generation
+
+Regenerate types at any time:
+```bash
+# Step 1: Export OpenAPI schema to JSON
+pnpm export:openapi
+
+# Step 2: Generate TypeScript types from the schema
+pnpm generate:types
+
+# Both steps together
+pnpm export:openapi && pnpm generate:types
+```
+
+### Type Validation
+
+Both web and mobile packages validate types during build:
+```bash
+pnpm --filter @opad/web exec tsc --noEmit
+pnpm --filter @opad/mobile exec tsc --noEmit
+```
 
 ## Documentation
 
