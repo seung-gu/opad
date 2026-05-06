@@ -222,6 +222,65 @@ SERPER_API_KEY=your-key
 - API service: Settings → Networking → Generate Domain
 - Port: Railway auto-assigns (usually 8080)
 
+### 6. Memory Optimization (API 서비스)
+
+API 서비스는 Stanza NLP를 통해 PyTorch CPU 텐서를 사용하는데, 기본 설정으로는 Linux glibc에서 메모리 fragmentation이 심해 RSS가 ~1.3GB까지 누적됨. 다음 설정들이 `Dockerfile.api`에 적용되어 있으며, **49% RSS 절감 (1280→657MB)** 효과를 검증함 (#157).
+
+#### 적용된 설정
+
+```dockerfile
+# 1. jemalloc 라이브러리 설치
+RUN apt-get install -y libjemalloc2
+
+# 2. PyTorch CPU-only wheel (Linux 기본 wheel은 CUDA stub 포함 ~955MB)
+RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --upgrade-strategy=only-if-needed -e ".[api]"
+#                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# 필수: 두 번째 pip이 PyPI에서 GPU wheel로 덮어쓰는 것을 방지
+
+# 3. jemalloc을 시스템 malloc 자리에 끼워넣기
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+
+# 4. jemalloc 튜닝
+ENV MALLOC_CONF=thp:never,dirty_decay_ms:1000,muzzy_decay_ms:0,background_thread:true
+```
+
+#### 각 설정의 역할
+
+| 설정 | 효과 | 이유 |
+|------|------|------|
+| `LD_PRELOAD=...jemalloc...` | 시스템 malloc → jemalloc 교체 | jemalloc은 fragmentation 관리에 강함 (decay-based purging, size class 분리) |
+| `thp:never` | -260 MB | Linux Transparent Huge Pages가 2MB 청크 단위로 페이지를 핀해서 jemalloc이 OS 반환 못함. macOS엔 THP가 없어서 발생 안 함 |
+| `dirty_decay_ms:1000, muzzy_decay_ms:0, background_thread` | -50 MB | 기본 decay(10초)보다 공격적으로 OS에 메모리 반환 |
+| PyTorch CPU wheel | -316 MB | Railway에 GPU 없음 (`torch.cuda.is_available()=False`). 기본 Linux wheel의 CUDA stub(~500MB)은 그냥 짐 |
+
+#### 메모리 진단 명령어
+
+Railway shell에서 직접 측정:
+
+```bash
+# 1. uvicorn Python 프로세스 PID 찾기 (ps 없는 minimal container)
+for pid in /proc/[0-9]*; do
+  cmd=$(cat $pid/cmdline 2>/dev/null | tr '\0' ' ')
+  if echo "$cmd" | grep -q uvicorn && [[ "$cmd" == *python* ]]; then
+    echo "PID: $(basename $pid)"
+  fi
+done
+
+# 2. 정확한 메모리 분석 (위에서 찾은 PID, 예: 5)
+cat /proc/5/smaps_rollup | head -15
+```
+
+**핵심 지표:**
+- `Rss`: 전체 사용 메모리
+- `Private_Dirty`: heap 메모리 (jemalloc이 잡고 있는 영역, 누수 의심 시 주목)
+- `AnonHugePages`: THP 영역 (`thp:never` 적용 후엔 0이어야 함)
+- `Private_Clean`: mmap된 라이브러리 코드 (정상, 건드릴 수 없음)
+
+#### Stanza Idle Unload (참고)
+
+Stanza pipeline은 `STANZA_IDLE_TTL_MIN`분 idle 후 자동 unload (`adapter/nlp/stanza.py`). 기본 60분. Railway 환경변수로 조정 가능 (검증 시 `2`로 낮추면 빠른 사이클 측정 가능).
+
 ---
 
 ## 🔍 테스트 방법
