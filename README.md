@@ -134,28 +134,32 @@ For detailed Railway deployment instructions, see [SETUP.md](./docs/SETUP.md).
 
 ## API Type Generation
 
-This project uses **openapi-typescript** to automatically generate TypeScript types from the FastAPI OpenAPI schema. This ensures client and server types stay in sync.
+This project uses an automated pipeline to generate TypeScript types from the FastAPI OpenAPI schema. All generation tools and artifacts are grouped in the `client/libs/api-types/` directory to maintain domain separation.
+
+For detailed information on the pipeline architecture, see the **[API Types README](./client/libs/api-types/README.md)**.
 
 ### How It Works
 
-1. **Export OpenAPI Schema**: FastAPI introspects the application and exports the OpenAPI specification:
+1. **Export OpenAPI Schema**: The `sync_from_backend.py` script introspects the FastAPI application and exports the OpenAPI specification:
    ```bash
    pnpm export:openapi
    ```
-   Generates: `server/openapi.json`
+   Generates: `client/libs/api-types/openapi.json`
 
 2. **Generate TypeScript Types**: openapi-typescript converts the OpenAPI schema to TypeScript:
    ```bash
    pnpm generate:types
    ```
-   Generates: `client/libs/types/api.generated.ts`
+   Generates: `client/libs/api-types/api.generated.ts`
 
 3. **Wrap Generated Types (Domain Models)**: We create domain-specific wrapper types (e.g., `Article`, `Vocabulary`) based on the raw generated types (e.g., `ArticleResponse`, `VocabularyResponse`). This allows us to safely handle API nullability and maintain backward compatibility for frontend-specific Enums:
    ```typescript
    // Example from client/libs/types/article.ts
-   export type Article = Omit<components['schemas']['ArticleResponse'], 'status'> & {
-     status: ArticleStatus; // Override string with frontend-specific Enum
-   };
+   import type { components } from '../api-types/api.generated';
+
+   export type Article = components['schemas']['ArticleResponse'];
+   
+   ```
 
 ### Automatic Type Regeneration
 
