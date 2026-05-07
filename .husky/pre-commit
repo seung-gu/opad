@@ -5,5 +5,5 @@ if git diff --cached --name-only | grep -E '^server/api/(main\.py|models\.py|rou
   echo "API contract changed. Regenerating OpenAPI JSON and TypeScript types..."
   pnpm export:openapi
   pnpm generate:types
-  git add server/openapi.json client/libs/types/api.generated.ts
+  git add client/libs/api-types/openapi.json client/libs/api-types/api.generated.ts
 fi
