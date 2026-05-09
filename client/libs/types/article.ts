@@ -4,7 +4,7 @@
  * These types match the FastAPI ArticleResponse and ArticleListResponse models.
  */
 
-import type { components } from './api.generated';
+import type { components } from '../api-types/api.generated';
 
 // Wrap generated types for backward compatibility
 export type Article = components['schemas']['ArticleResponse'];
