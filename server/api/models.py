@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Optional, Literal
 from pydantic import BaseModel, Field, field_validator
+from server.domain.model.article import ArticleStatus
 
 
 # Type definitions for vocabulary metadata
@@ -35,7 +36,7 @@ class ArticleResponse(BaseModel):
     level: str
     length: str
     topic: str
-    status: str = Field(..., description="Article status")
+    status: ArticleStatus = Field(..., description="Article status")
     created_at: datetime
     user_id: Optional[str] = Field(None, description="User ID for multi-user support")
     job_id: Optional[str] = Field(None, description="Job ID for progress tracking")

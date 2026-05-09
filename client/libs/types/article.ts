@@ -4,25 +4,15 @@
  * These types match the FastAPI ArticleResponse and ArticleListResponse models.
  */
 
-export type ArticleStatus = 'running' | 'completed' | 'failed' | 'deleted'
+import type { components } from './api.generated';
 
-export interface Article {
-  id: string
-  language: string
-  level: string
-  length: string
-  topic: string
-  status: ArticleStatus
-  created_at: string // ISO datetime string
-  user_id: string | null
-  job_id?: string | null // Job ID for progress tracking
-  inputs?: {
-    language: string
-    level: string
-    length: string
-    topic: string
-  }
-}
+// Wrap generated types for backward compatibility
+export type Article = components['schemas']['ArticleResponse'];
+export type ArticleStatus = components['schemas']['ArticleStatus'];
+export type Vocabulary = components['schemas']['VocabularyResponse'];
+export type VocabularyCount = components['schemas']['VocabularyCountResponse'];
+export type User = components['schemas']['AuthResponse']['user'];
+export type Conjugations = components['schemas']['Conjugations'];
 
 export interface ArticleListResponse {
   articles: Article[]
@@ -40,7 +30,7 @@ export interface ArticleListFilters {
 /**
  * Verb conjugation forms and noun declension forms.
  */
-export interface Conjugations {
+export interface ConjugationsLegacy {
   /** Present tense form (3rd person singular) */
   present?: string
   /** Past/preterite tense form */
@@ -61,7 +51,7 @@ export interface Conjugations {
  * Stores word definitions with contextual information and grammatical features
  * to support comprehensive vocabulary acquisition.
  */
-export interface Vocabulary {
+export interface VocabularyLegacy {
   /** Unique vocabulary entry identifier */
   id: string
   /** Article ID where the word was encountered */
@@ -104,7 +94,7 @@ export interface Vocabulary {
  * Tracks how many times a word (lemma) has been saved across different articles,
  * showing the most recent grammatical metadata and definition.
  */
-export interface VocabularyCount extends Vocabulary {
+export interface VocabularyCountLegacy extends VocabularyLegacy {
   /** Number of times this lemma was saved across all articles */
   count: number
   /** List of article IDs where this lemma appears */
