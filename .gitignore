@@ -7,6 +7,7 @@ memory/
 .github/agents/
 .clinerules
 .sonarlint
+.claude/
 output/
 
 # Coverage reports
@@ -15,6 +16,10 @@ output/
 htmlcov/
 *.cover
 .pytest_cache/
+
+# Node.js
+node_modules/
+.next/
 
 # Logs and databases
 *.log

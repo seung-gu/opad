@@ -145,7 +145,7 @@ OPAD에 사용자 인증 기능을 추가하여 개인별 데이터 격리 및 �
 ### Backend (FastAPI)
 
 ```
-src/api/
+server/api/
 ├── routes/
 │   └── auth.py              # 새로 생성
 │       ├── POST /auth/register
@@ -174,7 +174,7 @@ dependencies = [
 ### Frontend (Next.js)
 
 ```
-src/web/
+client/apps/web/
 ├── app/
 │   ├── login/
 │   │   └── page.tsx         # 로그인 페이지

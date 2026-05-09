@@ -58,24 +58,36 @@ docker-compose -f docker-compose.local.yml up -d  # MongoDB + Redis
 Run in 3 separate terminals:
 ```bash
 # API (FastAPI) - port 8001
-PYTHONPATH=src uvicorn api.main:app --reload --port 8001
+PYTHONPATH=server uvicorn api.main:app --reload --port 8001
 
 # Worker (CrewAI processor)
-PYTHONPATH=src uv run python -m worker.main
+PYTHONPATH=server uv run python -m worker.main
 
 # Web (Next.js) - port 8000
-cd src/web && API_BASE_URL=http://localhost:8001 npm run dev
+cd client/apps/web && API_BASE_URL=http://localhost:8001 pnpm dev
 ```
 
 ### Testing
 
 ```bash
 # Python tests
-uv run pytest src/api/tests/ -v
-uv run pytest src/worker/tests/ -v
+uv run pytest server/api/tests/ -v
+uv run pytest server/worker/tests/ -v
 
 # With coverage
-uv run pytest --cov=src --cov-report=term-missing
+uv run pytest --cov=server --cov-report=term-missing
+```
+
+### Python Dependencies
+
+Dependencies are split by service in `pyproject.toml`:
+```bash
+# Local development (install all)
+uv pip install -e ".[api,worker]"
+
+# Docker (service-specific)
+# Dockerfile.api:  pip install -e ".[api]"
+# Dockerfile.worker: pip install -e ".[worker]"
 ```
 
 ### Python Commands

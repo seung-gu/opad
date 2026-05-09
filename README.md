@@ -50,11 +50,17 @@ For detailed architecture documentation, see [ARCHITECTURE.md](./docs/ARCHITECTU
    # Python
    pip install uv
    uv pip install -e .
-   
-   # Node.js
-   cd src/web
-   npm install
+
+   # Node.js / monorepo
+   pnpm install
+   pnpm prepare
    ```
+
+   > If you make backend API changes under `server/api`, regenerate the shared client types with:
+   > ```bash
+   > pnpm export:openapi
+   > pnpm generate:types
+   > ```
 
 3. **Set environment variables**:
    ```bash
@@ -74,13 +80,13 @@ For detailed architecture documentation, see [ARCHITECTURE.md](./docs/ARCHITECTU
 4. **Run services** (in separate terminals):
    ```bash
    # API (Terminal 1)
-   PYTHONPATH=src uvicorn api.main:app --reload --port 8001
+   PYTHONPATH=server uvicorn api.main:app --reload --port 8001
    
    # Worker (Terminal 2)
-   PYTHONPATH=src uv run python -m worker.main
+   PYTHONPATH=server uv run python -m worker.main
    
    # Web (Terminal 3)
-   cd src/web
+   cd client/apps/web
    API_BASE_URL=http://localhost:8001 npm run dev
    ```
 
@@ -125,6 +131,76 @@ For detailed local setup instructions, see [SETUP.md](./docs/SETUP.md).
 4. **Deploy**: Railway automatically builds and deploys from your repository
 
 For detailed Railway deployment instructions, see [SETUP.md](./docs/SETUP.md).
+
+## API Type Generation
+
+This project uses an automated pipeline to generate TypeScript types from the FastAPI OpenAPI schema. All generation tools and artifacts are grouped in the `client/libs/api-types/` directory to maintain domain separation.
+
+For detailed information on the pipeline architecture, see the **[API Types README](./client/libs/api-types/README.md)**.
+
+### How It Works
+
+1. **Export OpenAPI Schema**: The `sync_from_backend.py` script introspects the FastAPI application and exports the OpenAPI specification:
+   ```bash
+   pnpm export:openapi
+   ```
+   Generates: `client/libs/api-types/openapi.json`
+
+2. **Generate TypeScript Types**: openapi-typescript converts the OpenAPI schema to TypeScript:
+   ```bash
+   pnpm generate:types
+   ```
+   Generates: `client/libs/api-types/api.generated.ts`
+
+3. **Wrap Generated Types (Domain Models)**: We create domain-specific wrapper types (e.g., `Article`, `Vocabulary`) based on the raw generated types (e.g., `ArticleResponse`, `VocabularyResponse`). This allows us to safely handle API nullability and maintain backward compatibility for frontend-specific Enums:
+   ```typescript
+   // Example from client/libs/types/article.ts
+   import type { components } from '../api-types/api.generated';
+
+   export type Article = components['schemas']['ArticleResponse'];
+   
+   ```
+
+### Automatic Type Regeneration
+
+A **Husky pre-commit hook** automatically regenerates types when you modify API contracts:
+
+```bash
+# Triggered when modifying any of these files:
+server/api/main.py
+server/api/models.py
+server/api/routes/*.py
+server/api/dependencies.py
+```
+
+The hook runs:
+```bash
+pnpm export:openapi && pnpm generate:types
+```
+
+Then stages the generated files for commit.
+
+### Manual Type Generation
+
+Regenerate types at any time:
+```bash
+# Step 1: Export OpenAPI schema to JSON
+pnpm export:openapi
+
+# Step 2: Generate TypeScript types from the schema
+pnpm generate:types
+
+# Both steps together
+pnpm export:openapi && pnpm generate:types
+```
+
+### Type Validation
+
+Both web and mobile packages validate types during build:
+```bash
+pnpm --filter @opad/web exec tsc --noEmit
+pnpm --filter @opad/mobile exec tsc --noEmit
+```
 
 ## Documentation
 

@@ -1,0 +1,81 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { apiBaseUrl, fetchFromApi } from '@/lib/api'
+
+// Prevent static optimization - only run at request time
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+
+/**
+ * Get article content from FastAPI (MongoDB).
+ * 
+ * Flow:
+ * 1. Extract article ID from route params
+ * 2. Call FastAPI GET /articles/:id/content
+ * 3. Return markdown content
+ */
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  try {
+    const articleId = params.id
+
+    if (!articleId) {
+      return new NextResponse(
+        `# No article ID provided\n\nPlease provide article ID in the URL path.`,
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'text/markdown',
+          },
+        }
+      )
+    }
+
+    // Get Authorization header from client request
+    const authorization = request.headers.get('authorization')
+
+    // Call FastAPI to get article content from MongoDB
+    const response = await fetchFromApi(`${apiBaseUrl}/articles/${articleId}/content`, {
+      authorization,
+    })
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return new NextResponse(
+          `# No article found\n\nClick "Generate New Article" to create one.`,
+          {
+            status: 404,
+            headers: {
+              'Content-Type': 'text/markdown',
+            },
+          }
+        )
+      }
+      throw new Error(`Failed to fetch article: ${response.statusText}`)
+    }
+
+    const content = await response.text()
+
+    return new NextResponse(content, {
+      headers: {
+        'Content-Type': 'text/markdown',
+      },
+    })
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error(JSON.stringify({
+      source: 'web',
+      level: 'error',
+      endpoint: `/api/articles/${params.id}/content`,
+      message: `Fatal error: ${errorMessage}`
+    }))
+    return new NextResponse(
+      `# Error\n\nFailed to load article: ${errorMessage}`,
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'text/markdown',
+        },
+      }
+    )
+  }
+}

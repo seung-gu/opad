@@ -4,7 +4,7 @@
 pytest에서 실행되지 않음 (수동 실행 전용).
 
 Usage:
-    PYTHONPATH=src uv run python scripts/test_hybrid_dictionary.py [--count 10]
+    PYTHONPATH=server uv run python scripts/test_hybrid_dictionary.py [--count 10]
 """
 
 import asyncio

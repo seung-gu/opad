@@ -6,9 +6,9 @@ This script tests a new approach where:
 3. LLM selects appropriate definition based on context
 
 Usage:
-    PYTHONPATH=src uv run python src/scripts/test_dictionary_agent.py
-    PYTHONPATH=src uv run python src/scripts/test_dictionary_agent.py --limit 10
-    PYTHONPATH=src uv run python src/scripts/test_dictionary_agent.py --compare-models
+    PYTHONPATH=server uv run python scripts/test_dictionary_agent.py
+    PYTHONPATH=server uv run python scripts/test_dictionary_agent.py --limit 10
+    PYTHONPATH=server uv run python scripts/test_dictionary_agent.py --compare-models
 """
 
 import os

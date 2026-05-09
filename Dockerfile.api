@@ -1,8 +1,9 @@
 # Dockerfile for API service (FastAPI)
 FROM python:3.12-slim
 
-# Install system dependencies
+# Install system dependencies (jemalloc for memory fragmentation mitigation, see #157)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libjemalloc2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -11,11 +12,31 @@ WORKDIR /app
 # Copy project files
 COPY . /app
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --break-system-packages -e .
+# Install PyTorch CPU-only wheel first (see #157):
+# Default Linux x86_64 torch wheel ships ~955MB of libs including CUDA stubs
+# we never use; cpu-only wheel is ~250MB → ~700MB image savings, ~300MB RSS savings
+RUN pip install --no-cache-dir --break-system-packages \
+    torch --index-url https://download.pytorch.org/whl/cpu
+
+# Install rest of dependencies — --upgrade-strategy=only-if-needed prevents
+# pip from re-pulling the default (GPU) torch wheel from PyPI when resolving
+# Stanza's `torch>=1.13.0` (already satisfied by the CPU wheel above)
+RUN pip install --no-cache-dir --break-system-packages \
+    --upgrade-strategy=only-if-needed -e ".[api]"
+
+# Use jemalloc to prevent glibc malloc arena fragmentation (see #157)
+# PyTorch CPU tensors (via Stanza) leak ~800MB on idle unload with default glibc
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+
+# jemalloc tuning for aggressive memory return (see #157):
+# - thp:never            disable Transparent Huge Pages (2MB chunks pin small allocs)
+# - dirty_decay_ms:1000  return dirty pages to OS after 1s (default 10s)
+# - muzzy_decay_ms:0     return muzzy pages immediately (default 10s)
+# - background_thread    enable background purge thread
+ENV MALLOC_CONF=thp:never,dirty_decay_ms:1000,muzzy_decay_ms:0,background_thread:true
 
 # Set Python path
-ENV PYTHONPATH=/app/src
+ENV PYTHONPATH=/app/server
 
 # Expose port (Railway will set PORT env var)
 EXPOSE 8000

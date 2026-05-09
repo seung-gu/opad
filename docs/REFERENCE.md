@@ -163,9 +163,9 @@ graph TD
 This diagram shows the complete flow when a duplicate is detected, including browser interaction and retry logic.
 
 **Files:**
-- FastAPI: `src/api/routes/articles.py:189` - Raises `HTTPException(status_code=409)`
-- Next.js API Route: `src/web/app/api/generate/route.ts:58-78` - Handles 409 and returns `NextResponse.json({ status: 409 })`
-- Browser: `src/web/app/page.tsx:235-273` - Fetches and handles 409 response
+- FastAPI: `server/api/routes/articles.py:189` - Raises `HTTPException(status_code=409)`
+- Next.js API Route: `client/apps/web/app/api/generate/route.ts:58-78` - Handles 409 and returns `NextResponse.json({ status: 409 })`
+- Browser: `client/apps/web/app/page.tsx:235-273` - Fetches and handles 409 response
 
 ```
 User submits form
@@ -202,8 +202,8 @@ New article + job created successfully! ✅
 This diagram shows how Next.js API Route communicates with FastAPI backend over HTTP network.
 
 **Files:**
-- Next.js API Route: `src/web/app/api/generate/route.ts:32-44` - Calls FastAPI with fetch
-- FastAPI: `src/api/routes/articles.py` - Receives HTTP request and responds
+- Next.js API Route: `client/apps/web/app/api/generate/route.ts:32-44` - Calls FastAPI with fetch
+- FastAPI: `server/api/routes/articles.py` - Receives HTTP request and responds
 
 ```
 Next.js API Route (route.ts)
@@ -1621,14 +1621,15 @@ generate = partial(
     repo=repo,
     token_usage_repo=token_usage_repo,
     vocab=vocab_repo,
-    llm=llm,
 )
 run_worker_loop(repo, job_queue, generate)
 ```
 
+Note: `LiteLLMAdapter` is no longer instantiated in the worker. Cost calculation is handled by the CrewAI adapter via `litellm.cost_per_token()`, and `track_agent_usage()` no longer depends on `LLMPort`.
+
 ### ArticleSubmissionService (API-side)
 
-**Module**: `src/services/article_submission_service.py`
+**Module**: `server/services/article_submission_service.py`
 
 **`submit_generation()`**:
 ```python
@@ -1644,24 +1645,26 @@ def submit_generation(inputs, user_id, repo, job_queue, force=False) -> Article:
 
 ### ArticleGenerationService (Worker-side)
 
-**Module**: `src/services/article_generation_service.py`
+**Module**: `server/services/article_generation_service.py`
 
 **`generate_article()`**:
 ```python
 def generate_article(article, user_id, inputs, generator, repo,
-                     token_usage_repo=None, vocab=None, llm=None, job_id=None) -> bool:
+                     token_usage_repo=None, vocab=None, job_id=None) -> bool:
     """Generate article content and save to repository."""
     vocab_list = _get_vocabulary(user_id, inputs.language, inputs.level, vocab)
     result = generator.generate(inputs, vocab_list, job_id=job_id or "", article_id=article.id)
     article.complete(content=result.content, source=result.source, edit_history=result.edit_history)
     repo.save(article)
-    track_agent_usage(token_usage_repo, result.agent_usage, user_id, article.id, job_id, llm)
+    track_agent_usage(token_usage_repo, result.agent_usage, user_id, article.id, job_id or "")
     return True
 ```
 
+Note: The `llm: LLMPort` parameter has been removed. Cost calculation is now handled by the CrewAI adapter (anti-corruption layer), so `track_agent_usage()` receives `list[tuple[str, LLMCallResult]]` with costs already included.
+
 ### Progress Tracking
 
-**Module**: `src/adapter/crew/progress_listener.py`
+**Module**: `server/adapter/crew/progress_listener.py`
 
 `JobProgressListener` is a CrewAI event listener that updates job progress in real-time via `JobQueuePort` (no direct Redis dependency). Used within `CrewAIArticleGenerator.generate()` via `crewai_event_bus.scoped_handlers()`.
 
@@ -1674,27 +1677,27 @@ def generate_article(article, user_id, inputs, generator, repo,
 | `review_article_quality` | 75 | 95 | Reviewing article quality |
 
 **Files**:
-- `src/worker/main.py` - Worker entry point and composition root
-- `src/worker/processor.py` - Job processing loop (`run_worker_loop`, `process_job`)
-- `src/services/article_submission_service.py` - API-side service (`submit_generation`)
-- `src/services/article_generation_service.py` - Worker-side service (`generate_article`)
-- `src/adapter/crew/article_generator.py` - CrewAI adapter (`CrewAIArticleGenerator`)
-- `src/adapter/crew/progress_listener.py` - Progress listener (`JobProgressListener`)
-- `src/adapter/queue/redis_job_queue.py` - Redis adapter (`RedisJobQueueAdapter`)
+- `server/worker/main.py` - Worker entry point and composition root
+- `server/worker/processor.py` - Job processing loop (`run_worker_loop`, `process_job`)
+- `server/services/article_submission_service.py` - API-side service (`submit_generation`)
+- `server/services/article_generation_service.py` - Worker-side service (`generate_article`)
+- `server/adapter/crew/article_generator.py` - CrewAI adapter (`CrewAIArticleGenerator`)
+- `server/adapter/crew/progress_listener.py` - Progress listener (`JobProgressListener`)
+- `server/adapter/queue/redis_job_queue.py` - Redis adapter (`RedisJobQueueAdapter`)
 
 ---
 
 ### Token Tracking in Article Generation
 
-Token usage during article generation is tracked via CrewAI's built-in per-agent metrics. The `CrewAIArticleGenerator` adapter returns a `GenerationResult` containing `agent_usage` (a list of per-agent token usage dicts). The `ArticleGenerationService` then calls `track_agent_usage()` to persist each agent's usage to MongoDB.
+Token usage during article generation is tracked via CrewAI's built-in per-agent metrics. The `CrewAIArticleGenerator` adapter returns a `GenerationResult` containing `agent_usage` as `list[tuple[str, LLMCallResult]]` -- the CrewAI adapter (anti-corruption layer) converts raw framework data to domain objects and calculates cost via `litellm.cost_per_token()`. The `ArticleGenerationService` then calls `track_agent_usage()` to persist each agent's usage to MongoDB.
 
 ```python
 # In article_generation_service.generate_article():
 result = generator.generate(inputs, vocab_list)  # ArticleGeneratorPort
-# result.agent_usage = [{'agent_role': '...', 'model': '...', 'prompt_tokens': ..., ...}, ...]
+# result.agent_usage = [('Article Finder', LLMCallResult(...)), ('Content Writer', LLMCallResult(...)), ...]
 
 if user_id and token_usage_repo and result.agent_usage:
-    track_agent_usage(token_usage_repo, result.agent_usage, user_id, article.id, job_id, llm)
+    track_agent_usage(token_usage_repo, result.agent_usage, user_id, article.id, job_id or "")
 ```
 
 **Progress tracking** is handled separately by `JobProgressListener` (CrewAI event listener) which updates job status via `JobQueuePort` during generation.
@@ -1738,11 +1741,12 @@ The worker processes jobs through the following pipeline:
 ### Per-Agent Token Tracking
 
 - Each CrewAI agent's token usage is tracked via `agent.llm.get_token_usage_summary()`
-- `CrewResult.get_agent_usage()` returns a list of per-agent usage dicts
-- `track_agent_usage()` (in `services/token_usage_service.py`) saves each agent's usage as a separate MongoDB record via `TokenUsageRepository`
+- `CrewResult.get_agent_usage()` returns `list[tuple[str, LLMCallResult]]` -- domain value objects with cost already calculated
+- Cost is calculated in the CrewAI adapter via `litellm.cost_per_token()` (anti-corruption layer responsibility)
+- `track_agent_usage()` (in `services/token_usage_service.py`) converts each `LLMCallResult` to `TokenUsage` via `TokenUsage.from_llm_result()` (domain factory) and saves via `TokenUsageRepository`
+- `track_agent_usage()` depends only on `TokenUsageRepository` -- no `LLMPort` dependency
 - All records share the same `article_id` for aggregation
 - Total article cost = sum of all individual agent records
-- Cost estimation is delegated to `LLMPort.estimate_cost()` (port-based, no direct LiteLLM dependency)
 
 ---
 
@@ -1841,35 +1845,32 @@ print(f"Estimated cost: ${cost:.6f}")
 
 **Module**: `services/token_usage_service.py`
 
-**Description**: Track token usage for each agent after article generation. Framework-agnostic -- accepts a list of dicts rather than a CrewAI-specific result object.
+**Description**: Track token usage for each agent after article generation. Accepts `list[tuple[str, LLMCallResult]]` -- domain value objects with cost already calculated by the CrewAI adapter.
 
 **Signature**:
 ```python
 def track_agent_usage(
     repo: TokenUsageRepository,
-    agent_usage: list[dict],
+    agent_usage: list[tuple[str, LLMCallResult]],
     user_id: str,
     article_id: str | None,
     job_id: str,
-    llm: LLMPort | None = None,
 ) -> None
 ```
 
 **Parameters**:
 - `repo`: `TokenUsageRepository` port for saving usage records
-- `agent_usage`: List of dicts from `CrewResult.get_agent_usage()` (or any compatible source)
+- `agent_usage`: List of `(agent_name, LLMCallResult)` tuples from `GenerationResult.agent_usage`
 - `user_id`: User ID who initiated the generation
 - `article_id`: Article ID being generated (optional)
 - `job_id`: Job ID for metadata
-- `llm`: Optional `LLMPort` for cost estimation (if `None`, cost defaults to `0.0`)
 
 **Behavior**:
-1. Iterates through `agent_usage` list
+1. Iterates through `agent_usage` list of `(agent_name, LLMCallResult)` tuples
 2. Skips agents with zero token usage
-3. Resolves agent display name from `agent_name` with fallback to `agent_role`
-4. Creates `LLMCallResult` and delegates to `track_llm_usage()` for each agent
-5. Calculates cost via `llm.estimate_cost()` if `LLMPort` is provided
-6. Logs total number of agents saved
+3. Creates `TokenUsage` via `TokenUsage.from_llm_result()` domain factory for each agent
+4. Saves each `TokenUsage` record via `repo.save()`
+5. Logs total number of agents saved
 
 **Error Handling**:
 - **Non-fatal**: All failures are caught, logged as warnings, and do not crash the worker
@@ -1900,11 +1901,10 @@ from services.token_usage_service import track_agent_usage
 # After successful generation
 track_agent_usage(
     repo=token_repo,
-    agent_usage=result.agent_usage,
+    agent_usage=result.agent_usage,  # list[tuple[str, LLMCallResult]]
     user_id=user_id,
     article_id=article_id,
     job_id=job_id,
-    llm=llm,
 )
 ```
 
@@ -1914,7 +1914,7 @@ track_agent_usage(
 
 **Module**: `adapter/crew/main.py`
 
-**Description**: Container for crew execution result with usage metrics extraction.
+**Description**: Container for crew execution result with usage metrics extraction. Acts as an anti-corruption layer, converting raw CrewAI framework data to domain objects (`LLMCallResult`) including cost calculation via `litellm.cost_per_token()`.
 
 **Class**:
 ```python
@@ -1937,23 +1937,24 @@ class CrewResult:
 
 **Signature**:
 ```python
-def get_agent_usage(self) -> list[dict]
+def get_agent_usage(self) -> list[tuple[str, LLMCallResult]]
 ```
 
-**Returns**: List of dicts with per-agent usage metrics
+**Returns**: List of `(agent_name, LLMCallResult)` tuples with per-agent usage metrics and estimated cost.
 
 **Return Format**:
 ```python
 [
-    {
-        'agent_role': str,           # Agent role name (e.g., 'News Researcher')
-        'agent_name': str,           # Display name (e.g., 'Article Finder')
-        'model': str,                # Model name (e.g., 'gpt-4.1')
-        'prompt_tokens': int,        # Input tokens
-        'completion_tokens': int,    # Output tokens
-        'total_tokens': int,         # Total tokens
-        'successful_requests': int   # Number of successful LLM calls
-    },
+    (
+        'Article Finder',               # Agent display name
+        LLMCallResult(
+            model='gpt-4.1',            # Model name
+            prompt_tokens=500,           # Input tokens
+            completion_tokens=200,       # Output tokens
+            total_tokens=700,            # Total tokens
+            estimated_cost=0.0105,       # Cost via litellm.cost_per_token()
+        ),
+    ),
     ...
 ]
 ```
@@ -1961,7 +1962,9 @@ def get_agent_usage(self) -> list[dict]
 **Behavior**:
 - Iterates through all agents in crew_instance
 - Skips agents without LLM configured
-- Uses `agent.llm.get_token_usage_summary()` for metrics
+- Uses `agent.llm.get_token_usage_summary()` for token metrics
+- Calculates cost via `litellm.cost_per_token()` directly (no `LLMPort` dependency)
+- Creates `LLMCallResult` domain value object per agent
 - Resolves agent name from role-to-key mapping (via `ReadingMaterialCreator().get_role_to_key_map()`)
 - Safely handles missing attributes with defaults
 
@@ -1971,11 +1974,11 @@ from adapter.crew.main import run as run_crew
 
 result = run_crew(inputs={"language": "German", "level": "B1", ...})
 
-for usage in result.get_agent_usage():
-    print(f"Agent: {usage['agent_role']} ({usage['agent_name']})")
-    print(f"  Model: {usage['model']}")
-    print(f"  Tokens: {usage['total_tokens']}")
-    print(f"  Requests: {usage['successful_requests']}")
+for agent_name, stats in result.get_agent_usage():
+    print(f"Agent: {agent_name}")
+    print(f"  Model: {stats.model}")
+    print(f"  Tokens: {stats.total_tokens}")
+    print(f"  Cost: ${stats.estimated_cost:.6f}")
 ```
 
 **Why CrewAI Built-in Tracking?**
@@ -1992,27 +1995,27 @@ for usage in result.get_agent_usage():
 - Total routes: 10
 
 - **GET** `/api/articles`
-  - File: `src/web/app/api/articles/route.ts`
+  - File: `client/apps/web/app/api/articles/route.ts`
 - **GET** `/api/status`
-  - File: `src/web/app/api/status/route.ts`
+  - File: `client/apps/web/app/api/status/route.ts`
 - **POST** `/api/generate`
-  - File: `src/web/app/api/generate/route.ts`
+  - File: `client/apps/web/app/api/generate/route.ts`
 - **GET** `/api/article`
-  - File: `src/web/app/api/article/route.ts`
+  - File: `client/apps/web/app/api/article/route.ts`
 - **GET** `/api/stats`
-  - File: `src/web/app/api/stats/route.ts`
+  - File: `client/apps/web/app/api/stats/route.ts`
 - **GET** `/api/articles/[id]`
-  - File: `src/web/app/api/articles/[id]/route.ts`
+  - File: `client/apps/web/app/api/articles/[id]/route.ts`
 - **POST** `/api/dictionary/search`
-  - File: `src/web/app/api/dictionary/search/route.ts`
+  - File: `client/apps/web/app/api/dictionary/search/route.ts`
 - **POST** `/api/dictionary/vocabularies`
-  - File: `src/web/app/api/dictionary/vocabularies/route.ts`
+  - File: `client/apps/web/app/api/dictionary/vocabularies/route.ts`
 - **GET** `/api/dictionary/vocabularies`
-  - File: `src/web/app/api/dictionary/vocabularies/route.ts`
+  - File: `client/apps/web/app/api/dictionary/vocabularies/route.ts`
 - **DELETE** `/api/dictionary/vocabularies/[id]`
-  - File: `src/web/app/api/dictionary/vocabularies/[id]/route.ts`
+  - File: `client/apps/web/app/api/dictionary/vocabularies/[id]/route.ts`
 - **GET** `/api/dictionary/stats`
-  - File: `src/web/app/api/dictionary/stats/route.ts`
+  - File: `client/apps/web/app/api/dictionary/stats/route.ts`
 
 ---
 
@@ -2020,7 +2023,7 @@ for usage in result.get_agent_usage():
 
 ### Conjugations Model
 
-**File**: `src/api/models.py:12-21`
+**File**: `server/api/models.py:12-21`
 
 **Purpose**: Store verb conjugation forms across tenses (present, past, perfect).
 
@@ -2070,7 +2073,7 @@ if isinstance(v, Conjugations):
 
 ### VocabularyRequest Model
 
-**File**: `src/api/models.py:91-117`
+**File**: `server/api/models.py:91-117`
 
 **Purpose**: Request model for adding vocabulary with automatic type conversion.
 
@@ -2129,7 +2132,7 @@ request = VocabularyRequest(
 
 ### Web Testing with Vitest
 
-**Configuration File**: `src/web/vitest.config.ts`
+**Configuration File**: `client/apps/web/vitest.config.ts`
 
 **Framework**: Vitest 4.0.18 with jsdom environment
 
@@ -2152,7 +2155,7 @@ request = VocabularyRequest(
 - Excludes: node_modules, test files (`**/*.test.ts`, `**/*.test.tsx`), test directories
 
 **Path Aliases**:
-- `@` resolves to `src/web/` (matches Next.js tsconfig)
+- `@` resolves to `client/apps/web/` (matches Next.js tsconfig)
 
 **Available Commands** (`package.json`):
 ```bash
@@ -2597,7 +2600,7 @@ function VocabularyList() {
 
 Reusable error alert component for displaying error messages.
 
-**File**: `src/web/components/ErrorAlert.tsx`
+**File**: `client/apps/web/components/ErrorAlert.tsx`
 
 **Props**:
 ```typescript
@@ -2648,20 +2651,20 @@ function MyComponent() {
 ```
 
 **Used In**:
-- `src/web/app/vocabulary/page.tsx` - Vocabulary fetch errors
+- `client/apps/web/app/vocabulary/page.tsx` - Vocabulary fetch errors
 - Other pages with error states requiring user feedback
 
 ---
 
 ### MarkdownViewer Component
 
-**File**: `src/web/components/MarkdownViewer.tsx`
+**File**: `client/apps/web/components/MarkdownViewer.tsx`
 
 **Component Remounting Pattern**:
 
 To prevent React hydration mismatches when article content changes, MarkdownViewer uses a key prop pattern that forces component remount on content changes.
 
-**Pattern** (from `src/web/app/articles/[id]/page.tsx:266`):
+**Pattern** (from `client/apps/web/app/articles/[id]/page.tsx:266`):
 ```typescript
 <MarkdownViewer
   key={`${articleId}-${content.length}`}
@@ -2679,7 +2682,7 @@ To prevent React hydration mismatches when article content changes, MarkdownView
 - Key pattern `${articleId}-${content.length}` ensures unique key per content state
 - Component remount triggers `data-processed` reset (line 456), allowing word-clickable logic to re-run
 
-**Processing State Check** (`src/web/components/MarkdownViewer.tsx:456-458`):
+**Processing State Check** (`client/apps/web/components/MarkdownViewer.tsx:456-458`):
 ```typescript
 // Skip if already processed (component remounts on content change via key prop)
 if (containerRef.current.getAttribute('data-processed') === 'true') {
@@ -2702,7 +2705,7 @@ if (containerRef.current.getAttribute('data-processed') === 'true') {
 
 ### MarkdownViewer Security
 
-**File**: `src/web/components/MarkdownViewer.tsx`
+**File**: `client/apps/web/components/MarkdownViewer.tsx`
 
 **XSS Prevention Measures**:
 
@@ -2856,7 +2859,7 @@ strong.textContent = lemma
 
 Reusable empty state component for displaying when no data is available.
 
-**File**: `src/web/components/EmptyState.tsx`
+**File**: `client/apps/web/components/EmptyState.tsx`
 
 **Props**:
 ```typescript
@@ -2910,7 +2913,7 @@ function ArticleList() {
 ```
 
 **Used In**:
-- `src/web/app/vocabulary/page.tsx` - No vocabulary state
+- `client/apps/web/app/vocabulary/page.tsx` - No vocabulary state
 - Other list pages when data is empty
 
 ---

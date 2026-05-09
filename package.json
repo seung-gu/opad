@@ -1,0 +1,24 @@
+{
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter @opad/web dev",
+    "build:web": "pnpm --filter @opad/web build",
+    "test:web": "pnpm --filter @opad/web test",
+    "lint:web": "pnpm --filter @opad/web lint",
+    "dev:mobile": "pnpm --filter @opad/mobile start",
+    "ios:mobile": "pnpm --filter @opad/mobile ios",
+    "android:mobile": "pnpm --filter @opad/mobile android",
+    "lint:mobile": "pnpm --filter @opad/mobile lint",
+    "export:openapi": "PYTHONPATH=. uv run python client/libs/api-types/sync_from_backend.py",
+    "generate:types": "openapi-typescript client/libs/api-types/openapi.json -o client/libs/api-types/api.generated.ts && node -e \"const fs=require('fs'); const file='client/libs/api-types/api.generated.ts'; fs.writeFileSync(file, '// DO NOT EDIT — generated\\n\\n' + fs.readFileSync(file));\"",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.0.0",
+    "openapi-typescript": "^7.0.0"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "packageManager": "pnpm@10.31.0"
+}

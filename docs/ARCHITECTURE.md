@@ -130,7 +130,7 @@ sequenceDiagram
 | **API** | **Redis** | `RPUSH` (via JobQueuePort / RedisJobQueueAdapter) | Job을 큐에 추가 |
 | **API** | **Redis** | `SET/GET` (via JobQueuePort / RedisJobQueueAdapter) | Job 상태 저장/조회 |
 | **API** | **Stanza NLP** | Local (via NLPPort / StanzaAdapter) | German lemma extraction (로컬 NLP, ~51ms) |
-| **API** | **LLM** | HTTP (via LLMPort / LiteLLMAdapter) | Dictionary API용 LLM 호출 (non-German lemma extraction + CEFR estimation + entry/sense selection) + Token tracking |
+| **API** | **LLM** | HTTP (via LLMPort / LiteLLMAdapter) | Dictionary API용 LLM 호출 (non-German lemma extraction + CEFR estimation + entry/sense selection) |
 | **API** | **API** | Internal | Token usage endpoints (`/usage/me`, `/usage/articles/{id}`) |
 | **Worker** | **Redis** | `BLPOP` (via JobQueuePort / RedisJobQueueAdapter) | Job을 큐에서 꺼냄 (blocking) |
 | **Worker** | **Redis** | `SET` (via JobQueuePort / RedisJobQueueAdapter) | Job 상태 업데이트 |
@@ -338,7 +338,7 @@ A legend box at the bottom of the diagram summarizes the three edge categories.
 > **Note:** A complementary layered architecture view is available in `service_diagram_layers.drawio`.
 
 
-### Domain Models (`src/domain/model/`)
+### Domain Models (`server/domain/model/`)
 
 All domain models are plain Python dataclasses with no database dependencies.
 
@@ -350,7 +350,7 @@ Rich Domain Model with factory (`create()`), state transitions (`complete()`, `f
 - **`ArticleStatus`** — Enum (`RUNNING`, `COMPLETED`, `FAILED`, `DELETED`). Extends `str` for JSON serialization.
 - **`ArticleInputs`** — Frozen value object holding generation parameters (`language`, `level`, `length`, `topic`).
 - **`SourceInfo`**, **`EditRecord`** — Frozen value objects preserving article provenance from CrewAI output.
-- **`GenerationResult`** — Framework-agnostic DTO returned by `ArticleGeneratorPort`, decoupling CrewAI output from domain.
+- **`GenerationResult`** — Framework-agnostic DTO returned by `ArticleGeneratorPort`, decoupling CrewAI output from domain. `agent_usage` is typed as `list[tuple[str, LLMCallResult]]` -- the CrewAI adapter converts raw framework data to domain objects (including cost calculation via `litellm.cost_per_token()`) before returning.
 - **`Articles`** — Collection wrapper for paginated results (replaces raw `tuple[list, int]`).
 
 #### JobContext (`domain/model/job.py`)
@@ -369,10 +369,16 @@ Standard user entity with `id`, `name`, `email`, authentication fields (`passwor
 - **`LookupResult`** — Frozen value object returned by `dictionary_service.lookup()`. Combines lemma, definition, related_words, level, and `GrammaticalInfo`.
 - **`VocabularyCount`** — Composite model combining a vocabulary entry with its aggregated count and article IDs.
 
+#### Language (`domain/model/language.py`)
+
+- **`Language`** — Frozen value object (`@dataclass(frozen=True)`) encapsulating language-specific metadata: `name`, `code` (ISO 639-1), `gender_articles` (immutable `MappingProxyType`), `reflexive_prefixes`, and `reflexive_suffixes`. Provides `strip_reflexive(word)` to remove reflexive pronouns before dictionary API lookup.
+- **Pre-defined instances** — `GERMAN`, `ENGLISH`, `FRENCH`, `SPANISH`, `ITALIAN`, `KOREAN`, each configured with language-specific gender articles and reflexive patterns.
+- **`LANGUAGES`** — Registry dict (`{name: Language}`) for lookup. **`get_language(name)`** returns a `Language` or `None`.
+
 #### Token Usage (`domain/model/token_usage.py`)
 
 - **`LLMCallResult`** — Frozen value object from a single LLM API call. Fields: `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `estimated_cost`, `provider`.
-- **`TokenUsage`** — Entity tracking who used how many tokens for which operation. Created by service layer, persisted by adapter.
+- **`TokenUsage`** — Entity tracking who used how many tokens for which operation. Persisted by adapter. Provides `from_llm_result()` factory classmethod that creates a `TokenUsage` record from an `LLMCallResult`, setting ID, timestamps, and mapping fields automatically. Used by both dictionary service (per-step tracking) and token usage service (per-agent tracking).
 
 #### Domain Errors (`domain/model/errors.py`)
 
@@ -388,7 +394,7 @@ Standard user entity with `id`, `name`, `email`, authentication fields (`passwor
 
 Domain models and services raise these exceptions; route handlers catch and map to HTTP status codes. For example, `Vocabulary.check_ownership()` raises `PermissionDeniedError`, which the vocabulary route catches and maps to HTTP 403.
 
-### Ports (`src/port/`)
+### Ports (`server/port/`)
 
 Each port defines a contract using Python's `Protocol` (structural typing). No explicit inheritance required -- any class with matching method signatures satisfies the protocol, supporting duck typing with IDE/mypy type checking.
 
@@ -415,7 +421,7 @@ Each port defines a contract using Python's `Protocol` (structural typing). No e
 
 ### Adapters
 
-#### MongoDB Adapters (`src/adapter/mongodb/`)
+#### MongoDB Adapters (`server/adapter/mongodb/`)
 
 All MongoDB adapters follow the same pattern:
 - Receive a `pymongo.Database` instance via constructor injection
@@ -435,7 +441,7 @@ All MongoDB adapters follow the same pattern:
 - `stats.py`: `get_database_stats(db)` and `get_vocabulary_stats(db)` for the `/stats` endpoint
 - `connection.py`: MongoDB client singleton (`get_mongodb_client()`, `DATABASE_NAME`)
 
-#### External Service Adapters (`src/adapter/external/`, `src/adapter/nlp/`, `src/adapter/queue/`, `src/adapter/crew/`)
+#### External Service Adapters (`server/adapter/external/`, `server/adapter/nlp/`, `server/adapter/queue/`, `server/adapter/crew/`)
 
 Adapters for outbound API calls (dictionary lookups, LLM calls), local NLP processing, job queue operations, and article generation. These implement the `DictionaryPort`, `LLMPort`, `NLPPort`, `JobQueuePort`, and `ArticleGeneratorPort` protocols respectively.
 
@@ -484,13 +490,13 @@ Adapters for outbound API calls (dictionary lookups, LLM calls), local NLP proce
 
 **CrewAI Pipeline** (`adapter/crew/`):
 - `crew.py`: `ReadingMaterialCreator` -- CrewAI crew definition with 4 agents and 4 tasks
-- `main.py`: `run()` function and `CrewResult` container with `get_agent_usage()` for token metrics
+- `main.py`: `run()` function and `CrewResult` container with `get_agent_usage()` returning `list[tuple[str, LLMCallResult]]` -- converts raw CrewAI data to domain objects including cost via `litellm.cost_per_token()`
 - `models.py`: Pydantic models for CrewAI task outputs (`NewsArticle`, `SelectedArticle`, `ReviewedArticle`) with `to_source_info()` and `to_edit_record()` converters to domain value objects
 - `progress_listener.py`: `JobProgressListener` -- CrewAI event listener that updates job progress via `JobQueuePort` (no direct Redis dependency)
 - `guardrails.py`: JSON output repair for CrewAI task outputs
 - `config/agents.yaml`, `config/tasks.yaml`: Agent and task configuration
 
-#### Fake Adapters (`src/adapter/fake/`)
+#### Fake Adapters (`server/adapter/fake/`)
 
 In-memory adapters for unit testing. No external dependencies required.
 
@@ -518,7 +524,7 @@ In-memory adapters for unit testing. No external dependencies required.
 
 ### Composition Root (Dependency Injection)
 
-#### FastAPI (`src/api/dependencies.py`)
+#### FastAPI (`server/api/dependencies.py`)
 
 Factory functions return port-typed instances, injected into route handlers via `Depends()`. A private `_get_db()` helper centralizes the database connection (raises 503 if unavailable).
 
@@ -535,9 +541,9 @@ Factory functions return port-typed instances, injected into route handlers via 
 
 Note: `get_vocab_repo()` returns `MongoVocabularyRepository`, which satisfies `VocabularyRepository` via duck typing.
 
-#### Worker (`src/worker/main.py`)
+#### Worker (`server/worker/main.py`)
 
-The worker creates all adapters at startup and wires them together via `functools.partial`. The `generate` callable is a partially-applied `article_generation_service.generate_article()` with all infrastructure dependencies (`generator`, `repo`, `token_usage_repo`, `vocab`, `llm`) pre-bound. The worker loop receives `JobQueuePort` for dequeue/status operations and delegates generation to this pre-bound callable.
+The worker creates all adapters at startup and wires them together via `functools.partial`. The `generate` callable is a partially-applied `article_generation_service.generate_article()` with all infrastructure dependencies (`generator`, `repo`, `token_usage_repo`, `vocab`) pre-bound. The worker loop receives `JobQueuePort` for dequeue/status operations and delegates generation to this pre-bound callable. Note: `LiteLLMAdapter` is no longer instantiated in the worker -- cost calculation is handled by the CrewAI adapter, and `track_agent_usage()` no longer depends on `LLMPort`.
 
 ### Port and Adapter Overview
 
@@ -614,7 +620,7 @@ Token usage persistence is handled by `MongoTokenUsageRepository`, implementing 
 - **`get_user_summary(user_id, days=30)`**: Aggregated usage summary as `dict` (total_tokens, total_cost, by_operation, daily_usage). Days clamped to [1, 365].
 - **`get_by_article(article_id)`**: All token usage records for an article as `list[dict]`, sorted by created_at ascending.
 
-Token usage records are created by `services/token_usage_service.py`, which converts `LLMCallResult` to `TokenUsage` domain objects before calling `save()`.
+Token usage records are created via the `TokenUsage.from_llm_result()` domain factory method, which converts `LLMCallResult` to `TokenUsage` domain objects. The dictionary service calls this factory directly and saves via `TokenUsageRepository.save()`. The token usage service (`track_agent_usage()`) uses the same factory for article generation tracking.
 
 #### 3. Token Usage Collection Schema (MongoDB)
 
@@ -645,7 +651,7 @@ Token usage records are created by `services/token_usage_service.py`, which conv
 
 ### Integration
 
-#### Dictionary API (`src/api/routes/dictionary.py`)
+#### Dictionary API (`server/api/routes/dictionary.py`)
 
 The route handler injects `DictionaryPort`, `LLMPort`, `NLPPort`, and `TokenUsageRepository` via `Depends()` and passes them to `dictionary_service.lookup()` (a module function, not a class method). Token usage tracking is handled internally by the service:
 
@@ -684,9 +690,9 @@ async def search_word(
     )
 ```
 
-Note: `dictionary_service.lookup()` returns a `LookupResult` domain object (not a tuple). Token usage is tracked per LLM call internally by the service via `token_usage_service.track_llm_usage()`.
+Note: `dictionary_service.lookup()` returns a `LookupResult` domain object (not a tuple). Token usage is tracked per LLM call internally by the service using `TokenUsage.from_llm_result()` (domain factory) and `TokenUsageRepository.save()` directly.
 
-#### Vocabulary API (`src/api/routes/vocabulary.py`)
+#### Vocabulary API (`server/api/routes/vocabulary.py`)
 
 Vocabulary CRUD endpoints are in a separate router from dictionary search. The route uses `Vocabulary.create()` (domain factory) for construction and `vocab.check_ownership()` (domain method) for authorization, then delegates persistence to the injected `VocabularyRepository`. This follows the same pattern as other routes (`r_jobs`, `r_usage`, `r_health`) -- route to port directly, no service layer:
 
@@ -713,7 +719,7 @@ async def delete_vocabulary_word(
 ): ...
 ```
 
-#### Token Usage API Endpoints (`src/api/routes/usage.py`)
+#### Token Usage API Endpoints (`server/api/routes/usage.py`)
 
 **GET /usage/me**: Get current user's token usage summary
 ```python
@@ -812,7 +818,7 @@ sequenceDiagram
     CrewAI-->>Worker: GenerationResult (domain DTO)
     Worker->>Worker: article.complete(content, source, edit_history)
     Worker->>MongoDB: repo.save(article)
-    Worker->>Worker: track_agent_usage() + calculate_cost()
+    Worker->>Worker: track_agent_usage() + TokenUsage.from_llm_result()
     Worker->>MongoDB: token_usage_repo.save() (per agent)
 
     Note over User,MongoDB: Usage Summary Retrieval
@@ -851,14 +857,16 @@ Worker main.py
                 └── generate(article, user_id, inputs, job_id)
                        = article_generation_service.generate_article(...)
                             ├── 1. _get_vocabulary() via VocabularyRepository
-                            ├── 2. generator.set_job_context(job_id, article_id)
-                            ├── 3. generator.generate(inputs, vocab_list)
+                            ├── 2. generator.generate(inputs, vocab_list, job_id, article_id)
                             │       └── CrewAIArticleGenerator
                             │             ├── JobProgressListener (job_queue.update_status)
                             │             └── run_crew(inputs) -> CrewResult -> GenerationResult
-                            ├── 4. article.complete(content, source, edit_history)
-                            ├── 5. repo.save(article) via ArticleRepository
-                            └── 6. track_agent_usage() via TokenUsageRepository
+                            │                   └── get_agent_usage() -> list[tuple[str, LLMCallResult]]
+                            │                         (cost calculated via litellm.cost_per_token())
+                            ├── 3. article.complete(content, source, edit_history)
+                            ├── 4. repo.save(article) via ArticleRepository
+                            └── 5. track_agent_usage(repo, agent_usage, ...) via TokenUsageRepository
+                                    └── TokenUsage.from_llm_result() per agent (domain factory)
 ```
 
 ### Article Submission (API-side)
@@ -885,11 +893,11 @@ The Worker tracks token usage during CrewAI article generation using **CrewAI's 
 ```
 CrewAIArticleGenerator.generate()
   └── run_crew(inputs) -> CrewResult
-         └── CrewResult.get_agent_usage()  # per-agent metrics
-                ↓
+         └── CrewResult.get_agent_usage()  # per-agent LLMCallResult (with cost)
+                ↓                           # cost calculated via litellm.cost_per_token()
 article_generation_service.generate_article()
-  └── track_agent_usage(token_usage_repo, agent_usage, user_id, article_id, job_id, llm)
-         └── calculate_cost() per agent (LiteLLM pricing)
+  └── track_agent_usage(token_usage_repo, agent_usage, user_id, article_id, job_id)
+         └── TokenUsage.from_llm_result() per agent (domain factory)
          └── token_usage_repo.save() per agent -> MongoDB
 ```
 
@@ -901,20 +909,21 @@ CrewAI manages LLM calls internally through its agent.llm instances. Each agent 
 
 ### Token Usage Service Module (`services/token_usage_service.py`)
 
-Cost calculation and token usage tracking. Previously in `utils/token_usage.py`, now consolidated in the service layer.
+Agent-level token usage tracking for article generation.
 
-- **`track_llm_usage(repo, stats, user_id, operation, ...)`**: Converts `LLMCallResult` to `TokenUsage` domain object and saves via `TokenUsageRepository`. Used by dictionary service for per-step tracking.
-- **`track_agent_usage(repo, agent_usage, user_id, article_id, job_id, llm)`**: Tracks CrewAI agent-level token usage. Iterates framework-agnostic agent dicts, calculates cost via `LLMPort.estimate_cost()`, saves each agent as separate record. Non-fatal -- failures are logged as warnings.
+- **`track_agent_usage(repo, agent_usage, user_id, article_id, job_id)`**: Tracks CrewAI agent-level token usage. Accepts `list[tuple[str, LLMCallResult]]` -- each tuple contains an agent name and its usage metrics (already including cost, calculated by the CrewAI adapter). Uses `TokenUsage.from_llm_result()` domain factory to convert each entry to a `TokenUsage` entity, then saves via `TokenUsageRepository`. Non-fatal -- failures are logged as warnings.
 
-Cost estimation is handled by `LLMPort.estimate_cost()` (implemented in `LiteLLMAdapter` using LiteLLM's pricing database).
+Note: The previous `track_llm_usage()` function has been removed. Its responsibility (converting `LLMCallResult` to `TokenUsage`) is now handled by the `TokenUsage.from_llm_result()` domain factory method, called directly by the dictionary service and by `track_agent_usage()`.
+
+Cost estimation for article generation is handled by the CrewAI adapter (`adapter/crew/main.py`), which calculates cost via `litellm.cost_per_token()` directly in the anti-corruption layer before returning `LLMCallResult` objects. This means `track_agent_usage()` no longer depends on `LLMPort`.
 
 ---
 
 ### CrewResult Class
 
-**File**: `src/adapter/crew/main.py`
+**File**: `server/adapter/crew/main.py`
 
-**Purpose**: Container for crew execution result with usage metrics extraction.
+**Purpose**: Container for crew execution result with usage metrics extraction. Acts as an anti-corruption layer, converting raw CrewAI framework data to domain objects (`LLMCallResult`) including cost calculation.
 
 ```python
 class CrewResult:
@@ -925,12 +934,11 @@ class CrewResult:
         self.result = result
         self.crew_instance = crew_instance
 
-    def get_agent_usage(self) -> list[dict]:
-        """Get token usage per agent with model info.
+    def get_agent_usage(self) -> list[tuple[str, LLMCallResult]]:
+        """Get token usage per agent with model info and estimated cost.
 
         Returns:
-            List of dicts with agent_role, model, prompt_tokens,
-            completion_tokens, total_tokens, successful_requests
+            List of (agent_name, LLMCallResult) tuples.
         """
 ```
 
@@ -939,11 +947,16 @@ class CrewResult:
 result = run_crew(inputs=ctx.inputs)
 agent_usage = result.get_agent_usage()
 # [
-#   {'agent_role': 'News Researcher', 'model': 'gpt-4.1', 'prompt_tokens': 500, ...},
-#   {'agent_role': 'Content Writer', 'model': 'gpt-4.1', 'prompt_tokens': 2000, ...},
+#   ('Article Finder', LLMCallResult(model='gpt-4.1', prompt_tokens=500, ...)),
+#   ('Content Writer', LLMCallResult(model='gpt-4.1', prompt_tokens=2000, ...)),
 #   ...
 # ]
 ```
+
+**Anti-Corruption Layer Responsibilities:**
+- Converts raw CrewAI agent data to `LLMCallResult` domain value objects
+- Calculates cost via `litellm.cost_per_token()` directly (no `LLMPort` dependency)
+- Resolves agent display names from role-to-key mapping
 
 **Why CrewAI Built-in Tracking?**
 - Each CrewAI agent has its own LLM instance with independent usage tracking
@@ -1016,7 +1029,7 @@ The system now supports vocabulary-aware article generation, where CrewAI adjust
 - `level`: CEFR difficulty level (A1-C2) for vocabulary tracking and adaptive learning.
 - `examples`: Example sentences from Free Dictionary API showing word usage in context.
 
-#### GrammaticalInfo Domain Model (`src/domain/model/vocabulary.py`)
+#### GrammaticalInfo Domain Model (`server/domain/model/vocabulary.py`)
 
 The `GrammaticalInfo` dataclass holds optional grammatical metadata for vocabulary entries:
 
@@ -1067,12 +1080,12 @@ repo.save(vocab)
 
 #### API Model Enhancements
 
-**Conjugations.__bool__()** (`src/api/models.py:18-20`):
+**Conjugations.__bool__()** (`server/api/models.py:18-20`):
 - Enables truthiness checking: `if conjugations:` returns False when all fields (present, past, perfect) are None
 - Simplifies validation logic by treating empty Conjugations as falsy
 - Backend can check conjugation presence without explicit null checks
 
-**VocabularyRequest.field_validator** (`src/api/models.py:106-116`):
+**VocabularyRequest.field_validator** (`server/api/models.py:106-116`):
 - Automatic conversion from Conjugations model to dict before database storage
 - Returns None if conjugations object is empty (using `__bool__` check)
 - Handles both dict and Conjugations input types
@@ -1096,7 +1109,7 @@ All vocabulary endpoints require JWT authentication. Users can only:
 
 **Class**: `CEFRLevel`
 
-**File**: `src/domain/model/cefr.py`
+**File**: `server/domain/model/cefr.py`
 
 **Purpose**: Domain rules for CEFR proficiency levels. Filters vocabulary words to only include those appropriate for the target CEFR level when generating articles.
 
@@ -1141,7 +1154,7 @@ vocab_list = vocab.find_lemmas(
 
 The CrewAI pipeline uses four specialized agents for article generation. Each agent is configured with a specific role, goal, and LLM model.
 
-**Agents** (`src/adapter/crew/config/agents.yaml`):
+**Agents** (`server/adapter/crew/config/agents.yaml`):
 
 | Agent | Role | Tools | LLM Model |
 |-------|------|-------|-----------|
@@ -1170,7 +1183,7 @@ graph LR
     style D fill:#e8f5e9
 ```
 
-**Tasks** (`src/adapter/crew/config/tasks.yaml`):
+**Tasks** (`server/adapter/crew/config/tasks.yaml`):
 
 #### 1. find_news_articles
 - **Agent**: `article_finder`
@@ -1212,7 +1225,7 @@ graph LR
 
 ### Pydantic Output Models
 
-**File**: `src/adapter/crew/models.py`
+**File**: `server/adapter/crew/models.py`
 
 #### ReviewedArticle
 Final output from the review task:
@@ -1238,7 +1251,7 @@ class ReplacedSentence(BaseModel):
 
 ### Worker Integration
 
-**File**: `src/worker/processor.py`
+**File**: `server/worker/processor.py`
 
 The worker processes the CrewAI result and extracts the reviewed article. It uses the injected `ArticleRepository` (via `ctx.repo`) instead of calling `utils.mongodb` directly:
 
@@ -1271,10 +1284,13 @@ if not repo.save(article):
 
 ```
 opad/
-├── src/
+├── server/
 │   ├── domain/           # Domain layer (hexagonal architecture)
 │   │   └── model/
 │   │       ├── article.py       # Article, ArticleInputs, ArticleStatus
+│   │       ├── cefr.py          # CEFRLevel (vocabulary level filtering)
+│   │       ├── job.py           # JobContext (typed container for queue job data)
+│   │       ├── language.py      # Language VO (frozen dataclass: code, gender_articles, reflexive patterns, strip_reflexive())
 │   │       ├── user.py          # User
 │   │       ├── vocabulary.py    # Vocabulary, GrammaticalInfo, VocabularyCount, LookupResult, SenseResult
 │   │       ├── token_usage.py   # LLMCallResult (Value Object), TokenUsage (Entity)
@@ -1379,12 +1395,10 @@ opad/
 │   │   ├── lemma_extraction.py    # Step 1: Lemma extraction (NLP for German, LLM for others)
 │   │   ├── sense_selection.py     # Step 3: Sense selection from dictionary entries via LLM
 │   │   ├── auth_service.py        # Authentication business logic
-│   │   └── token_usage_service.py # Token usage tracking (track_llm_usage, track_agent_usage)
+│   │   └── token_usage_service.py # Token usage tracking (track_agent_usage)
 │   │
 │   └── utils/            # 공통 유틸리티 (공유)
-│       ├── logging.py    # Structured logging 설정
-│       ├── language_metadata.py # Pure data constants (LANGUAGE_CODE_MAP, GENDER_MAP, REFLEXIVE_PREFIXES, etc.)
-│       └── cloudflare.py # Cloudflare 관련 유틸리티
+│       └── logging.py    # Structured logging 설정
 │
 └── Dockerfile.*          # 서비스별 Dockerfile (이슈 #9)
 ```
@@ -1392,14 +1406,14 @@ opad/
 ### 서비스 구분
 | 폴더 | 역할 | 런타임 | 포트 |
 |------|------|--------|------|
-| `src/domain/` | Domain models (Article, JobContext, User, Vocabulary, TokenUsage, Errors) | - | - |
-| `src/port/` | Port definitions (ArticleRepository, UserRepository, VocabularyRepository, TokenUsageRepository, DictionaryPort, LLMPort, NLPPort, JobQueuePort, ArticleGeneratorPort) | - | - |
-| `src/adapter/` | Infrastructure adapters (MongoDB, External APIs, Queue, Crew, Fake) | - | - |
-| `src/services/` | Business logic (article_submission_service, article_generation_service, dictionary_service) | - | - |
-| `src/api/` | CRUD + Job enqueue + Dictionary API | Python (FastAPI) | 8001 (default) |
-| `src/worker/` | Job dequeue + Article generation orchestration | Python | - |
-| `src/web/` | UI | Node.js (Next.js) | 3000 |
-| `src/utils/` | 공통 유틸 (공유) | - | - |
+| `server/domain/` | Domain models (Article, JobContext, Language, User, Vocabulary, TokenUsage, CEFRLevel, Errors) | - | - |
+| `server/port/` | Port definitions (ArticleRepository, UserRepository, VocabularyRepository, TokenUsageRepository, DictionaryPort, LLMPort, NLPPort, JobQueuePort, ArticleGeneratorPort) | - | - |
+| `server/adapter/` | Infrastructure adapters (MongoDB, External APIs, Queue, Crew, Fake) | - | - |
+| `server/services/` | Business logic (article_submission_service, article_generation_service, dictionary_service) | - | - |
+| `server/api/` | CRUD + Job enqueue + Dictionary API | Python (FastAPI) | 8001 (default) |
+| `server/worker/` | Job dequeue + Article generation orchestration | Python | - |
+| `server/web/` | UI | Node.js (Next.js) | 3000 |
+| `server/utils/` | 공통 유틸 (logging) | - | - |
 
 ### Worker 모듈 구성
 | 파일 | 역할 | 의존성 |
@@ -1428,7 +1442,7 @@ opad/
 LLM 호출은 `LLMPort` 포트와 `LiteLLMAdapter` 어댑터로 추상화. 이전의 `utils/llm.py`는 삭제되었으며, 모든 LLM 관련 로직이 헥사고날 아키텍처로 이동.
 
 - **`LLMPort.call()`**: Provider-agnostic LLM API 호출. 반환값: `(content: str, stats: LLMCallResult)`
-- **`LLMPort.estimate_cost()`**: 모델별 비용 추정 (LiteLLM 가격 데이터 사용)
+- **`LLMPort.estimate_cost()`**: 모델별 비용 추정 (LiteLLM 가격 데이터 사용). Dictionary 서비스에서 사용. Article generation 비용은 CrewAI 어댑터에서 `litellm.cost_per_token()`로 직접 계산.
 - **`LLMCallResult`** (`domain/model/token_usage.py`): Frozen value object. 필드: `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `estimated_cost`, `provider`
 - **Port-level exceptions** (`port/llm.py`): `LLMTimeoutError`, `LLMRateLimitError`, `LLMAuthError` -- LiteLLM 예외를 포트 레벨로 변환
 
@@ -1441,8 +1455,8 @@ LLM 호출은 `LLMPort` 포트와 `LiteLLMAdapter` 어댑터로 추상화. 이�
 
 LLM 호출 후 토큰 사용량을 `TokenUsage` 도메인 객체로 변환하여 저장하는 서비스 모듈.
 
-- **`track_llm_usage()`**: `LLMCallResult` -> `TokenUsage` 도메인 객체 생성 -> `TokenUsageRepository.save()` 호출
-- **`track_agent_usage()`**: CrewAI 에이전트별 사용량 추적. `LLMPort.estimate_cost()`로 비용 계산 후 에이전트별 `track_llm_usage()` 호출
+- **`track_agent_usage()`**: CrewAI 에이전트별 사용량 추적. `list[tuple[str, LLMCallResult]]`을 받아 `TokenUsage.from_llm_result()` 도메인 팩토리로 변환 후 `TokenUsageRepository.save()` 호출. `LLMPort` 의존성 없음 -- 비용은 CrewAI 어댑터에서 `litellm.cost_per_token()`로 이미 계산됨.
+- **`track_llm_usage()`**: 삭제됨. 역할이 `TokenUsage.from_llm_result()` 도메인 팩토리 메서드로 이동.
 
 ### Dictionary Lookup Pipeline Modules
 
@@ -1495,14 +1509,16 @@ sense, label, stats = await select_best_sense(
 - Reduced prompts (lemma extraction)는 `services/lemma_extraction.py`에 위치
 - Sense selection prompts는 `services/sense_selection.py`에 위치
 
-#### Language Metadata (`utils/language_metadata.py`)
-Pure data module containing language-specific constants used by `adapter/external/free_dictionary.py`. No logic -- only data definitions.
+#### Language Value Object (`domain/model/language.py`)
+Frozen dataclass (immutable via `@dataclass(frozen=True)`) encapsulating language-specific metadata used across the domain. Replaces the former `utils/language_metadata.py` data module by co-locating data with behavior.
 
-- **`LANGUAGE_CODE_MAP`** + **`get_language_code()`**: Full language name -> ISO 639-1 code 변환 (e.g., `"German"` -> `"de"`)
-- **`GENDER_MAP`**: Maps gender keywords to grammatical articles per language (e.g., `"masculine"` -> `"der"` for German)
-- **`REFLEXIVE_PREFIXES`**: Reflexive pronoun prefixes to strip before API lookup (e.g., `"sich "` for German)
-- **`REFLEXIVE_SUFFIXES`**: Reflexive verb suffix patterns (e.g., Spanish `"arse"`, `"erse"`, `"irse"`)
-- **`PHONETICS_SUPPORTED`**: Language codes supporting IPA phonetics (currently only `"en"`)
+- **`Language`**: Value object with `name`, `code` (ISO 639-1), `gender_articles` (`MappingProxyType` for immutability), `reflexive_prefixes`, and `reflexive_suffixes`.
+- **`Language.strip_reflexive(word)`**: Strips reflexive pronouns before API lookup (e.g., `"sich gewöhnen"` -> `"gewöhnen"`, `"levantarse"` -> `"levantar"`). Previously lived in the Free Dictionary adapter; now a domain method on Language.
+- **Pre-defined instances**: `GERMAN`, `ENGLISH`, `FRENCH`, `SPANISH`, `ITALIAN`, `KOREAN` -- each configured with language-specific gender articles and reflexive patterns.
+- **`LANGUAGES`**: Registry dict keyed by language name for lookup.
+- **`get_language(name)`**: Returns a `Language` instance by full name (e.g., `"German"`), or `None` for unsupported languages.
+
+**Note**: `PHONETICS_SUPPORTED` has been internalized as `_PHONETICS_SUPPORTED` in `adapter/external/free_dictionary.py` since it is API-specific (only the Free Dictionary adapter uses it). Gender extraction functions also remain in the adapter.
 
 ---
 
@@ -1610,7 +1626,7 @@ sequenceDiagram
 | **Free Dictionary Adapter** | `adapter/external/free_dictionary.py` | Implements all `DictionaryPort` methods; HTTP calls to Free Dictionary API with retry logic. `extract_grammar()` extracts POS, phonetics, forms, gender. | `list[dict]`, `SenseResult`, `GrammaticalInfo` |
 | **LiteLLM Adapter** | `adapter/external/litellm.py` | Implements `LLMPort`; provider-agnostic LLM calls via LiteLLM with exception mapping | `(str, LLMCallResult)` |
 | **Stanza Adapter** | `adapter/nlp/stanza.py` | Implements `NLPPort`; German dependency parsing via Stanza | Dict with linguistic primitives |
-| **Language Metadata** | `utils/language_metadata.py` | Pure data constants: `LANGUAGE_CODE_MAP`, `GENDER_MAP`, `REFLEXIVE_PREFIXES`, `REFLEXIVE_SUFFIXES`, `PHONETICS_SUPPORTED` | Data only (no logic) |
+| **Language VO** | `domain/model/language.py` | Frozen dataclass: `name`, `code`, `gender_articles`, `reflexive_prefixes/suffixes`, `strip_reflexive()`. Pre-defined instances (`GERMAN`, `ENGLISH`, etc.) + `LANGUAGES` registry + `get_language()` | `Language` value object |
 | **Dictionary Service** | `services/dictionary_service.py` | Orchestrator (module functions): `lookup()` wires Step 1 -> Step 2 -> Step 3, handles fallback. Full LLM fallback prompt (`_build_full_prompt()`) also lives here. | `LookupResult` |
 
 #### Components
@@ -1622,7 +1638,7 @@ sequenceDiagram
 | **LLM (Reduced Prompt)** | Context-aware lemma extraction for non-German languages (max_tokens=200) | `lemma`, `related_words`, `level` |
 | **Free Dictionary API (via DictionaryPort)** | Returns all dictionary entries with senses and subsenses | `all_entries` (containing `pos`, `senses`, `phonetics`, `forms` per entry) |
 | **LLM (Sense Selection)** | Selects best entry+sense+subsense using X.Y.Z format based on sentence context (max_tokens=10) | `definition`, `examples` (from selected sense/subsense) |
-| **Grammar Extraction (via DictionaryPort)** | Extracts POS, phonetics, forms, gender from the selected entry (not always entries[0]). Logic in `adapter/external/free_dictionary.py`. Data constants in `language_metadata.py`. | `GrammaticalInfo` (pos, phonetics, conjugations, gender) |
+| **Grammar Extraction (via DictionaryPort)** | Extracts POS, phonetics, forms, gender from the selected entry (not always entries[0]). Logic in `adapter/external/free_dictionary.py`. Language metadata from `domain/model/language.py` (`Language` VO). | `GrammaticalInfo` (pos, phonetics, conjugations, gender) |
 | **Result Building** | Combines lemma data, grammar, and sense into `LookupResult` domain object | All fields |
 | **Full LLM Fallback** | Complete definition when hybrid fails (max_tokens=2000) | All fields except `phonetics` and `examples` |
 
@@ -1650,7 +1666,7 @@ The fallback to full LLM (gpt-4.1-mini) occurs in these scenarios:
 
 1. **Stanza failure (German)**: Stanza pipeline error or token not found -- falls through to LLM reduced prompt
 2. **LLM reduced prompt failure**: Failed to parse lemma from reduced prompt
-3. **Language not supported**: Language not in `LANGUAGE_CODE_MAP`
+3. **Language not supported**: `get_language()` returns `None` (language not in `LANGUAGES` registry)
 4. **Word not found**: Free Dictionary API returns 404
 5. **API timeout**: Request exceeds 5-second timeout
 6. **API error**: HTTP error or network failure
@@ -1703,7 +1719,7 @@ SearchResponse --> VocabularyRequest --> MongoDB
 - Reason: Free Dictionary API provides most accurate IPA for English
 - Other languages: `phonetics` field is set to `null`
 
-**Implementation** (`src/api/routes/dictionary.py:335-337`):
+**Implementation** (`server/api/routes/dictionary.py:335-337`):
 ```python
 # Only include phonetics for English
 if request.language != "English":
@@ -1802,7 +1818,7 @@ Frontend -> Next.js API(`/api/dictionary/search`) -> FastAPI(`/dictionary/search
 The frontend follows a modular architecture with clear separation of concerns:
 
 ```
-src/web/
+client/apps/web/
 ├── app/              # Next.js App Router (pages)
 ├── components/       # Reusable React components
 ├── hooks/            # Custom React hooks
@@ -1892,7 +1908,7 @@ Vocabulary deletion with error handling:
 
 ### Reusable Components
 
-#### ErrorAlert (`src/web/components/ErrorAlert.tsx`)
+#### ErrorAlert (`server/web/components/ErrorAlert.tsx`)
 Consistent error message display:
 - Red background with border (`bg-red-50 border-red-200`)
 - Optional retry button with hover effect
@@ -1904,7 +1920,7 @@ Consistent error message display:
 - `onRetry` (optional): Callback function for retry button
 - `className` (optional): Additional CSS classes
 
-#### EmptyState (`src/web/components/EmptyState.tsx`)
+#### EmptyState (`server/web/components/EmptyState.tsx`)
 Consistent empty state display:
 - Centered layout with white card background
 - Optional icon (emoji or Unicode character)
@@ -1924,7 +1940,7 @@ Consistent empty state display:
 - Easy to update design globally
 - Improves maintainability with single source of truth
 
-#### VocabularyCard (`src/web/components/VocabularyCard.tsx`)
+#### VocabularyCard (`server/web/components/VocabularyCard.tsx`)
 Unified vocabulary display component supporting both list and card layouts:
 - Displays lemma with gender prefix and IPA phonetics
 - Shows part of speech (POS) and CEFR level badges
@@ -1952,7 +1968,7 @@ Unified vocabulary display component supporting both list and card layouts:
 - `showArticleLink` (boolean): Show "View in Article" link (default: false)
 - `onDelete` (optional): Callback for delete button
 
-**Conjugations Type** (`src/web/types/article.ts`):
+**Conjugations Type** (`server/web/types/article.ts`):
 ```typescript
 export interface Conjugations {
   present?: string    // Present tense (3rd person singular)
@@ -2011,7 +2027,7 @@ import VocabularyCard from '@/components/VocabularyCard'
 
 ### Security Improvements
 
-#### XSS Prevention in MarkdownViewer (`src/web/components/MarkdownViewer.tsx`)
+#### XSS Prevention in MarkdownViewer (`server/web/components/MarkdownViewer.tsx`)
 
 **Issue**: Previous implementation used `innerHTML` to inject vocabulary buttons, creating XSS vulnerability.
 
@@ -2059,7 +2075,7 @@ defSpan.appendChild(document.createTextNode(': ' + meaning))
 
 **Purpose**: Prevent React hydration mismatches when article content changes.
 
-**Implementation** (`src/web/app/articles/[id]/page.tsx:266`):
+**Implementation** (`server/web/app/articles/[id]/page.tsx:266`):
 ```typescript
 <MarkdownViewer
   key={`${articleId}-${content.length}`}
@@ -2077,7 +2093,7 @@ defSpan.appendChild(document.createTextNode(': ' + meaning))
 - Triggers reset of `data-processed` attribute (line 456)
 - Clears all previous DOM state and event listeners
 
-**Processing State Check** (`src/web/components/MarkdownViewer.tsx:456-458`):
+**Processing State Check** (`server/web/components/MarkdownViewer.tsx:456-458`):
 ```typescript
 // Skip if already processed (component remounts on content change via key prop)
 if (containerRef.current.getAttribute('data-processed') === 'true') {
@@ -2097,7 +2113,7 @@ if (containerRef.current.getAttribute('data-processed') === 'true') {
 - Simplifies component update logic
 - Ensures consistent behavior across content changes
 
-#### Sentence Extraction via DOM Offset Matching (`src/web/components/MarkdownViewer.tsx`)
+#### Sentence Extraction via DOM Offset Matching (`server/web/components/MarkdownViewer.tsx`)
 
 **Purpose**: Accurately extract the sentence containing a clicked word for dictionary lookup context, even when the same word appears in multiple sentences.
 
@@ -2126,7 +2142,7 @@ includes-based first-match (original behavior)
 Simple regex split on punctuation
 ```
 
-**Implementation** (`src/web/components/MarkdownViewer.tsx:256-319`):
+**Implementation** (`server/web/components/MarkdownViewer.tsx:256-319`):
 ```typescript
 /** Calculate the character offset of a target node within a parent's textContent. */
 const getTextOffset = (parent: Node, target: Node): number => {
@@ -2172,7 +2188,7 @@ const extractSentence = (wordSpan: HTMLElement): string => {
 - Preserves offset accuracy by deferring whitespace normalization
 - Maintains backward compatibility through the fallback chain
 
-#### Dictionary Lookup Caching with Sentence Context (`src/web/components/MarkdownViewer.tsx`)
+#### Dictionary Lookup Caching with Sentence Context (`server/web/components/MarkdownViewer.tsx`)
 
 **Purpose**: Cache dictionary lookup results so that the same word in the same sentence context returns the cached lemma and definition without making duplicate API calls. Sentence context is included in cache keys to correctly handle context-dependent words (e.g., German "sich" mapping to different lemmas in different sentences).
 
@@ -2257,11 +2273,11 @@ safelist: [
 
 ### Token Usage Display
 
-The article detail page (`src/web/app/articles/[id]/page.tsx`) displays token usage with smart aggregation and auto-refresh functionality.
+The article detail page (`server/web/app/articles/[id]/page.tsx`) displays token usage with smart aggregation and auto-refresh functionality.
 
 #### TokenUsageSection Component
 
-**Location**: `src/web/app/articles/[id]/page.tsx:46-181`
+**Location**: `server/web/app/articles/[id]/page.tsx:46-181`
 
 **Purpose**: Displays token usage breakdown for an article with aggregation logic.
 
@@ -2323,7 +2339,7 @@ fetchTokenUsage(true) called with isRefresh=true
 Token usage section updates without loading spinner
 ```
 
-**Implementation** (`src/web/app/articles/[id]/page.tsx`):
+**Implementation** (`server/web/app/articles/[id]/page.tsx`):
 
 1. **MarkdownViewer receives callback**: `onTokenUsageUpdate?: () => void`
 2. **After dictionary search**: Callback is invoked in `handleWordClick` (line 328)
@@ -2370,7 +2386,7 @@ const fetchTokenUsage = useCallback(async (isRefresh = false) => {
 
 ### Web Testing (Vitest)
 
-**Configuration**: `src/web/vitest.config.ts`
+**Configuration**: `server/web/vitest.config.ts`
 
 **Test Environment**:
 - **Framework**: Vitest 4.0.18 with jsdom for DOM simulation
@@ -2393,7 +2409,7 @@ const fetchTokenUsage = useCallback(async (isRefresh = false) => {
   - `lib/__tests__/formatters.test.ts`
   - `lib/__tests__/styleHelpers.test.ts`
 
-**Run Commands** (`src/web/package.json`):
+**Run Commands** (`server/web/package.json`):
 ```bash
 npm test         # Run all tests once
 npm run test:watch   # Watch mode for development
@@ -2401,7 +2417,7 @@ npm run test:ui      # Interactive UI for test exploration
 ```
 
 **Alias Resolution**:
-- `@` alias resolves to `src/web/` directory
+- `@` alias resolves to `server/web/` directory
 - Matches Next.js path configuration for consistency
 
 **Benefits**:
