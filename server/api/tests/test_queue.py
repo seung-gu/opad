@@ -237,18 +237,32 @@ class TestDequeueSignalsUnavailability(unittest.TestCase):
         self.assertIsNone(self.adapter.dequeue(timeout=1))
 
     @patch.object(RedisJobQueueAdapter, '_get_client')
-    def test_raises_when_connection_drops_mid_call(self, mock_get_client):
-        """Connection lost during BLPOP is an outage, not an empty queue."""
+    def test_single_blpop_error_is_not_fatal(self, mock_get_client):
+        """One failed BLPOP must not kill the worker — drop the client and retry.
+
+        Reconnects succeed routinely in production while an individual BLPOP
+        fails; treating that as an outage restarted the worker in a loop.
+        """
         mock_redis = MagicMock()
-        mock_redis.blpop.side_effect = RedisError("connection reset")
+        mock_redis.blpop.side_effect = RedisError("connection reset by peer")
         mock_get_client.return_value = mock_redis
         self.adapter._client_cache = mock_redis
 
-        with self.assertRaises(QueueUnavailableError):
-            self.adapter.dequeue(timeout=1)
+        self.assertIsNone(self.adapter.dequeue(timeout=1))
 
-        # The dead client must be dropped so the next call reconnects.
+        # The dead client is dropped so the next call reconnects.
         self.assertIsNone(self.adapter._client_cache)
+
+    @patch.object(RedisJobQueueAdapter, '_get_client')
+    def test_raises_once_reconnect_also_fails(self, mock_get_client):
+        """A sustained outage still surfaces: no client -> raise."""
+        broken = MagicMock()
+        broken.blpop.side_effect = RedisError("connection reset by peer")
+        mock_get_client.side_effect = [broken, None]
+
+        self.assertIsNone(self.adapter.dequeue(timeout=1))   # first: transient
+        with self.assertRaises(QueueUnavailableError):        # second: no client
+            self.adapter.dequeue(timeout=1)
 
     @patch.object(RedisJobQueueAdapter, '_get_client')
     def test_discards_corrupted_payload(self, mock_get_client):

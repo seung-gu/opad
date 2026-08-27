@@ -85,8 +85,9 @@ class RedisJobQueueAdapter:
             JobContext if a job was popped, None if the queue was empty.
 
         Raises:
-            QueueUnavailableError: Redis is unreachable. Distinct from an
-                empty queue (None) — callers must not treat it as idle.
+            QueueUnavailableError: no client could be obtained at all. A single
+                failed BLPOP is not fatal — the client is dropped and None is
+                returned so the next call reconnects.
         """
         client = self._get_client()
         if not client:
@@ -103,8 +104,11 @@ class RedisJobQueueAdapter:
                 return ctx
             return None
         except RedisError as e:
+            # Transient: drop the client so the next call reconnects. If Redis is
+            # really down, _get_client() returns None next time and *that* raises.
             self._client_cache = None
-            raise QueueUnavailableError("Redis connection lost during dequeue") from e
+            logger.warning(f"[DEQUEUE] Redis error, will reconnect: {str(e)[:200]}")
+            return None
         except json.JSONDecodeError as e:
             logger.warning("[DEQUEUE] Corrupted job data, discarding", extra={"error": str(e)})
             return None
