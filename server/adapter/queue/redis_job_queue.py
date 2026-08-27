@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 REDIS_URL = os.getenv('REDIS_URL', '')
 QUEUE_NAME = 'opad:jobs'
 
+CONNECT_TIMEOUT = 5
+# Must exceed any BLPOP timeout we pass to dequeue(): the socket sees a blocking
+# command as silence, and would otherwise time out while Redis is still waiting.
+# Set explicitly so a proxy or a URL query parameter cannot impose a shorter one.
+SOCKET_TIMEOUT = 30
+
 
 class RedisJobQueueAdapter:
     def __init__(self):
@@ -44,12 +50,22 @@ class RedisJobQueueAdapter:
             client = redis.from_url(
                 REDIS_URL,
                 decode_responses=True,
-                socket_connect_timeout=5,
+                socket_connect_timeout=CONNECT_TIMEOUT,
+                socket_timeout=SOCKET_TIMEOUT,
             )
             client.ping()
             self._client_cache = client
 
-            logger.info("[REDIS] Connected successfully")
+            # from_url lets URL query parameters override our kwargs, so report
+            # what actually applies — a short socket_timeout breaks BLPOP.
+            effective = client.connection_pool.connection_kwargs.get('socket_timeout')
+            if isinstance(effective, (int, float)) and effective < SOCKET_TIMEOUT:
+                logger.warning(
+                    f"[REDIS] socket_timeout is {effective}s (REDIS_URL overrides our "
+                    f"{SOCKET_TIMEOUT}s); blocking reads longer than that will fail"
+                )
+
+            logger.info(f"[REDIS] Connected successfully (socket_timeout={effective}s)")
             return client
         except (RedisError, ValueError, OSError) as e:
             logger.warning(f"[REDIS] Connection failed: {str(e)[:200]}")
