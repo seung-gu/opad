@@ -3,6 +3,7 @@
 Provides JSON repair functionality to handle malformed LLM outputs.
 """
 
+import json
 import logging
 from typing import Any
 
@@ -51,3 +52,32 @@ def repair_json_output(result: TaskOutput) -> tuple[bool, Any]:
             extra={"error": str(e), "errorType": type(e).__name__}
         )
         return (False, f"JSON repair failed: {str(e)}")
+
+
+def require_articles(result: TaskOutput) -> tuple[bool, Any]:
+    """Repair JSON, then reject an empty article list.
+
+    A dead search tool (expired SERPER_API_KEY, exhausted quota) yields a
+    well-formed but empty list. Without this check the crew carries on, the
+    next task correctly reports it has nothing to pick, and the run dies two
+    steps later on a Pydantic error that names neither the search nor the key.
+    Failing here keeps the error next to its cause.
+    """
+    ok, output = repair_json_output(result)
+    if not ok:
+        return (ok, output)
+
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError as e:
+        return (False, f"Output is not valid JSON after repair: {e}")
+
+    articles = data.get('articles') if isinstance(data, dict) else None
+    if not articles:
+        logger.error(
+            "No news articles found — the search tool returned nothing. "
+            "Check SERPER_API_KEY validity and remaining quota."
+        )
+        return (False, "No news articles were found. The search returned no results.")
+
+    return (True, output)
