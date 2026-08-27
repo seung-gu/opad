@@ -19,6 +19,7 @@ from redis.exceptions import RedisError
 from dataclasses import asdict
 from domain.model.article import Article
 from domain.model.job import JobContext
+from domain.model.errors import QueueUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -29,25 +30,14 @@ QUEUE_NAME = 'opad:jobs'
 class RedisJobQueueAdapter:
     def __init__(self):
         self._client_cache: Optional[redis.Redis] = None
-        self._connection_attempted: bool = False
-        self._connection_failed: bool = False
 
     def _get_client(self) -> Optional[redis.Redis]:
         """Get Redis client with caching and reconnection logic."""
         if self._client_cache:
-            try:
-                self._client_cache.ping()
-                return self._client_cache
-            except Exception:
-                self._client_cache = None
-                logger.debug("[REDIS] Cached client failed ping, attempting reconnection...")
-
-        if self._connection_failed:
-            return None
+            return self._client_cache
 
         if not REDIS_URL:
             logger.error("[REDIS] REDIS_URL not configured. Set Variables: REDIS_URL=${api.REDIS_URL}")
-            self._connection_failed = True
             return None
 
         try:
@@ -57,21 +47,12 @@ class RedisJobQueueAdapter:
                 socket_connect_timeout=5,
             )
             client.ping()
-
-            is_first = not self._connection_attempted
-            self._connection_attempted = True
             self._client_cache = client
 
-            if is_first:
-                logger.info("[REDIS] Connected successfully")
-
+            logger.info("[REDIS] Connected successfully")
             return client
         except (RedisError, ValueError, OSError) as e:
-            if not self._connection_attempted:
-                error_msg = str(e)[:200]
-                logger.error(f"[REDIS] Initial connection failed: {error_msg}")
-                logger.error("[REDIS] REDIS_URL format: redis://user:pass@host:port")
-                self._connection_failed = True
+            logger.warning(f"[REDIS] Connection failed: {str(e)[:200]}")
             return None
 
     # ── JobQueuePort implementation ──────────────────────────
@@ -93,15 +74,23 @@ class RedisJobQueueAdapter:
             client.rpush(QUEUE_NAME, json.dumps(job_data))
             logger.info("Job enqueued successfully", extra={"jobId": article.job_id, "articleId": article.id})
             return True
-        except RedisError as e:
-            logger.error("Failed to enqueue job", extra={"jobId": article.job_id, "articleId": article.id, "error": str(e)})
+        except RedisError:
+            logger.exception("Failed to enqueue job", extra={"jobId": article.job_id, "articleId": article.id})
             return False
 
     def dequeue(self, timeout: int = 1) -> JobContext | None:
+        """Pop the next job, blocking up to `timeout` seconds.
+
+        Returns:
+            JobContext if a job was popped, None if the queue was empty.
+
+        Raises:
+            QueueUnavailableError: Redis is unreachable. Distinct from an
+                empty queue (None) — callers must not treat it as idle.
+        """
         client = self._get_client()
         if not client:
-            logger.debug("[DEQUEUE] Redis client unavailable, cannot dequeue job")
-            return None
+            raise QueueUnavailableError("Redis client unavailable")
 
         try:
             result = client.blpop(QUEUE_NAME, timeout=timeout)
@@ -113,8 +102,11 @@ class RedisJobQueueAdapter:
                     logger.debug("[DEQUEUE] Successfully dequeued job", extra=ctx.log_extra)
                 return ctx
             return None
-        except (RedisError, json.JSONDecodeError) as e:
-            logger.warning("[DEQUEUE] Failed to dequeue job", extra={"error": str(e), "errorType": type(e).__name__})
+        except RedisError as e:
+            self._client_cache = None
+            raise QueueUnavailableError("Redis connection lost during dequeue") from e
+        except json.JSONDecodeError as e:
+            logger.warning("[DEQUEUE] Corrupted job data, discarding", extra={"error": str(e)})
             return None
 
     def get_status(self, job_id: str) -> dict | None:
@@ -201,8 +193,8 @@ class RedisJobQueueAdapter:
             stats = self._tally(status_values)
             logger.info("Job statistics retrieved", extra={"totalJobs": stats['total']})
             return stats
-        except RedisError as e:
-            logger.error("Failed to get job stats", extra={"error": str(e)})
+        except RedisError:
+            logger.exception("Failed to get job stats")
             return None
 
     @staticmethod

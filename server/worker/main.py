@@ -42,6 +42,10 @@ def main():
 
         # Job queue and article generator via ports
         job_queue = RedisJobQueueAdapter()
+        if not job_queue.ping():
+            logger.error("Cannot start worker: Redis connection failed")
+            sys.exit(1)
+
         generator = CrewAIArticleGenerator(job_queue)
         generate = partial(
             generate_article,
@@ -54,8 +58,8 @@ def main():
         run_worker_loop(repo, job_queue, generate)
     except KeyboardInterrupt:
         logger.info("Worker stopped")
-    except Exception as e:
-        logger.error(f"Fatal error: {e}", exc_info=True)
+    except Exception:
+        logger.exception("Fatal error")
         sys.exit(1)
 
 
