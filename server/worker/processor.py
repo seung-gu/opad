@@ -7,14 +7,21 @@ Architecture:
 """
 
 import logging
+import sys
+import time
 from collections.abc import Callable
 
 from domain.model.article import ArticleStatus
+from domain.model.errors import QueueUnavailableError
 from domain.model.job import JobContext
 from port.article_repository import ArticleRepository
 from port.job_queue import JobQueuePort
 
 logger = logging.getLogger(__name__)
+
+DEQUEUE_TIMEOUT = 5      # BLPOP blocks this long, so no extra sleep is needed
+RETRY_DELAY = 5
+MAX_QUEUE_FAILURES = 10  # ~50s unreachable -> exit and let the platform restart us
 
 
 def _translate_error(error: Exception) -> str:
@@ -78,22 +85,31 @@ def run_worker_loop(
 ):
     """Main worker loop - continuously processes jobs from queue."""
     logger.info("Worker started, waiting for jobs...")
+    queue_failures = 0
 
     while True:
         try:
-            ctx = job_queue.dequeue()
+            ctx = job_queue.dequeue(timeout=DEQUEUE_TIMEOUT)
+            queue_failures = 0
 
             if ctx:
                 logger.info("Received job", extra=ctx.log_extra)
                 process_job(ctx, repo, job_queue, generate)
-            else:
-                import time
-                time.sleep(5)
+            # Empty queue: BLPOP already waited, so loop straight back around.
 
         except KeyboardInterrupt:
             logger.info("Worker stopped by user")
             break
-        except Exception as e:
-            logger.error(f"Error in worker loop: {e}", exc_info=True)
-            import time
-            time.sleep(5)
+        except QueueUnavailableError as e:
+            queue_failures += 1
+            logger.warning(
+                "Queue unavailable, will retry",
+                extra={"attempt": queue_failures, "limit": MAX_QUEUE_FAILURES, "error": str(e)},
+            )
+            if queue_failures >= MAX_QUEUE_FAILURES:
+                logger.error("Queue unreachable for too long, exiting for restart")
+                sys.exit(1)
+            time.sleep(RETRY_DELAY)
+        except Exception:
+            logger.exception("Error in worker loop")
+            time.sleep(RETRY_DELAY)
