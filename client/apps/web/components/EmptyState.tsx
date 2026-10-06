@@ -1,16 +1,10 @@
 /**
- * Reusable empty state component for displaying when no data is available.
- *
- * Features:
- * - Consistent empty state styling
- * - Optional action button
- * - Centered layout with icon
+ * Empty state: a short serif line, an explanation, and an optional action.
  */
 
 interface EmptyStateProps {
   title: string
   description: string
-  icon?: string
   action?: {
     label: string
     onClick: () => void
@@ -18,23 +12,13 @@ interface EmptyStateProps {
   className?: string
 }
 
-export default function EmptyState({
-  title,
-  description,
-  icon,
-  action,
-  className = ''
-}: EmptyStateProps) {
+export default function EmptyState({ title, description, action, className = '' }: EmptyStateProps) {
   return (
-    <div className={`bg-card rounded-lg border border-border-card p-8 text-center ${className}`}>
-      {icon && <div className="text-4xl mb-4">{icon}</div>}
-      <p className="text-text-dim text-lg mb-4">{title}</p>
-      <p className="text-text-dim">{description}</p>
+    <div className={`border-t border-border-card py-10 ${className}`}>
+      <p className="font-serif text-[19px] italic text-text-strong">{title}</p>
+      <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-text-dim">{description}</p>
       {action && (
-        <button
-          onClick={action.onClick}
-          className="btn-primary mt-4"
-        >
+        <button onClick={action.onClick} className="btn-outline mt-5">
           {action.label}
         </button>
       )}
