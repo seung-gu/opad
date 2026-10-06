@@ -36,14 +36,14 @@ describe('UsageSummary', () => {
     it('should render total tokens correctly', () => {
       render(<UsageSummary summary={mockSummary} days={30} />)
 
-      expect(screen.getByText('Total Tokens')).toBeInTheDocument()
+      expect(screen.getByText('Total tokens')).toBeInTheDocument()
       expect(screen.getByText('125,430')).toBeInTheDocument()
     })
 
     it('should render formatted total cost correctly', () => {
       render(<UsageSummary summary={mockSummary} days={30} />)
 
-      expect(screen.getByText('Estimated Cost')).toBeInTheDocument()
+      expect(screen.getByText('Estimated cost')).toBeInTheDocument()
       expect(screen.getByText('$0.0042')).toBeInTheDocument()
     })
 
@@ -70,7 +70,7 @@ describe('UsageSummary', () => {
     it('should render usage by operation heading', () => {
       render(<UsageSummary summary={mockSummary} days={30} />)
 
-      expect(screen.getByText('Usage by Operation')).toBeInTheDocument()
+      expect(screen.getByText('By operation')).toBeInTheDocument()
     })
 
     it('should render operation cards sorted by token count descending', () => {
@@ -128,7 +128,7 @@ describe('UsageSummary', () => {
 
       render(<UsageSummary summary={summaryWithNoOperations} days={30} />)
 
-      expect(screen.queryByText('Usage by Operation')).not.toBeInTheDocument()
+      expect(screen.queryByText('By operation')).not.toBeInTheDocument()
     })
   })
 
@@ -136,7 +136,7 @@ describe('UsageSummary', () => {
     it('should render daily usage chart heading', () => {
       render(<UsageSummary summary={mockSummary} days={30} />)
 
-      expect(screen.getByText('Daily Usage')).toBeInTheDocument()
+      expect(screen.getByText('Daily')).toBeInTheDocument()
     })
 
     it('should render all daily usage bars', () => {
@@ -201,7 +201,7 @@ describe('UsageSummary', () => {
 
       render(<UsageSummary summary={summaryNoDaily} days={30} />)
 
-      expect(screen.queryByText('Daily Usage')).not.toBeInTheDocument()
+      expect(screen.queryByText('Daily')).not.toBeInTheDocument()
     })
 
     it('should display empty state when no daily usage data', () => {
@@ -249,7 +249,7 @@ describe('UsageSummary', () => {
       render(<UsageSummary summary={summaryWithZeros} days={30} />)
 
       // Check that zero values are rendered (may appear multiple times)
-      expect(screen.getByText('Total Tokens')).toBeInTheDocument()
+      expect(screen.getByText('Total tokens')).toBeInTheDocument()
       expect(screen.getAllByText('$0.0000').length).toBeGreaterThan(0)
     })
 
@@ -356,7 +356,7 @@ describe('UsageSummary', () => {
       render(<UsageSummary summary={emptyDailySummary} days={30} />)
 
       // No Daily Usage heading when empty
-      expect(screen.queryByText('Daily Usage')).not.toBeInTheDocument()
+      expect(screen.queryByText('Daily')).not.toBeInTheDocument()
       // But should still show operation card with request count
       expect(screen.getByText('1 request')).toBeInTheDocument()
     })
@@ -373,8 +373,8 @@ describe('UsageSummary', () => {
 
       render(<UsageSummary summary={emptyOperationsSummary} days={30} />)
 
-      expect(screen.queryByText('Usage by Operation')).not.toBeInTheDocument()
-      expect(screen.getByText('Daily Usage')).toBeInTheDocument()
+      expect(screen.queryByText('By operation')).not.toBeInTheDocument()
+      expect(screen.getByText('Daily')).toBeInTheDocument()
     })
 
     it('should handle completely empty summary', () => {
@@ -388,8 +388,8 @@ describe('UsageSummary', () => {
       render(<UsageSummary summary={emptySummary} days={30} />)
 
       // Check that zero values are rendered
-      expect(screen.getByText('Total Tokens')).toBeInTheDocument()
-      expect(screen.getByText('Estimated Cost')).toBeInTheDocument()
+      expect(screen.getByText('Total tokens')).toBeInTheDocument()
+      expect(screen.getByText('Estimated cost')).toBeInTheDocument()
       expect(screen.getByText('$0.0000')).toBeInTheDocument()
       expect(screen.getByText('No daily usage data available for this period.')).toBeInTheDocument()
     })
@@ -478,19 +478,18 @@ describe('UsageSummary', () => {
   })
 
   describe('responsive layout', () => {
-    it('should render grid layout for totals', () => {
+    it('should lay the totals out so they wrap on narrow screens', () => {
       const { container } = render(<UsageSummary summary={mockSummary} days={30} />)
 
-      // Check for grid layout classes
-      const gridDivs = container.querySelectorAll('[class*="grid"]')
-      expect(gridDivs.length).toBeGreaterThan(0)
+      const wrappingRows = container.querySelectorAll('[class*="flex-wrap"]')
+      expect(wrappingRows.length).toBeGreaterThan(0)
     })
 
     it('should render both total cards', () => {
       render(<UsageSummary summary={mockSummary} days={30} />)
 
-      expect(screen.getByText('Total Tokens')).toBeInTheDocument()
-      expect(screen.getByText('Estimated Cost')).toBeInTheDocument()
+      expect(screen.getByText('Total tokens')).toBeInTheDocument()
+      expect(screen.getByText('Estimated cost')).toBeInTheDocument()
     })
   })
 })

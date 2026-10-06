@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { formatBytes, formatNumber } from '@opad/libs'
+import SiteHeader from '@/components/SiteHeader'
 
 interface DatabaseStats {
   collection: string
@@ -53,36 +54,28 @@ export default function StatsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background p-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-card rounded-lg shadow p-8">
-            <div className="text-center">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-accent"></div>
-              <p className="mt-4 text-text-dim">Loading statistics...</p>
-            </div>
-          </div>
-        </div>
+      <div className="min-h-screen bg-background">
+        <SiteHeader title="One story a day" />
+        <main className="mx-auto max-w-4xl px-6 pt-12">
+          <p className="text-[14px] text-text-dim">Loading statistics…</p>
+        </main>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-background p-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-card rounded-lg shadow p-8">
-            <div className="text-center">
-              <div className="text-accent-danger text-xl mb-4">⚠️ Error</div>
-              <p className="text-foreground">{error}</p>
-              <button
-                onClick={() => globalThis.location.reload()}
-                className="btn-primary mt-6"
-              >
-                Retry
-              </button>
-            </div>
+      <div className="min-h-screen bg-background">
+        <SiteHeader title="One story a day" />
+        <main className="mx-auto max-w-4xl px-6 pt-12">
+          <div className="border-l-2 border-accent-danger pl-4">
+            <p className="text-[12px] font-medium text-accent-danger">Error</p>
+            <p className="mt-0.5 text-[15px] text-foreground">{error}</p>
+            <button onClick={() => globalThis.location.reload()} className="btn-outline mt-4">
+              Retry
+            </button>
           </div>
-        </div>
+        </main>
       </div>
     )
   }
@@ -91,125 +84,98 @@ export default function StatsPage() {
     return null
   }
 
+  const storage = [
+    { label: 'Data', mb: stats.data_size_mb },
+    { label: 'Index', mb: stats.index_size_mb },
+    { label: 'Storage', mb: stats.storage_size_mb },
+    { label: 'Total', mb: stats.total_size_mb },
+  ]
+
+  const counts = [
+    { label: 'Total documents', value: stats.total_documents },
+    { label: 'Active', value: stats.active_documents },
+    { label: 'Deleted', value: stats.deleted_documents },
+  ]
+
   return (
-    <div className="min-h-screen bg-background p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold font-mono text-accent mb-2">Database Statistics</h1>
-          <p className="text-text-dim">MongoDB collection statistics and storage information</p>
-        </div>
+    <div className="min-h-screen bg-background">
+      <SiteHeader title="One story a day" />
 
-        <div className="bg-card rounded-lg shadow-lg overflow-hidden hover:border-accent/50 transition-colors border border-transparent">
-          {/* Collection Overview */}
-          <div className="bg-gradient-to-r from-accent to-accent/80 p-6">
-            <h2 className="text-sm font-semibold mb-2 font-mono text-white tracking-wide uppercase">📁 {stats.collection}</h2>
-            <p className="text-white/80">Collection Overview</p>
+      <main className="mx-auto max-w-4xl px-6">
+        <section className="pb-8 pt-12">
+          <h1 className="font-serif text-[34px] leading-tight text-text-strong">Database</h1>
+          <p className="mt-2 text-[14px] text-text-dim">
+            MongoDB collection <span className="font-mono text-[13px]">{stats.collection}</span>
+          </p>
+        </section>
+
+        <section className="border-t border-border-card pt-8">
+          <div className="flex flex-wrap gap-x-16 gap-y-4">
+            {counts.map((item) => (
+              <div key={item.label}>
+                <div className="font-serif text-[34px] leading-none tabular-nums text-text-strong">
+                  {formatNumber(item.value)}
+                </div>
+                <div className="mt-2 text-[12px] text-text-dim">{item.label}</div>
+              </div>
+            ))}
           </div>
+        </section>
 
-          <div className="p-6">
-            {/* Document Counts */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              <div className="bg-accent/10 rounded-lg p-4 border border-accent/30">
-                <div className="text-sm text-accent font-medium mb-1">Total Documents</div>
-                <div className="text-3xl font-bold text-foreground">{formatNumber(stats.total_documents)}</div>
-              </div>
-              <div className="bg-system/10 rounded-lg p-4 border border-system/30">
-                <div className="text-sm text-system font-medium mb-1">Active Documents</div>
-                <div className="text-3xl font-bold text-foreground">{formatNumber(stats.active_documents)}</div>
-              </div>
-              <div className="bg-accent-danger/10 rounded-lg p-4 border border-accent-danger/30">
-                <div className="text-sm text-accent-danger font-medium mb-1">Deleted Documents</div>
-                <div className="text-3xl font-bold text-foreground">{formatNumber(stats.deleted_documents)}</div>
-              </div>
-            </div>
+        <section className="mt-12 border-t border-border-card pt-6">
+          <h2 className="font-serif text-[19px] italic text-text-strong">Storage</h2>
+          <ul className="mt-2">
+            {storage.map((item) => (
+              <li
+                key={item.label}
+                className="flex items-baseline justify-between gap-6 border-b border-border-card py-3 text-[14px] last:border-b-0"
+              >
+                <span className="text-foreground">{item.label}</span>
+                <span className="flex items-baseline gap-6 text-text-dim">
+                  <span className="tabular-nums">{item.mb.toFixed(2)} MB</span>
+                  <span className="tabular-nums">{formatBytes(item.mb * 1024 * 1024)}</span>
+                </span>
+              </li>
+            ))}
+            <li className="flex items-baseline justify-between gap-6 border-b border-border-card py-3 text-[14px] last:border-b-0">
+              <span className="text-foreground">Average document</span>
+              <span className="tabular-nums text-text-dim">{formatBytes(stats.avg_document_size_bytes)}</span>
+            </li>
+          </ul>
+        </section>
 
-            {/* Storage Information */}
-            <div className="mb-8">
-              <h3 className="text-sm font-semibold mb-4 font-mono text-accent tracking-wide uppercase">💾 Storage Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-background rounded-lg p-4 border border-border-card">
-                  <div className="text-sm text-text-dim font-medium mb-1">Data Size</div>
-                  <div className="text-2xl font-bold text-foreground">
-                    {stats.data_size_mb.toFixed(2)} MB
-                  </div>
-                  <div className="text-xs text-text-dim mt-1">
-                    {formatBytes(stats.data_size_mb * 1024 * 1024)}
-                  </div>
-                </div>
-                <div className="bg-background rounded-lg p-4 border border-border-card">
-                  <div className="text-sm text-text-dim font-medium mb-1">Index Size</div>
-                  <div className="text-2xl font-bold text-foreground">
-                    {stats.index_size_mb.toFixed(2)} MB
-                  </div>
-                  <div className="text-xs text-text-dim mt-1">
-                    {formatBytes(stats.index_size_mb * 1024 * 1024)}
-                  </div>
-                </div>
-                <div className="bg-background rounded-lg p-4 border border-border-card">
-                  <div className="text-sm text-text-dim font-medium mb-1">Storage Size</div>
-                  <div className="text-2xl font-bold text-foreground">
-                    {stats.storage_size_mb.toFixed(2)} MB
-                  </div>
-                  <div className="text-xs text-text-dim mt-1">
-                    {formatBytes(stats.storage_size_mb * 1024 * 1024)}
-                  </div>
-                </div>
-                <div className="bg-background rounded-lg p-4 border border-border-card">
-                  <div className="text-sm text-text-dim font-medium mb-1">Total Size</div>
-                  <div className="text-2xl font-bold text-foreground">
-                    {stats.total_size_mb.toFixed(2)} MB
-                  </div>
-                  <div className="text-xs text-text-dim mt-1">
-                    {formatBytes(stats.total_size_mb * 1024 * 1024)}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Document Statistics */}
-            <div className="mb-8">
-              <h3 className="text-sm font-semibold mb-4 font-mono text-accent tracking-wide uppercase">📄 Document Statistics</h3>
-              <div className="bg-background rounded-lg p-4 border border-border-card">
-                <div className="text-sm text-text-dim font-medium mb-1">Average Document Size</div>
-                <div className="text-2xl font-bold text-foreground">
-                  {formatBytes(stats.avg_document_size_bytes)}
-                </div>
-              </div>
-            </div>
-
-            {/* Index Information */}
-            <div>
-              <h3 className="text-sm font-semibold mb-4 font-mono text-accent tracking-wide uppercase">🔍 Indexes ({stats.indexes})</h3>
-              <div className="space-y-3">
-                {stats.index_details.map((index) => (
-                  <div key={index.name} className="bg-background rounded-lg p-4 border border-border-card">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-sm font-medium text-foreground">{index.name}</div>
-                        <div className="text-xs text-text-dim mt-1">
-                          {Object.entries(index.keys)
-                            .map(([key, value]) => `${key} (${value > 0 ? 'asc' : 'desc'})`)
-                            .join(', ')}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+        <section className="mt-12 border-t border-border-card pt-6">
+          <div className="flex items-baseline justify-between">
+            <h2 className="font-serif text-[19px] italic text-text-strong">Indexes</h2>
+            <span className="text-[12px] text-text-dim">{stats.indexes}</span>
           </div>
-        </div>
+          <ul className="mt-2">
+            {stats.index_details.map((index) => (
+              <li
+                key={index.name}
+                className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-border-card py-3 last:border-b-0"
+              >
+                <span className="text-[14px] text-foreground">{index.name}</span>
+                <span className="font-mono text-[12px] text-text-dim">
+                  {Object.entries(index.keys)
+                    .map(([key, value]) => `${key} ${value > 0 ? 'asc' : 'desc'}`)
+                    .join(', ')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
 
-        {/* Refresh Button */}
-        <div className="mt-6 text-center">
-          <button
-            onClick={() => globalThis.location.reload()}
-            className="btn-outline"
-          >
-            Refresh Statistics
+        <div className="mt-10">
+          <button onClick={() => globalThis.location.reload()} className="btn-outline">
+            Refresh
           </button>
         </div>
-      </div>
+
+        <footer className="mt-14 border-t border-border-card py-6 text-[12px] text-text-dim">
+          One story a day
+        </footer>
+      </main>
     </div>
   )
 }
