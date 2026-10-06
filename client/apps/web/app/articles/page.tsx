@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { Article, ArticleListResponse, ArticleStatus, formatArticleCount } from '@opad/libs'
 import ArticleList from '@/components/ArticleList'
+import SiteHeader from '@/components/SiteHeader'
 import ArticleFilter from '@/components/ArticleFilter'
 import { fetchWithAuth, parseErrorResponse } from '@/lib/api'
 import ErrorAlert from '@/components/ErrorAlert'
@@ -90,91 +91,67 @@ export default function ArticlesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background py-8">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <h1 className="text-3xl font-bold font-mono text-accent">Articles</h1>
-            <Link
-              href="/"
-              className="text-xl font-medium text-foreground hover:text-foreground/80 transition-colors"
-              title="Go to Home"
-            >
-              <span className="text-[0.9rem]">◀</span> Home
-            </Link>
-          </div>
-          <p className="text-text-dim">
-            {loading ? 'Loading...' : formatArticleCount(total)}
-          </p>
+    <div className="min-h-screen bg-background">
+      <SiteHeader title="One story a day" />
+
+      <main className="mx-auto max-w-3xl px-6">
+        <section className="pb-8 pt-12">
+          <h1 className="font-serif text-[34px] leading-tight text-text-strong">Articles</h1>
+          <p className="mt-2 text-[14px] text-text-dim">{loading ? 'Loading…' : formatArticleCount(total)}</p>
+        </section>
+
+        <div className="flex flex-wrap items-baseline justify-between gap-4 border-t border-border-card py-4">
+          <ArticleFilter selectedStatus={selectedStatus} onStatusChange={handleStatusChange} />
+          <Link href="/" className="text-[13px] text-text-dim transition-colors hover:text-accent">
+            New article
+          </Link>
         </div>
 
-        {/* Filter */}
-        <div className="mb-6 flex items-center justify-between">
-          <ArticleFilter
-            selectedStatus={selectedStatus}
-            onStatusChange={handleStatusChange}
-          />
-          <div className="flex items-center gap-2">
-            <Link href="/usage" className="btn-outline">
-              Usage
-            </Link>
-            <Link href="/vocabulary" className="btn-outline btn-vocab">
-              Vocabulary
-            </Link>
-          </div>
-        </div>
-
-        {/* Error State */}
         <ErrorAlert error={error} onRetry={fetchArticles} />
 
-        {/* Article List */}
-        <ArticleList
-          articles={articles}
-          loading={loading}
-          emptyMessage={
-            selectedStatus
-              ? `No articles with status "${selectedStatus}" found`
-              : 'No articles found. Generate your first article to get started!'
-          }
-        />
+        <div className="border-t border-border-card">
+          <ArticleList
+            articles={articles}
+            loading={loading}
+            emptyMessage={
+              selectedStatus
+                ? `No articles with status "${selectedStatus}".`
+                : 'No articles yet. Generate your first one from the home page.'
+            }
+          />
+        </div>
 
-        {/* Pagination */}
         {total > 0 && (
-          <div className="mt-6 flex items-center justify-between border-t border-border-card pt-6">
-            <div className="text-sm text-foreground">
-              Showing {skip + 1} to {skip + articles.length} of {total} articles
+          <div className="mt-6 flex flex-wrap items-baseline justify-between gap-4 border-t border-border-card pt-6">
+            <div className="text-[13px] text-text-dim">
+              Showing {skip + 1}&ndash;{skip + articles.length} of {total}
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-baseline gap-5 text-[13px]">
               <button
                 onClick={handlePrevPage}
                 disabled={!hasPrevPage || loading}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  hasPrevPage && !loading
-                    ? 'bg-card text-foreground border border-border-card hover:bg-card-hover'
-                    : 'bg-card-hover text-text-dim cursor-not-allowed'
-                }`}
+                className="text-accent transition-opacity hover:opacity-80 disabled:text-text-dim disabled:opacity-40"
               >
                 Previous
               </button>
-              <div className="px-4 py-2 text-sm text-foreground">
+              <span className="text-text-dim tabular-nums">
                 Page {currentPage} of {totalPages}
-              </div>
+              </span>
               <button
                 onClick={handleNextPage}
                 disabled={!hasNextPage || loading}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  hasNextPage && !loading
-                    ? 'bg-card text-foreground border border-border-card hover:bg-card-hover'
-                    : 'bg-card-hover text-text-dim cursor-not-allowed'
-                }`}
+                className="text-accent transition-opacity hover:opacity-80 disabled:text-text-dim disabled:opacity-40"
               >
                 Next
               </button>
             </div>
           </div>
         )}
-      </div>
+
+        <footer className="mt-14 border-t border-border-card py-6 text-[12px] text-text-dim">
+          One story a day
+        </footer>
+      </main>
     </div>
   )
 }

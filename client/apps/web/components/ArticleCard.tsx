@@ -10,44 +10,25 @@ interface ArticleCardProps {
 }
 
 /**
- * Reusable card component for displaying a single article in a list.
- * 
- * Displays:
- * - Topic (as title/link)
- * - Status badge
- * - Metadata (language, level, length)
- * - Created time
- * - Link to article detail page
+ * A single article as an editorial list row: serif headline on the left,
+ * metadata on the right, separated from its neighbours by a hairline.
  */
 export default function ArticleCard({ article }: ArticleCardProps) {
   return (
     <Link
       href={`/articles/${article.id}`}
-      className="block p-4 bg-card border border-border-card rounded-lg hover:border-accent/50 hover:bg-card-hover transition-all duration-200"
+      className="group flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-4"
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <h3 className="text-lg font-semibold text-foreground mb-2 truncate">
-            {article.topic || 'Untitled Article'}
-          </h3>
+      <span className="font-serif text-[19px] leading-snug text-text-strong transition-colors group-hover:text-accent">
+        {article.topic || 'Untitled Article'}
+      </span>
 
-          <div className="flex flex-wrap items-center gap-3 text-sm text-text-dim mb-3">
-            <span className="font-medium">{article.language}</span>
-            <span>•</span>
-            <span>Level {article.level}</span>
-            <span>•</span>
-            <span>{article.length} words</span>
-          </div>
-
-          <div className="text-xs text-text-dim">
-            Created: {formatDateTime(article.created_at)}
-          </div>
-        </div>
-
-        <div className="flex-shrink-0">
-          <ArticleStatusBadge status={article.status} />
-        </div>
-      </div>
+      <span className="flex shrink-0 items-baseline gap-3 text-[12px] text-text-dim">
+        <span>
+          {article.language} · {article.level} · {article.length} words · {formatDateTime(article.created_at)}
+        </span>
+        {article.status !== 'completed' && <ArticleStatusBadge status={article.status} />}
+      </span>
     </Link>
   )
 }
