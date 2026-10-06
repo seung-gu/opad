@@ -56,130 +56,121 @@ export default function VocabularyCard({
 
   const toggleExamples = () => setExamplesExpanded(prev => !prev)
 
-  // Common content - same for both variants
-  const renderContent = () => (
+  const headword = (
+    <div className="flex items-baseline gap-2 flex-wrap">
+      {gender && <span className="text-[13px] text-text-dim">{gender}</span>}
+      <span className="font-serif text-[19px] text-text-strong">{lemma}</span>
+      {phonetics && <span className="font-mono text-[12px] text-text-dim">{phonetics}</span>}
+      {variant === 'list' && word.toLowerCase() !== lemma.toLowerCase() && (
+        <span className="text-[13px] text-text-dim">({word})</span>
+      )}
+    </div>
+  )
+
+  const tags = (
+    <div className="mt-0.5 flex flex-wrap items-baseline gap-2 text-[12px] text-text-dim">
+      {pos && <span>{pos}</span>}
+      {level && <span className={`px-1 ${getLevelColor(level)}`}>{level}</span>}
+      {(count ?? 0) > 1 && <span className="text-accent">×{count}</span>}
+    </div>
+  )
+
+  const details = (
     <>
-      {/* Header: Lemma with gender and phonetics */}
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex items-baseline gap-2 flex-wrap">
-          {gender && (
-            <span className="text-sm font-medium text-text-dim">{gender}</span>
-          )}
-          <span className="text-lg font-semibold text-foreground">{lemma}</span>
-          {phonetics && (
-            <span className="text-sm text-text-dim font-mono">{phonetics}</span>
-          )}
-          {variant === 'list' && word.toLowerCase() !== lemma.toLowerCase() && (
-            <span className="text-sm text-text-dim">({word})</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {(count ?? 0) > 1 && (
-            <span className="text-sm font-medium text-vocab bg-vocab/20 px-2 py-1 rounded">
-              x{count}
-            </span>
-          )}
-          {onDelete && (
-            <button
-              onClick={() => onDelete(id)}
-              className="btn-remove"
-              title="Remove from vocabulary"
-            >
-              −
-            </button>
-          )}
-        </div>
-      </div>
+      <p className="text-[14px] text-foreground">{definition}</p>
 
-      {/* Metadata badges: POS + Level */}
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-        {pos && (
-          <span className="text-xs font-medium bg-accent/20 text-accent px-1 py-0.5 rounded">
-            {pos}
-          </span>
-        )}
-        {level && (
-          <span className={`text-xs font-medium px-0.5 py-0.5 rounded ${getLevelColor(level)}`}>
-            {level}
-          </span>
-        )}
-      </div>
-
-      {/* Definition */}
-      <p className="text-sm text-foreground mb-2">{definition}</p>
-
-      {/* Conjugations (verbs) or Declensions (nouns) */}
       {hasConjugations && (
-        <div className="text-xs text-text-dim mb-2 bg-card-hover rounded p-2">
+        <p className="mt-1 text-[12px] text-text-dim">
           {isVerb ? (
             <>
               {[conjugations?.present, conjugations?.past, conjugations?.participle]
                 .filter(Boolean)
-                .join(' - ')}
+                .join(' · ')}
               {conjugations?.auxiliary && ` (${conjugations.auxiliary})`}
             </>
           ) : (
             [
-              conjugations?.genitive && `Gen: ${conjugations.genitive}`,
-              conjugations?.plural && `Pl: ${conjugations.plural}`
+              conjugations?.genitive && `Gen. ${conjugations.genitive}`,
+              conjugations?.plural && `Pl. ${conjugations.plural}`
             ]
               .filter(Boolean)
-              .join(' | ')
+              .join(' · ')
           )}
-        </div>
+        </p>
       )}
 
-      {/* Examples - always collapsible */}
-      <div className={`text-xs text-text-dim pt-2 ${variant === 'card' ? 'mb-4' : 'mb-1'}`}>
+      <div className="mt-1.5">
         <button
           type="button"
-          className="font-medium text-accent cursor-pointer hover:underline bg-transparent border-none p-1 text-xs"
+          className="text-[12px] text-accent hover:opacity-80"
           onClick={toggleExamples}
         >
-          Examples <span className="text-[0.5rem]">{examplesExpanded ? '▼' : '▶'}</span>
+          Examples {examplesExpanded ? '−' : '+'}
         </button>
         {examplesExpanded && (
           <div className="mt-1 space-y-0.5">
-            <div className="italic">• {sentence}</div>
-            {examples?.slice(0, 3).map((example, idx) => (
-              <div key={idx} className="italic">• {example}</div>
+            <p className="font-serif text-[14px] italic leading-relaxed text-text-dim">{sentence}</p>
+            {examples?.slice(0, 3).map((example) => (
+              <p key={example} className="font-serif text-[14px] italic leading-relaxed text-text-dim">
+                {example}
+              </p>
             ))}
           </div>
         )}
       </div>
 
-      {/* Footer: Article link + Date */}
       {showArticleLink && articleId && (
-        <div className="mt-auto pt-2 flex items-center justify-between text-xs">
-          <Link
-            href={`/articles/${articleId}`}
-            className="text-accent hover:text-accent/80 underline"
-          >
-            View in Article
+        <div className="mt-3 flex items-baseline justify-between gap-3 text-[12px]">
+          <Link href={`/articles/${articleId}`} className="text-accent">
+            View in article
           </Link>
-          {createdAt && (
-            <span className="text-text-dim">
-              {new Date(createdAt).toLocaleDateString()}
-            </span>
-          )}
+          {createdAt && <span className="text-text-dim">{new Date(createdAt).toLocaleDateString()}</span>}
         </div>
       )}
     </>
   )
 
-  // Container varies by variant
+  const removeButton = onDelete && (
+    <button
+      onClick={() => onDelete(id)}
+      className="btn-remove text-[16px] leading-none"
+      title="Remove from vocabulary"
+      type="button"
+    >
+      −
+    </button>
+  )
+
+  // Grid variant used on the vocabulary page
   if (variant === 'card') {
     return (
-      <div className="bg-background rounded-lg p-5 border border-border-card hover:border-vocab/50 transition-colors flex flex-col">
-        {renderContent()}
+      <div className="flex flex-col border border-border-card bg-card p-5 transition-colors hover:border-accent">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            {headword}
+            {tags}
+          </div>
+          {removeButton}
+        </div>
+        <div className="mt-3">{details}</div>
       </div>
     )
   }
 
-  // List variant
+  // List variant used under an article: headword left, meaning right
   return (
-    <div className="p-4 bg-background rounded-lg">
-      {renderContent()}
+    <div className="grid gap-x-6 gap-y-2 py-4 sm:grid-cols-[14rem_1fr]">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          {headword}
+          {tags}
+        </div>
+        <span className="sm:hidden">{removeButton}</span>
+      </div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">{details}</div>
+        <span className="hidden sm:block">{removeButton}</span>
+      </div>
     </div>
   )
 }

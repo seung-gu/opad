@@ -821,8 +821,8 @@ export default function MarkdownViewer({
   }, [openSpanIds, wordDefinitions, loadingWords, vocabularies, articleId, onAddVocabulary, language, getWordMeaning, getRelatedWords, createVocabularyButtonHTML, handleAddVocabularyClick, handleRemoveVocabularyClick])
 
   const className = dark
-    ? "prose prose-invert max-w-none text-foreground prose-headings:text-accent prose-headings:font-mono prose-p:text-foreground prose-strong:text-text-strong prose-li:text-foreground prose-ul:text-foreground prose-ol:text-foreground prose-a:text-vocab prose-a:no-underline hover:prose-a:text-vocab/80 prose-code:text-vocab prose-code:font-mono prose-pre:bg-card-hover prose-blockquote:text-text-dim prose-blockquote:border-border-card"
-    : "prose max-w-none prose-headings:text-foreground prose-p:text-foreground prose-strong:text-text-strong prose-li:text-foreground prose-ul:text-foreground prose-ol:text-foreground prose-a:text-accent prose-a:no-underline hover:prose-a:text-accent/80 prose-code:text-vocab prose-pre:bg-card-hover prose-blockquote:text-text-dim prose-blockquote:border-border-card"
+    ? "prose prose-invert max-w-none font-serif text-foreground prose-headings:font-serif prose-headings:font-medium prose-headings:text-text-strong prose-p:text-[19px] prose-p:leading-[1.75] prose-p:text-foreground prose-strong:text-text-strong prose-li:text-[19px] prose-li:leading-[1.75] prose-li:text-foreground prose-a:text-accent prose-a:no-underline prose-code:font-mono prose-code:text-accent prose-pre:bg-card-hover prose-blockquote:italic prose-blockquote:text-text-dim prose-blockquote:border-border-card"
+    : "prose max-w-none font-serif prose-headings:font-serif prose-headings:font-medium prose-headings:text-text-strong prose-p:text-[19px] prose-p:leading-[1.75] prose-p:text-foreground prose-strong:text-text-strong prose-li:text-[19px] prose-li:leading-[1.75] prose-li:text-foreground prose-a:text-accent prose-a:no-underline prose-code:font-mono prose-code:text-accent prose-pre:bg-card-hover prose-blockquote:italic prose-blockquote:text-text-dim prose-blockquote:border-border-card"
 
   return (
     <div className={className} ref={containerRef}>

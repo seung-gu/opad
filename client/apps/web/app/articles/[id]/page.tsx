@@ -6,6 +6,7 @@ import Link from 'next/link'
 import MarkdownViewer from '@/components/MarkdownViewer'
 import ArticleStatusBadge from '@/components/ArticleStatusBadge'
 import VocabularyList from '@/components/VocabularyList'
+import SiteHeader from '@/components/SiteHeader'
 import { Article, Vocabulary, TokenUsageRecord, extractAgentName, formatOperationName } from '@opad/libs'
 import { fetchWithAuth } from '@/lib/api'
 import { useVocabularyDelete } from '@/hooks/useVocabularyDelete'
@@ -37,28 +38,19 @@ function TokenUsageSection({ loading, records }: Readonly<{
 
   if (loading) {
     return (
-      <div className="mt-6 bg-card rounded-lg shadow-sm border border-border-card p-6 hover:border-accent/50 transition-colors">
-        <h2 className="text-sm font-semibold mb-4 flex items-center gap-2 font-mono text-accent tracking-wide uppercase">
-          <span aria-hidden="true">📊</span>
-          <span>Token Usage</span>
-        </h2>
-        <div className="animate-pulse space-y-2">
-          <div className="h-4 bg-card-hover rounded w-1/2"></div>
-          <div className="h-4 bg-card-hover rounded w-2/3"></div>
-        </div>
-      </div>
+      <section className="border-t border-border-card pt-8">
+        <h2 className="font-serif text-[19px] italic text-text-strong">Cost of this article</h2>
+        <div className="mt-3 h-7 w-40 animate-pulse bg-card-hover" />
+      </section>
     )
   }
 
   if (records.length === 0) {
     return (
-      <div className="mt-6 bg-card rounded-lg shadow-sm border border-border-card p-6 hover:border-accent/50 transition-colors">
-        <h2 className="text-sm font-semibold mb-4 flex items-center gap-2 font-mono text-accent tracking-wide uppercase">
-          <span aria-hidden="true">📊</span>
-          <span>Token Usage</span>
-        </h2>
-        <p className="text-text-dim text-sm">No token usage data available.</p>
-      </div>
+      <section className="border-t border-border-card pt-8">
+        <h2 className="font-serif text-[19px] italic text-text-strong">Cost of this article</h2>
+        <p className="mt-2 text-[13px] text-text-dim">No usage data recorded.</p>
+      </section>
     )
   }
 
@@ -98,68 +90,48 @@ function TokenUsageSection({ loading, records }: Readonly<{
   const aggregatedRecords = Array.from(aggregatedMap.values())
 
   return (
-    <div className="mt-6 bg-card rounded-lg shadow-sm border border-border-card p-6 hover:border-accent/50 transition-colors">
-      <h2 className="text-2xl font-bold text-foreground mb-4">Token Usage</h2>
-      <div className="space-y-4">
-        {/* Summary */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-background rounded-lg">
-          <div>
-            <p className="text-xs text-text-dim uppercase tracking-wide">Total Tokens</p>
-            <p className="text-lg font-semibold text-foreground">{totalTokens.toLocaleString()}</p>
+    <section className="border-t border-border-card pt-8">
+      <h2 className="font-serif text-[19px] italic text-text-strong">Cost of this article</h2>
+
+      <div className="mt-3 flex flex-wrap gap-x-12 gap-y-3">
+        <div>
+          <div className="font-serif text-[28px] leading-none tabular-nums text-text-strong">
+            {totalTokens.toLocaleString()}
           </div>
-          <div>
-            <p className="text-xs text-text-dim uppercase tracking-wide">Prompt</p>
-            <p className="text-lg font-semibold text-foreground">{promptTokens.toLocaleString()}</p>
-          </div>
-          <div>
-            <p className="text-xs text-text-dim uppercase tracking-wide">Completion</p>
-            <p className="text-lg font-semibold text-foreground">{completionTokens.toLocaleString()}</p>
-          </div>
-          <div>
-            <p className="text-xs text-text-dim uppercase tracking-wide">Est. Cost</p>
-            <p className="text-lg font-semibold text-system">${totalCost.toFixed(4)}</p>
+          <div className="mt-1 text-[12px] text-text-dim">
+            tokens ({promptTokens.toLocaleString()} in + {completionTokens.toLocaleString()} out)
           </div>
         </div>
-
-        {/* Detailed Records - uncontrolled to avoid scroll on re-render */}
-        <details className="group">
-          <summary className="cursor-pointer text-sm text-accent hover:text-accent/80 font-medium">
-            View detailed breakdown ({aggregatedRecords.length} {aggregatedRecords.length === 1 ? 'operation' : 'operations'})
-          </summary>
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-text-dim uppercase tracking-wide border-b border-border-card">
-                  <th className="pb-2 pr-4">Operation</th>
-                  <th className="pb-2 pr-4">Model</th>
-                  <th className="pb-2 pr-4 text-right">Tokens</th>
-                  <th className="pb-2 text-right">Cost</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-card">
-                {aggregatedRecords.map((record, idx) => (
-                  <tr key={`${record.operation}-${record.model}-${record.agent_name || 'default'}-${idx}`} className="text-foreground">
-                    <td className="py-2 pr-4">
-                      {formatOperationName(record.operation, record.agent_name)}
-                    </td>
-                    <td className="py-2 pr-4 font-mono text-xs text-text-dim">{record.model}</td>
-                    <td className="py-2 pr-4 text-right tabular-nums">
-                      {record.total_tokens.toLocaleString()}
-                      <span className="text-text-dim text-xs ml-1">
-                        ({record.prompt_tokens.toLocaleString()} + {record.completion_tokens.toLocaleString()})
-                      </span>
-                    </td>
-                    <td className="py-2 text-right tabular-nums text-system">
-                      ${record.estimated_cost.toFixed(4)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div>
+          <div className="font-serif text-[28px] leading-none tabular-nums text-text-strong">
+            ${totalCost.toFixed(4)}
           </div>
-        </details>
+          <div className="mt-1 text-[12px] text-text-dim">estimated cost</div>
+        </div>
       </div>
-    </div>
+
+      {/* Uncontrolled <details> to avoid scroll jumps on re-render */}
+      <details className="mt-5">
+        <summary className="cursor-pointer text-[13px] text-accent hover:opacity-80">
+          Breakdown ({aggregatedRecords.length} {aggregatedRecords.length === 1 ? 'operation' : 'operations'})
+        </summary>
+        <ul className="mt-3">
+          {aggregatedRecords.map((record, idx) => (
+            <li
+              key={`${record.operation}-${record.model}-${record.agent_name || 'default'}-${idx}`}
+              className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t border-border-card py-2.5 text-[13px]"
+            >
+              <span className="text-foreground">{formatOperationName(record.operation, record.agent_name)}</span>
+              <span className="flex items-baseline gap-5 text-text-dim">
+                <span className="text-[12px]">{record.model}</span>
+                <span className="tabular-nums">{record.total_tokens.toLocaleString()}</span>
+                <span className="tabular-nums">${record.estimated_cost.toFixed(4)}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </section>
   )
 }
 
@@ -352,142 +324,124 @@ export default function ArticleDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background py-8">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="animate-pulse">
-            <div className="h-8 bg-card-hover rounded w-3/4 mb-4"></div>
-            <div className="h-4 bg-card-hover rounded w-1/2 mb-8"></div>
-            <div className="space-y-4">
-              <div className="h-4 bg-card-hover rounded"></div>
-              <div className="h-4 bg-card-hover rounded w-5/6"></div>
-              <div className="h-4 bg-card-hover rounded w-4/6"></div>
-            </div>
+      <div className="min-h-screen bg-background">
+        <SiteHeader title="One story a day" />
+        <main className="mx-auto max-w-3xl px-6 pt-12">
+          <div className="animate-pulse space-y-4">
+            <div className="h-4 w-48 bg-card-hover" />
+            <div className="h-10 w-3/4 bg-card-hover" />
+            <div className="h-4 w-full bg-card-hover" />
+            <div className="h-4 w-5/6 bg-card-hover" />
           </div>
-        </div>
+        </main>
       </div>
     )
   }
 
   if (error || !article) {
     return (
-      <div className="min-h-screen bg-background py-8">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="bg-accent-danger/10 border border-accent-danger/30 rounded-lg p-6">
-            <h2 className="text-xl font-semibold text-accent-danger mb-2">Error</h2>
-            <p className="text-accent-danger/80 mb-4">{error || 'Article not found'}</p>
-            <Link
-              href="/articles"
-              className="text-accent hover:text-accent/80 underline"
-            >
-              ← Back to Articles
+      <div className="min-h-screen bg-background">
+        <SiteHeader title="One story a day" />
+        <main className="mx-auto max-w-3xl px-6 pt-12">
+          <div className="border-l-2 border-accent-danger pl-4">
+            <p className="text-[12px] font-medium text-accent-danger">Error</p>
+            <p className="mt-0.5 text-[15px] text-foreground">{error || 'Article not found'}</p>
+            <Link href="/articles" className="mt-2 inline-block text-[13px] text-accent">
+              All articles
             </Link>
           </div>
-        </div>
+        </main>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-background py-8">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-6">
-          <Link
-            href="/articles"
-            className="text-accent hover:text-accent/80 text-sm mb-4 inline-block"
-          >
-            ← Back to Articles
+    <div className="min-h-screen bg-background">
+      <SiteHeader title="One story a day" />
+
+      <main className="mx-auto max-w-3xl px-6">
+        <article className="pb-12 pt-10">
+          <Link href="/articles" className="text-[13px] text-text-dim transition-colors hover:text-accent">
+            All articles
           </Link>
 
-          <div className="flex items-start justify-between gap-4 mb-4">
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold font-mono text-accent mb-2">
-                {article.topic || 'Untitled Article'}
-              </h1>
-              <div className="flex flex-wrap items-center gap-3 text-sm text-text-dim mb-2">
-                <span className="font-medium">{article.language}</span>
-                <span>•</span>
-                <span>Level {article.level}</span>
-                <span>•</span>
-                <span>{article.length} words</span>
-              </div>
-              <div className="text-xs text-text-dim">
-                Created: {formatDate(article.created_at)}
-              </div>
-            </div>
-            <ArticleStatusBadge status={article.status} />
-          </div>
-        </div>
+          <p className="mt-8 font-serif text-[14px] italic text-text-dim">
+            {article.language} · Level {article.level} · {article.length} words · {formatDate(article.created_at)}
+            {article.status !== 'completed' && (
+              <>
+                {' · '}
+                <ArticleStatusBadge status={article.status} className="not-italic" />
+              </>
+            )}
+          </p>
+          <h1 className="mt-2 max-w-[20ch] font-serif text-[34px] font-normal leading-[1.1] tracking-[-0.015em] text-text-strong sm:text-[44px]">
+            {article.topic || 'Untitled Article'}
+          </h1>
 
-        {/* Progress Bar (only when running) */}
-        {article.status === 'running' && currentJobId && (
-          <div className="mb-4 p-4 bg-accent/10 border border-accent/30 rounded-lg shadow-sm">
-            <div className="mb-2">
-              <p className="text-foreground font-medium mb-2">
-                ⏳ {progress.message || 'Generating article...'}
-              </p>
-              {progress.error && (
-                <div className="mb-2 p-3 bg-accent-danger/10 border border-accent-danger/30 rounded-md">
-                  <p className="text-accent-danger text-sm font-medium">Error:</p>
-                  <p className="text-accent-danger/80 text-sm">{progress.error}</p>
-                </div>
-              )}
-              <div className="w-full bg-card-hover rounded-full h-3">
+          {article.status === 'running' && currentJobId && (
+            <div className="mt-8">
+              <div className="flex items-baseline justify-between text-[13px]">
+                <span className="font-serif italic text-foreground">
+                  {progress.message || 'Generating'}&hellip;
+                </span>
+                <span className="tabular-nums text-text-dim">{progress.progress}%</span>
+              </div>
+              <div className="mt-2 h-px w-full bg-border-card">
                 <div
-                  className="bg-accent h-3 rounded-full transition-all duration-300"
+                  className="h-px bg-accent transition-all duration-300"
                   style={{ width: `${progress.progress}%` }}
-                ></div>
+                />
               </div>
-              <p className="text-sm text-accent mt-2">{progress.progress}%</p>
-            </div>
-          </div>
-        )}
-
-        {/* Content */}
-        <div className="bg-card rounded-lg shadow-sm border border-border-card p-6">
-          {content ? (
-            /*
-             * Key prop pattern forces component remount on content change.
-             * Pattern: ${articleId}-${content.length}
-             * - Prevents React hydration mismatches
-             * - Resets data-processed attribute (MarkdownViewer.tsx:456)
-             * - Clears stale event listeners
-             * See: docs/ARCHITECTURE.md "React Component Remounting Pattern"
-             */
-            <MarkdownViewer
-              key={`${articleId}-${content.length}`}
-              content={content}
-              language={article?.language}
-              articleId={articleId}
-              vocabularies={vocabularies}
-              onAddVocabulary={handleAddVocabulary}
-              onTokenUsageUpdate={() => fetchTokenUsage(true)}
-            />
-          ) : (
-            <div className="text-center py-12">
-              <p className="text-text-dim">
-                {article.status === 'running'
-                  ? 'Article is being generated. Please check back later.'
-                  : 'Article content is not available.'}
-              </p>
+              {progress.error && <p className="mt-2 text-[13px] text-accent-danger">{progress.error}</p>}
             </div>
           )}
-        </div>
-        
-        {/* Vocabulary List */}
-        <VocabularyList
-          vocabularies={vocabularies}
-          onDelete={handleDeleteVocabulary}
-        />
 
-        {/* Token Usage Section */}
-        {article.status === 'completed' && (
-          <TokenUsageSection
-            loading={tokenUsageLoading}
-            records={tokenUsage}
-          />
-        )}
-      </div>
+          {content ? (
+            <>
+              <p className="mt-6 max-w-[66ch] border-l-2 border-border-card pl-4 text-[13px] leading-relaxed text-text-dim">
+                Click any word to look it up. Words you save are marked in the text and collected below.
+              </p>
+              <div className="mt-8">
+                {/*
+                 * Key prop pattern forces component remount on content change.
+                 * Pattern: ${articleId}-${content.length}
+                 * - Prevents React hydration mismatches
+                 * - Resets data-processed attribute (MarkdownViewer.tsx:456)
+                 * - Clears stale event listeners
+                 * See: docs/ARCHITECTURE.md "React Component Remounting Pattern"
+                 */}
+                <MarkdownViewer
+                  key={`${articleId}-${content.length}`}
+                  content={content}
+                  language={article?.language}
+                  articleId={articleId}
+                  vocabularies={vocabularies}
+                  onAddVocabulary={handleAddVocabulary}
+                  onTokenUsageUpdate={() => fetchTokenUsage(true)}
+                />
+              </div>
+            </>
+          ) : (
+            <p className="mt-8 text-[14px] text-text-dim">
+              {article.status === 'running'
+                ? 'The article is being generated. This page updates on its own.'
+                : 'Article content is not available.'}
+            </p>
+          )}
+        </article>
+
+        <div className="space-y-12 pb-4">
+          <VocabularyList vocabularies={vocabularies} onDelete={handleDeleteVocabulary} />
+
+          {article.status === 'completed' && (
+            <TokenUsageSection loading={tokenUsageLoading} records={tokenUsage} />
+          )}
+        </div>
+
+        <footer className="mt-14 border-t border-border-card py-6 text-[12px] text-text-dim">
+          One story a day
+        </footer>
+      </main>
     </div>
   )
 }
