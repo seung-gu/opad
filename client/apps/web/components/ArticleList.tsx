@@ -10,47 +10,36 @@ interface ArticleListProps {
 }
 
 /**
- * Reusable list component for displaying multiple articles.
- * 
- * Handles:
- * - Empty state
- * - Loading state (via parent)
- * - Rendering article cards
+ * Article list: hairline-separated rows, with a matching skeleton while loading.
  */
-export default function ArticleList({ 
-  articles, 
+export default function ArticleList({
+  articles,
   loading = false,
-  emptyMessage = 'No articles found'
+  emptyMessage = 'No articles found',
 }: ArticleListProps) {
   if (loading) {
     return (
-      <div className="space-y-4">
+      <ul>
         {[1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className="p-4 bg-card border border-border-card rounded-lg animate-pulse"
-          >
-            <div className="h-6 bg-card-hover rounded w-3/4 mb-3"></div>
-            <div className="h-4 bg-card-hover rounded w-1/2"></div>
-          </div>
+          <li key={i} className="border-b border-border-card py-5 last:border-b-0">
+            <div className="h-5 w-3/5 animate-pulse bg-card-hover" />
+          </li>
         ))}
-      </div>
+      </ul>
     )
   }
 
   if (articles.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-text-dim text-lg">{emptyMessage}</p>
-      </div>
-    )
+    return <p className="py-10 text-[14px] text-text-dim">{emptyMessage}</p>
   }
 
   return (
-    <div className="space-y-4">
+    <ul>
       {articles.map((article) => (
-        <ArticleCard key={article.id} article={article} />
+        <li key={article.id} className="border-b border-border-card last:border-b-0">
+          <ArticleCard article={article} />
+        </li>
       ))}
-    </div>
+    </ul>
   )
 }

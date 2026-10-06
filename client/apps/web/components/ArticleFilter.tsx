@@ -1,6 +1,5 @@
 'use client'
 
-import type { ChangeEvent } from 'react'
 import { ArticleStatus } from '@opad/libs'
 
 interface ArticleFilterProps {
@@ -8,41 +7,37 @@ interface ArticleFilterProps {
   onStatusChange: (status: ArticleStatus | undefined) => void
 }
 
-const STATUS_OPTIONS: { value: ArticleStatus | ''; label: string }[] = [
-  { value: '', label: 'All' },
+const STATUS_OPTIONS: { value: ArticleStatus | undefined; label: string }[] = [
+  { value: undefined, label: 'All' },
   { value: 'running', label: 'Running' },
   { value: 'completed', label: 'Completed' },
-  { value: 'failed', label: 'Failed' }
+  { value: 'failed', label: 'Failed' },
 ]
 
 /**
- * Reusable filter component for article list.
- * 
- * Provides status filtering dropdown.
+ * Status filter, as an underlined segmented control.
  */
 export default function ArticleFilter({ selectedStatus, onStatusChange }: ArticleFilterProps) {
-  const handleChange = (e: ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value
-    onStatusChange(value === '' ? undefined : (value as ArticleStatus))
-  }
-
   return (
-    <div className="flex items-center gap-2">
-      <label htmlFor="status-filter" className="text-sm font-medium text-foreground">
-        Filter by status:
-      </label>
-      <select
-        id="status-filter"
-        value={selectedStatus || ''}
-        onChange={handleChange}
-        className="px-3 py-2 bg-card border border-border-card rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
-      >
+    <div className="flex items-baseline gap-2">
+      <span className="text-[12px] text-text-dim">Status</span>
+      <div className="flex flex-wrap items-baseline">
         {STATUS_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>
+          <button
+            key={option.label}
+            type="button"
+            aria-pressed={selectedStatus === option.value}
+            onClick={() => onStatusChange(option.value)}
+            className={`border-b-2 px-1.5 pb-0.5 text-[13px] transition-colors ${
+              selectedStatus === option.value
+                ? 'border-accent font-medium text-foreground'
+                : 'border-transparent text-text-dim hover:text-foreground'
+            }`}
+          >
             {option.label}
-          </option>
+          </button>
         ))}
-      </select>
+      </div>
     </div>
   )
 }
