@@ -39,42 +39,31 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="max-w-md w-full space-y-8">
-        <div className="flex justify-start">
-          <Link
-            href="/"
-            className="text-accent hover:text-accent/80 text-sm font-medium flex items-center gap-1"
-          >
-            ← Back to Home
-          </Link>
-        </div>
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
-            Sign in to your account
-          </h2>
-          <p className="mt-2 text-center text-sm text-text-dim">
-            Or{' '}
-            <Link href="/register" className="font-medium text-accent hover:text-accent/80">
-              create a new account
-            </Link>
-          </p>
-        </div>
+    <div className="min-h-screen bg-background">
+      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
+        <Link href="/" className="text-[13px] text-text-dim transition-colors hover:text-accent">
+          One story a day
+        </Link>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <h1 className="mt-10 font-serif text-[34px] leading-tight text-text-strong">Sign in</h1>
+        <p className="mt-2 text-[14px] text-text-dim">
+          New here?{' '}
+          <Link href="/register" className="text-accent">
+            Create an account
+          </Link>
+        </p>
+
+        <form className="mt-10 space-y-6" onSubmit={handleSubmit}>
           {error && (
-            <div className="rounded-md bg-accent-danger/20 p-4">
-              <div className="flex">
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-accent-danger">{error}</h3>
-                </div>
-              </div>
+            <div className="border-l-2 border-accent-danger pl-4">
+              <p className="text-[12px] font-medium text-accent-danger">Error</p>
+              <p className="mt-0.5 text-[14px] text-foreground">{error}</p>
             </div>
           )}
 
-          <div className="rounded-md -space-y-px">
+          <div className="space-y-5">
             <div>
-              <label htmlFor="email" className="sr-only">
+              <label htmlFor="email" className="block text-[12px] text-text-dim">
                 Email address
               </label>
               <input
@@ -85,13 +74,12 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-border-card placeholder-text-dim text-foreground bg-card rounded-t-md focus:outline-none focus:ring-accent focus:border-accent focus:z-10 sm:text-sm"
-                placeholder="Email address"
                 disabled={loading}
+                className="mt-1 w-full border-b border-border-card bg-transparent py-2 text-[15px] text-foreground transition-colors placeholder:text-text-dim focus:border-accent focus:outline-none disabled:opacity-50"
               />
             </div>
             <div>
-              <label htmlFor="password" className="sr-only">
+              <label htmlFor="password" className="block text-[12px] text-text-dim">
                 Password
               </label>
               <input
@@ -102,24 +90,17 @@ export default function LoginPage() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-border-card placeholder-text-dim text-foreground bg-card rounded-b-md focus:outline-none focus:ring-accent focus:border-accent focus:z-10 sm:text-sm"
-                placeholder="Password"
                 disabled={loading}
+                className="mt-1 w-full border-b border-border-card bg-transparent py-2 text-[15px] text-foreground transition-colors placeholder:text-text-dim focus:border-accent focus:outline-none disabled:opacity-50"
               />
             </div>
           </div>
 
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary w-full"
-            >
-              {loading ? 'Signing in...' : 'Sign in'}
-            </button>
-          </div>
+          <button type="submit" disabled={loading} className="btn-primary w-full">
+            {loading ? 'Signing in…' : 'Sign in'}
+          </button>
         </form>
-      </div>
+      </main>
     </div>
   )
 }
