@@ -20,8 +20,10 @@ import { TokenUsageSummary } from '@opad/libs'
 
 // Mock modules
 vi.mock('next/navigation', () => ({
-  useRouter: vi.fn()
+  useRouter: vi.fn(),
+  usePathname: vi.fn(() => '/usage')
 }))
+
 
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: vi.fn()
@@ -178,10 +180,10 @@ describe('UsagePage', () => {
 
       render(<UsagePage />)
 
-      expect(screen.getByText('Loading usage data...')).toBeInTheDocument()
+      expect(screen.getByText('Loading usage data…')).toBeInTheDocument()
     })
 
-    it('should show loading spinner with spinner icon', async () => {
+    it('should disable the period control while loading', async () => {
       vi.mocked(useAuth).mockReturnValue({
         isAuthenticated: true
       } as any)
@@ -192,9 +194,9 @@ describe('UsagePage', () => {
 
       vi.mocked(fetchWithAuth).mockImplementation(mockFetch)
 
-      const { container } = render(<UsagePage />)
+      render(<UsagePage />)
 
-      expect(container.querySelector('[class*="animate-spin"]')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '30 days' })).toBeDisabled()
     })
 
     it('should hide loading state after data is fetched', async () => {
@@ -212,7 +214,7 @@ describe('UsagePage', () => {
       render(<UsagePage />)
 
       await waitFor(() => {
-        expect(screen.queryByText('Loading usage data...')).not.toBeInTheDocument()
+        expect(screen.queryByText('Loading usage data…')).not.toBeInTheDocument()
       })
     })
 
@@ -234,8 +236,11 @@ describe('UsagePage', () => {
         expect(screen.getByTestId('usage-summary')).toBeInTheDocument()
       })
 
-      const selector = screen.getByRole('combobox')
-      fireEvent.change(selector, { target: { value: '7' } })
+      const periodButton = screen.getByRole('button', { name: '7 days' })
+      await waitFor(() => {
+        expect(periodButton).not.toBeDisabled()
+      })
+      fireEvent.click(periodButton)
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith('/api/usage/me?days=7', expect.any(Object))
@@ -422,7 +427,7 @@ describe('UsagePage', () => {
       render(<UsagePage />)
 
       await waitFor(() => {
-        expect(screen.getByText('No usage data found.')).toBeInTheDocument()
+        expect(screen.getByText('Nothing to report yet.')).toBeInTheDocument()
       })
     })
 
@@ -627,7 +632,7 @@ describe('UsagePage', () => {
 
       render(<UsagePage />)
 
-      expect(screen.getByRole('combobox')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '30 days' })).toBeInTheDocument()
     })
 
     it('should have default value of 30 days', async () => {
@@ -644,8 +649,7 @@ describe('UsagePage', () => {
 
       render(<UsagePage />)
 
-      const selector = screen.getByRole('combobox') as HTMLSelectElement
-      expect(selector.value).toBe('30')
+      expect(screen.getByRole('button', { name: '30 days' })).toHaveAttribute('aria-pressed', 'true')
     })
 
     it('should have all time period options', async () => {
@@ -662,10 +666,10 @@ describe('UsagePage', () => {
 
       render(<UsagePage />)
 
-      expect(screen.getByText('Last 7 days')).toBeInTheDocument()
-      expect(screen.getByText('Last 30 days')).toBeInTheDocument()
-      expect(screen.getByText('Last 90 days')).toBeInTheDocument()
-      expect(screen.getByText('Last 365 days')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '7 days' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '30 days' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '90 days' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '365 days' })).toBeInTheDocument()
     })
 
     it('should fetch data with selected days value', async () => {
@@ -686,8 +690,11 @@ describe('UsagePage', () => {
         expect(mockFetch).toHaveBeenCalledWith('/api/usage/me?days=30', expect.any(Object))
       })
 
-      const selector = screen.getByRole('combobox')
-      fireEvent.change(selector, { target: { value: '7' } })
+      const periodButton = screen.getByRole('button', { name: '7 days' })
+      await waitFor(() => {
+        expect(periodButton).not.toBeDisabled()
+      })
+      fireEvent.click(periodButton)
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith('/api/usage/me?days=7', expect.any(Object))
@@ -708,8 +715,11 @@ describe('UsagePage', () => {
 
       render(<UsagePage />)
 
-      const selector = screen.getByRole('combobox')
-      fireEvent.change(selector, { target: { value: '90' } })
+      const periodButton = screen.getByRole('button', { name: '90 days' })
+      await waitFor(() => {
+        expect(periodButton).not.toBeDisabled()
+      })
+      fireEvent.click(periodButton)
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith('/api/usage/me?days=90', expect.any(Object))
@@ -730,8 +740,11 @@ describe('UsagePage', () => {
 
       render(<UsagePage />)
 
-      const selector = screen.getByRole('combobox')
-      fireEvent.change(selector, { target: { value: '365' } })
+      const periodButton = screen.getByRole('button', { name: '365 days' })
+      await waitFor(() => {
+        expect(periodButton).not.toBeDisabled()
+      })
+      fireEvent.click(periodButton)
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith('/api/usage/me?days=365', expect.any(Object))
@@ -751,8 +764,7 @@ describe('UsagePage', () => {
 
       render(<UsagePage />)
 
-      const selector = screen.getByRole('combobox')
-      expect(selector).toBeDisabled()
+      expect(screen.getByRole('button', { name: '7 days' })).toBeDisabled()
     })
 
     it('should enable selector after loading', async () => {
@@ -769,7 +781,7 @@ describe('UsagePage', () => {
 
       render(<UsagePage />)
 
-      const selector = screen.getByRole('combobox')
+      const selector = screen.getByRole('button', { name: '7 days' })
 
       await waitFor(() => {
         expect(selector).not.toBeDisabled()
@@ -793,7 +805,7 @@ describe('UsagePage', () => {
       render(<UsagePage />)
 
       await waitFor(() => {
-        expect(screen.getByText('Refresh Data')).toBeInTheDocument()
+        expect(screen.getByText('Refresh')).toBeInTheDocument()
       })
     })
 
@@ -817,7 +829,7 @@ describe('UsagePage', () => {
       render(<UsagePage />)
 
       await waitFor(() => {
-        expect(screen.queryByText('Refresh Data')).not.toBeInTheDocument()
+        expect(screen.queryByText('Refresh')).not.toBeInTheDocument()
       })
     })
 
@@ -836,11 +848,11 @@ describe('UsagePage', () => {
       render(<UsagePage />)
 
       await waitFor(() => {
-        expect(screen.getByText('Refresh Data')).toBeInTheDocument()
+        expect(screen.getByText('Refresh')).toBeInTheDocument()
       })
 
       const initialCallCount = mockFetch.mock.calls.length
-      fireEvent.click(screen.getByText('Refresh Data'))
+      fireEvent.click(screen.getByText('Refresh'))
 
       await waitFor(() => {
         expect(mockFetch.mock.calls.length).toBeGreaterThan(initialCallCount)
@@ -866,13 +878,13 @@ describe('UsagePage', () => {
       render(<UsagePage />)
 
       await waitFor(() => {
-        expect(screen.getByText('Refresh Data')).toBeInTheDocument()
+        expect(screen.getByText('Refresh')).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getByText('Refresh Data'))
+      fireEvent.click(screen.getByText('Refresh'))
 
       await waitFor(() => {
-        expect(screen.getByText('Refreshing...')).toBeInTheDocument()
+        expect(screen.getByText('Refreshing…')).toBeInTheDocument()
       })
     })
   })
@@ -892,7 +904,7 @@ describe('UsagePage', () => {
 
       render(<UsagePage />)
 
-      const articlesLink = screen.getByTitle('Go to Articles')
+      const articlesLink = screen.getByRole('link', { name: 'Articles' })
       expect(articlesLink).toBeInTheDocument()
       expect(articlesLink).toHaveAttribute('href', '/articles')
     })
@@ -913,12 +925,13 @@ describe('UsagePage', () => {
 
       render(<UsagePage />)
 
-      const selector = screen.getByRole('combobox')
-
       // Change days multiple times
-      fireEvent.change(selector, { target: { value: '7' } })
-      fireEvent.change(selector, { target: { value: '30' } })
-      fireEvent.change(selector, { target: { value: '90' } })
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: '7 days' })).not.toBeDisabled()
+      })
+      fireEvent.click(screen.getByRole('button', { name: '7 days' }))
+      fireEvent.click(screen.getByRole('button', { name: '30 days' }))
+      fireEvent.click(screen.getByRole('button', { name: '90 days' }))
 
       // Should have made multiple requests
       await waitFor(() => {
@@ -965,7 +978,7 @@ describe('UsagePage', () => {
 
       render(<UsagePage />)
 
-      expect(screen.getByText('Token Usage')).toBeInTheDocument()
+      expect(screen.getByText('Token usage')).toBeInTheDocument()
     })
 
     it('should have subtitle text', async () => {
@@ -982,7 +995,7 @@ describe('UsagePage', () => {
 
       render(<UsagePage />)
 
-      expect(screen.getByText('Track your API token consumption and costs')).toBeInTheDocument()
+      expect(screen.getByText('What your reading has cost so far')).toBeInTheDocument()
     })
 
     it('should have time period label', async () => {
@@ -999,7 +1012,7 @@ describe('UsagePage', () => {
 
       render(<UsagePage />)
 
-      expect(screen.getByText('Time Period:')).toBeInTheDocument()
+      expect(screen.getByText('Period')).toBeInTheDocument()
     })
   })
 })

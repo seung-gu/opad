@@ -10,6 +10,7 @@ import { useVocabularyDelete } from '@/hooks/useVocabularyDelete'
 import VocabularyCard from '@/components/VocabularyCard'
 import ErrorAlert from '@/components/ErrorAlert'
 import EmptyState from '@/components/EmptyState'
+import SiteHeader from '@/components/SiteHeader'
 
 /**
  * Vocabulary list page.
@@ -93,106 +94,86 @@ export default function VocabularyPage() {
   const uniqueCount = vocabularies.length
 
   return (
-    <div className="min-h-screen bg-background py-8">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <h1 className="text-3xl font-bold font-mono text-vocab">My Vocabulary</h1>
-            <Link
-              href="/articles"
-              className="text-xl font-medium text-foreground hover:text-foreground/80 transition-colors"
-              title="Go to Articles"
-            >
-              <span className="text-[0.9rem]">◀</span> Articles
-            </Link>
-          </div>
-          <p className="text-text-dim">
-            {loading ? 'Loading...' : `${totalCount} saved (${uniqueCount} unique)`}
-          </p>
-        </div>
+    <div className="min-h-screen bg-background">
+      <SiteHeader title="One story a day" />
 
-        {/* Error State */}
+      <main className="mx-auto max-w-5xl px-6">
+        <section className="pb-8 pt-12">
+          <h1 className="font-serif text-[34px] leading-tight text-text-strong">Vocabulary</h1>
+          <p className="mt-2 text-[14px] text-text-dim">
+            {loading ? 'Loading…' : `${totalCount} saved · ${uniqueCount} unique`}
+          </p>
+        </section>
+
         <ErrorAlert error={error} onRetry={fetchVocabularies} />
 
-        {/* Loading State */}
-        {loading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="text-lg text-text-dim">Loading vocabularies...</div>
-          </div>
-        )}
+        {loading && <p className="border-t border-border-card py-10 text-[14px] text-text-dim">Loading…</p>}
 
-        {/* Empty State */}
         {!loading && vocabularies.length === 0 && !error && (
           <EmptyState
-            title="No vocabulary words found."
-            description="Click on words while reading articles to save them to your vocabulary."
+            title="No words saved yet."
+            description="Click a word while reading an article to look it up and save it here."
             action={{
-              label: 'Go to Articles',
-              onClick: () => router.push('/articles')
+              label: 'Go to articles',
+              onClick: () => router.push('/articles'),
             }}
           />
         )}
 
-        {/* Vocabulary List by Language */}
         {!loading && Object.keys(groupsByLanguage).length > 0 && (
-          <div className="space-y-6">
+          <div className="space-y-12">
             {Object.entries(groupsByLanguage)
               .sort(([a], [b]) => a.localeCompare(b))
               .map(([language, groups]) => (
-                <div key={language} className="bg-card rounded-lg shadow-lg overflow-hidden hover:border-accent/50 transition-colors border border-transparent">
-                  {/* Language Header */}
-                  <div className="bg-gradient-to-r from-vocab to-vocab/80 p-4">
-                    <h2 className="text-sm font-semibold font-mono text-white tracking-wide uppercase">📚 {language}</h2>
-                    <p className="text-white/80">
-                      {groups.reduce((sum, g) => sum + g.count, 0)} saved ({groups.length} unique)
-                    </p>
+                <section key={language} className="border-t border-border-card pt-6">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+                    <h2 className="font-serif text-[22px] text-text-strong">{language}</h2>
+                    <span className="text-[12px] text-text-dim">
+                      {groups.reduce((sum, g) => sum + g.count, 0)} saved · {groups.length} unique
+                    </span>
                   </div>
 
-                  {/* Words Grid */}
-                  <div className="p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {groups.map((group) => (
-                        <VocabularyCard
-                          key={`${group.language}-${group.lemma}`}
-                          id={group.id}
-                          lemma={group.lemma}
-                          word={group.word}
-                          definition={group.definition}
-                          sentence={group.sentence}
-                          gender={group.gender}
-                          phonetics={group.phonetics}
-                          pos={group.pos}
-                          level={group.level}
-                          conjugations={group.conjugations}
-                          examples={group.examples}
-                          count={group.count}
-                          articleId={group.article_id}
-                          createdAt={group.created_at}
-                          variant="card"
-                          showArticleLink
-                          onDelete={handleDeleteVocabulary}
-                        />
-                      ))}
-                    </div>
+                  <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {groups.map((group) => (
+                      <VocabularyCard
+                        key={`${group.language}-${group.lemma}`}
+                        id={group.id}
+                        lemma={group.lemma}
+                        word={group.word}
+                        definition={group.definition}
+                        sentence={group.sentence}
+                        gender={group.gender}
+                        phonetics={group.phonetics}
+                        pos={group.pos}
+                        level={group.level}
+                        conjugations={group.conjugations}
+                        examples={group.examples}
+                        count={group.count}
+                        articleId={group.article_id}
+                        createdAt={group.created_at}
+                        variant="card"
+                        showArticleLink
+                        onDelete={handleDeleteVocabulary}
+                      />
+                    ))}
                   </div>
-                </div>
+                </section>
               ))}
           </div>
         )}
 
-        {/* Refresh Button */}
         {!loading && vocabularies.length > 0 && (
-          <div className="mt-6 text-center">
-            <button
-              onClick={fetchVocabularies}
-              className="btn-outline"
-            >
-              Refresh List
+          <div className="mt-10">
+            <button onClick={fetchVocabularies} className="btn-outline">
+              Refresh
             </button>
           </div>
         )}
-      </div>
+
+        <footer className="mt-14 border-t border-border-card py-6 text-[12px] text-text-dim">
+          One story a day
+        </footer>
+      </main>
     </div>
   )
 }
