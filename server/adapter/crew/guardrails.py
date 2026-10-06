@@ -81,3 +81,40 @@ def require_articles(result: TaskOutput) -> tuple[bool, Any]:
         return (False, "No news articles were found. The search returned no results.")
 
     return (True, output)
+
+
+def require_selected_article(result: TaskOutput) -> tuple[bool, Any]:
+    """Repair JSON, then reject a selection that picked nothing.
+
+    The picker prompt tells the agent to return null when no candidate is even
+    remotely related to the topic (tasks.yaml), but SelectedArticle.article is
+    a required NewsArticle. So the documented answer for "nothing fits" killed
+    the run on a Pydantic error about article being None — an error that named
+    neither the topic nor the picker.
+
+    Guardrails run before output_pydantic conversion, so rejecting it here
+    gives the agent a message it can retry against, and leaves a last failure
+    a reader can understand.
+    """
+    ok, output = repair_json_output(result)
+    if not ok:
+        return (ok, output)
+
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError as e:
+        return (False, f"Output is not valid JSON after repair: {e}")
+
+    article = data.get('article') if isinstance(data, dict) else None
+    if not isinstance(article, dict) or not article:
+        logger.error(
+            "No article was selected — the picker found nothing matching the topic "
+            "among the candidates the search returned."
+        )
+        return (
+            False,
+            "No article was selected. Choose the closest candidate from the provided "
+            "list; the rewriter will adjust length and level.",
+        )
+
+    return (True, output)

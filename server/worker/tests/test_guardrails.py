@@ -7,7 +7,11 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from adapter.crew.guardrails import repair_json_output, require_articles
+from adapter.crew.guardrails import (
+    repair_json_output,
+    require_articles,
+    require_selected_article,
+)
 
 
 class FakeTaskOutput:
@@ -66,6 +70,61 @@ class TestRequireArticles(unittest.TestCase):
 
         self.assertTrue(ok)
         self.assertNotIn(',]', output)
+
+
+class TestRequireSelectedArticle(unittest.TestCase):
+    """A null selection must fail at the picker, not at Pydantic.
+
+    tasks.yaml tells the picker to return null when nothing is related to the
+    topic, but SelectedArticle.article is required — so following the prompt
+    crashed the run with "SelectedArticle.article Input should be an object",
+    which named neither the topic nor the picker.
+    """
+
+    def test_rejects_null_article(self):
+        ok, message = require_selected_article(
+            FakeTaskOutput('{"article": null, "selection_rationale": "nothing matched"}')
+        )
+
+        self.assertFalse(ok)
+        self.assertIn('No article was selected', message)
+
+    def test_rejects_missing_article_key(self):
+        ok, message = require_selected_article(
+            FakeTaskOutput('{"selection_rationale": "nothing matched"}')
+        )
+
+        self.assertFalse(ok)
+        self.assertIn('No article was selected', message)
+
+    def test_rejects_empty_article_object(self):
+        ok, message = require_selected_article(FakeTaskOutput('{"article": {}}'))
+
+        self.assertFalse(ok)
+        self.assertIn('No article was selected', message)
+
+    def test_rejects_article_that_is_not_an_object(self):
+        ok, message = require_selected_article(FakeTaskOutput('{"article": "Some headline"}'))
+
+        self.assertFalse(ok)
+        self.assertIn('No article was selected', message)
+
+    def test_accepts_a_populated_article(self):
+        ok, output = require_selected_article(
+            FakeTaskOutput('{"article": {"title": "A", "content": "B"}, "selection_rationale": "C"}')
+        )
+
+        self.assertTrue(ok)
+        self.assertIn('title', output)
+
+    def test_still_repairs_json_before_checking(self):
+        """Malformed but populated output is repaired, not rejected."""
+        ok, output = require_selected_article(
+            FakeTaskOutput('{"article": {"title": "A",}, "selection_rationale": "C"}')
+        )
+
+        self.assertTrue(ok)
+        self.assertNotIn(',}', output)
 
 
 if __name__ == '__main__':

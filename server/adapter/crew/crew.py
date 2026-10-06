@@ -3,7 +3,7 @@ from crewai.project import CrewBase, agent, crew, task
 from crewai_tools import SerperDevTool, ScrapeWebsiteTool
 
 from adapter.crew.models import NewsArticleList, SelectedArticle, ReviewedArticle
-from adapter.crew.guardrails import repair_json_output, require_articles
+from adapter.crew.guardrails import repair_json_output, require_articles, require_selected_article
 
 
 @CrewBase
@@ -57,7 +57,7 @@ class ReadingMaterialCreator():
         return Task(
             config=self.tasks_config['pick_best_article'],
             output_pydantic=SelectedArticle,
-            guardrail=repair_json_output
+            guardrail=require_selected_article
         )
 
     @task
