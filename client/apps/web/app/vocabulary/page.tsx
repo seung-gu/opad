@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { VocabularyCount } from '@opad/libs'
@@ -11,6 +11,7 @@ import VocabularyCard from '@/components/VocabularyCard'
 import ErrorAlert from '@/components/ErrorAlert'
 import EmptyState from '@/components/EmptyState'
 import SiteHeader from '@/components/SiteHeader'
+import { sortVocabularies, VOCABULARY_SORTS, type VocabularySort } from '@/lib/vocabularySort'
 
 /**
  * Vocabulary list page.
@@ -27,6 +28,8 @@ export default function VocabularyPage() {
   const { isAuthenticated } = useAuth()
   const { deleteVocabulary } = useVocabularyDelete()
   const [vocabularies, setVocabularies] = useState<VocabularyCount[]>([])
+  // Frequency matches the order the API already returns, so the default is a no-op
+  const [sort, setSort] = useState<VocabularySort>('frequency')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -80,14 +83,22 @@ export default function VocabularyPage() {
     fetchVocabularies()
   }, [isAuthenticated, router, fetchVocabularies])
 
-  // Group by language for display (data is already aggregated by backend)
-  const groupsByLanguage = vocabularies.reduce((acc, vocab) => {
-    if (!acc[vocab.language]) {
-      acc[vocab.language] = []
+  // Group by language for display (data is already aggregated by backend),
+  // then order each group by the chosen sort.
+  const groupsByLanguage = useMemo(() => {
+    const groups = vocabularies.reduce((acc, vocab) => {
+      if (!acc[vocab.language]) {
+        acc[vocab.language] = []
+      }
+      acc[vocab.language].push(vocab)
+      return acc
+    }, {} as Record<string, VocabularyCount[]>)
+
+    for (const language of Object.keys(groups)) {
+      groups[language] = sortVocabularies(groups[language], sort)
     }
-    acc[vocab.language].push(vocab)
-    return acc
-  }, {} as Record<string, VocabularyCount[]>)
+    return groups
+  }, [vocabularies, sort])
 
   // Calculate total and unique counts from pre-aggregated data
   const totalCount = vocabularies.reduce((sum, v) => sum + v.count, 0)
@@ -104,6 +115,29 @@ export default function VocabularyPage() {
             {loading ? 'Loading…' : `${totalCount} saved · ${uniqueCount} unique`}
           </p>
         </section>
+
+        {!loading && vocabularies.length > 0 && (
+          <div className="flex flex-wrap items-baseline gap-x-5 gap-y-3 border-t border-border-card py-4">
+            <span className="text-[12px] text-text-dim">Sort</span>
+            <div className="flex flex-wrap items-baseline">
+              {VOCABULARY_SORTS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={sort === option.value}
+                  onClick={() => setSort(option.value)}
+                  className={`border-b-2 px-1.5 pb-0.5 text-[13px] transition-colors ${
+                    sort === option.value
+                      ? 'border-accent font-medium text-foreground'
+                      : 'border-transparent text-text-dim hover:text-foreground'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <ErrorAlert error={error} onRetry={fetchVocabularies} />
 
