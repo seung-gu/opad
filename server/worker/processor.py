@@ -27,6 +27,10 @@ MAX_QUEUE_FAILURES = 10  # ~50s unreachable -> exit and let the platform restart
 def _translate_error(error: Exception) -> str:
     """Translate technical error to user-friendly message."""
     msg = str(error).lower()
+    # Guardrail failures carry their own wording; without these the reader
+    # only ever saw "Job failed: Exception".
+    if "no news articles were found" in msg or "no article was selected" in msg:
+        return "No article matched your topic. Try a broader or different topic."
     if "json" in msg:
         return "AI model returned invalid response. Please try again."
     if "timeout" in msg:

@@ -186,5 +186,35 @@ class TestWorkerLoopQueueOutage(unittest.TestCase):
         job_queue.dequeue.assert_called_with(timeout=processor.DEQUEUE_TIMEOUT)
 
 
+class TestTranslateError(unittest.TestCase):
+    """Guardrail failures should reach the reader as something they can act on."""
+
+    def test_no_selected_article_reads_as_a_topic_problem(self):
+        message = processor._translate_error(
+            Exception('Task failed guardrail validation: No article was selected. '
+                      'Choose the closest candidate from the provided list;')
+        )
+
+        self.assertEqual(message, 'No article matched your topic. Try a broader or different topic.')
+
+    def test_empty_search_reads_as_a_topic_problem(self):
+        message = processor._translate_error(
+            Exception('Task failed guardrail validation: No news articles were found. '
+                      'The search returned no results.')
+        )
+
+        self.assertEqual(message, 'No article matched your topic. Try a broader or different topic.')
+
+    def test_malformed_json_keeps_its_own_message(self):
+        message = processor._translate_error(Exception('Invalid JSON payload'))
+
+        self.assertEqual(message, 'AI model returned invalid response. Please try again.')
+
+    def test_unknown_errors_fall_back_to_the_type_name(self):
+        message = processor._translate_error(ValueError('something unexpected'))
+
+        self.assertEqual(message, 'Job failed: ValueError')
+
+
 if __name__ == '__main__':
     unittest.main()
