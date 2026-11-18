@@ -1,10 +1,5 @@
 /**
- * Reusable error alert component for displaying error messages.
- *
- * Features:
- * - Consistent error styling (red background with border)
- * - Optional retry button
- * - Automatic hiding when error is null
+ * Error message, marked with an accent rule rather than a filled panel.
  */
 
 interface ErrorAlertProps {
@@ -17,13 +12,11 @@ export default function ErrorAlert({ error, onRetry, className = '' }: ErrorAler
   if (!error) return null
 
   return (
-    <div className={`mb-6 p-4 bg-accent-danger/20 border border-accent-danger/50 rounded-lg ${className}`}>
-      <p className="text-accent-danger">{error}</p>
+    <div className={`mb-6 border-l-2 border-accent-danger pl-4 ${className}`}>
+      <p className="text-[12px] font-medium text-accent-danger">Error</p>
+      <p className="mt-0.5 text-[14px] text-foreground">{error}</p>
       {onRetry && (
-        <button
-          onClick={onRetry}
-          className="mt-2 text-sm text-accent-danger hover:text-accent-danger/80 underline"
-        >
+        <button onClick={onRetry} className="mt-1 text-[13px] text-accent hover:opacity-80">
           Try again
         </button>
       )}

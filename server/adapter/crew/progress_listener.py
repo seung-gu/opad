@@ -13,6 +13,7 @@ from crewai.events.types.task_events import (
     TaskCompletedEvent,
     TaskFailedEvent,
 )
+from crewai.events.types.tool_usage_events import ToolUsageErrorEvent
 
 if TYPE_CHECKING:
     from crewai.events.event_bus import CrewAIEventsBus
@@ -129,4 +130,23 @@ class JobProgressListener(BaseEventListener):
                 message=f"Task failed: {task_label}",
                 error=str(error_msg)[:200],
                 article_id=self.article_id,
+            )
+
+        @crewai_event_bus.on(ToolUsageErrorEvent)
+        def on_tool_error(source, event: ToolUsageErrorEvent):
+            """Surface tool failures, which CrewAI otherwise only reports to the agent.
+
+            A failing search tool leaves the agent with nothing to work with, and
+            the crew fails several tasks later on a schema error that says nothing
+            about the real cause. Job status is deliberately left alone: the agent
+            may still retry and recover.
+            """
+            logger.error(
+                f"[EVENT] Tool failed: {event.tool_name} - Error: {str(event.error)[:300]}",
+                extra={
+                    "tool": event.tool_name,
+                    "agent": event.agent_role,
+                    "attempt": event.run_attempts,
+                    "jobId": self.job_id,
+                },
             )

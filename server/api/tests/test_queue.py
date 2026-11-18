@@ -10,11 +10,15 @@ from datetime import datetime, timezone
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from adapter.queue.redis_job_queue import RedisJobQueueAdapter
+from redis.exceptions import RedisError
+
+from adapter.queue import redis_job_queue as rq
+from adapter.queue.redis_job_queue import RedisJobQueueAdapter, QUEUE_NAME
 from adapter.fake.job_queue import FakeJobQueueAdapter
 from adapter.fake.article_repository import FakeArticleRepository
 from worker.processor import process_job
 from domain.model.article import Article, ArticleInputs, ArticleStatus
+from domain.model.errors import QueueUnavailableError
 from domain.model.job import JobContext
 
 TEST_INPUTS = ArticleInputs(language='German', level='B2', length='500', topic='AI')
@@ -205,6 +209,128 @@ class TestJobStatusFields(unittest.TestCase):
         job_queue.update_status("job-1", "running", 50, "Running")
         status = job_queue.get_status("job-1")
         self.assertEqual(status['created_at'], created_at)
+
+
+class TestDequeueSignalsUnavailability(unittest.TestCase):
+    """dequeue() must distinguish 'queue is empty' from 'queue is unusable'.
+
+    Returning None for both makes the worker treat an outage as idle time.
+    """
+
+    def setUp(self):
+        self.adapter = RedisJobQueueAdapter()
+
+    @patch.object(RedisJobQueueAdapter, '_get_client')
+    def test_raises_when_client_unavailable(self, mock_get_client):
+        """No client at all -> raise, never return None."""
+        mock_get_client.return_value = None
+
+        with self.assertRaises(QueueUnavailableError):
+            self.adapter.dequeue(timeout=1)
+
+    @patch.object(RedisJobQueueAdapter, '_get_client')
+    def test_returns_none_when_queue_empty(self, mock_get_client):
+        """BLPOP timing out is normal idle -> None, not an error."""
+        mock_redis = MagicMock()
+        mock_redis.blpop.return_value = None
+        mock_get_client.return_value = mock_redis
+
+        self.assertIsNone(self.adapter.dequeue(timeout=1))
+
+    @patch.object(RedisJobQueueAdapter, '_get_client')
+    def test_single_blpop_error_is_not_fatal(self, mock_get_client):
+        """One failed BLPOP must not kill the worker — drop the client and retry.
+
+        Reconnects succeed routinely in production while an individual BLPOP
+        fails; treating that as an outage restarted the worker in a loop.
+        """
+        mock_redis = MagicMock()
+        mock_redis.blpop.side_effect = RedisError("connection reset by peer")
+        mock_get_client.return_value = mock_redis
+        self.adapter._client_cache = mock_redis
+
+        self.assertIsNone(self.adapter.dequeue(timeout=1))
+
+        # The dead client is dropped so the next call reconnects.
+        self.assertIsNone(self.adapter._client_cache)
+
+    @patch.object(RedisJobQueueAdapter, '_get_client')
+    def test_raises_once_reconnect_also_fails(self, mock_get_client):
+        """A sustained outage still surfaces: no client -> raise."""
+        broken = MagicMock()
+        broken.blpop.side_effect = RedisError("connection reset by peer")
+        mock_get_client.side_effect = [broken, None]
+
+        self.assertIsNone(self.adapter.dequeue(timeout=1))   # first: transient
+        with self.assertRaises(QueueUnavailableError):        # second: no client
+            self.adapter.dequeue(timeout=1)
+
+    @patch.object(RedisJobQueueAdapter, '_get_client')
+    def test_discards_corrupted_payload(self, mock_get_client):
+        """Malformed job data is a poison message -> drop it, keep serving."""
+        mock_redis = MagicMock()
+        mock_redis.blpop.return_value = (QUEUE_NAME, 'not-json{{{')
+        mock_get_client.return_value = mock_redis
+
+        self.assertIsNone(self.adapter.dequeue(timeout=1))
+
+
+class TestConnectionRetry(unittest.TestCase):
+    """A failed connection must never permanently disable the adapter.
+
+    Regression guard: the adapter used to latch a _connection_failed flag on
+    the first failure and return None forever, turning the worker into a
+    silent zombie that never processed another job.
+    """
+
+    @patch('adapter.queue.redis_job_queue.redis.from_url')
+    def test_retries_after_initial_failure(self, mock_from_url):
+        """First connection fails, second attempt still tries and succeeds."""
+        healthy = MagicMock()
+        mock_from_url.side_effect = [RedisError("connection refused"), healthy]
+
+        adapter = RedisJobQueueAdapter()
+        with patch('adapter.queue.redis_job_queue.REDIS_URL', 'redis://localhost:6379'):
+            self.assertIsNone(adapter._get_client())
+            self.assertIs(adapter._get_client(), healthy)
+
+        self.assertEqual(mock_from_url.call_count, 2)
+
+    def test_socket_timeout_outlasts_the_blocking_read(self):
+        """socket_timeout must exceed DEQUEUE_TIMEOUT.
+
+        BLPOP looks like silence to the socket, so a socket_timeout shorter
+        than the block raises TimeoutError while Redis is still waiting.
+        """
+        from worker.processor import DEQUEUE_TIMEOUT
+
+        self.assertGreater(rq.SOCKET_TIMEOUT, DEQUEUE_TIMEOUT)
+
+    @patch('adapter.queue.redis_job_queue.redis.from_url')
+    def test_socket_timeout_is_passed_to_the_client(self, mock_from_url):
+        """The timeout must actually reach from_url, not just exist as a constant."""
+        with patch('adapter.queue.redis_job_queue.REDIS_URL', 'redis://localhost:6379'):
+            RedisJobQueueAdapter()._get_client()
+
+        self.assertEqual(
+            mock_from_url.call_args.kwargs.get('socket_timeout'), rq.SOCKET_TIMEOUT
+        )
+
+    @patch('adapter.queue.redis_job_queue.redis.from_url')
+    def test_cached_client_is_reused_without_ping(self, mock_from_url):
+        """Once connected, repeated calls must not add a ping round-trip."""
+        healthy = MagicMock()
+        mock_from_url.return_value = healthy
+
+        adapter = RedisJobQueueAdapter()
+        with patch('adapter.queue.redis_job_queue.REDIS_URL', 'redis://localhost:6379'):
+            adapter._get_client()
+            healthy.ping.reset_mock()
+            adapter._get_client()
+            adapter._get_client()
+
+        healthy.ping.assert_not_called()
+        self.assertEqual(mock_from_url.call_count, 1)
 
 
 if __name__ == '__main__':

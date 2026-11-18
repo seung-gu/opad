@@ -36,3 +36,7 @@ class DuplicateArticleError(DuplicateError):
 
 class EnqueueError(DomainError):
     """Failed to enqueue a job to the queue."""
+
+
+class QueueUnavailableError(DomainError):
+    """Failed to connect to the queue."""

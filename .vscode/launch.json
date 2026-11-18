@@ -2,6 +2,21 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Python: Current File",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/server",
+        "MONGO_URL": "mongodb://localhost:27017/",
+        "MONGODB_DATABASE": "opad",
+        "REDIS_URL": "redis://localhost:6379"
+      }
+    },
+    {
       "name": "Python: FastAPI (Debug - No Reload)",
       "type": "debugpy",
       "request": "launch",
@@ -72,14 +87,19 @@
       "type": "node",
       "request": "launch",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:debug"],
+      "runtimeArgs": [
+        "run",
+        "dev:debug"
+      ],
       "cwd": "${workspaceFolder}/client/apps/web",
       "env": {
         "API_BASE_URL": "http://localhost:8001",
         "PORT": "8000"
       },
       "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"],
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
       "serverReadyAction": {
         "pattern": "started server on .+, url: (https?://.+)",
         "uriFormat": "%s",
@@ -98,22 +118,6 @@
         "webpack:///src/*": "${webRoot}/*",
         "webpack:///*": "*"
       }
-    },
-    {
-      "name": "Python: Current File",
-      "type": "debugpy",
-      "request": "launch",
-      "program": "${file}",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      "env": {
-        "PYTHONPATH": "${workspaceFolder}/server",
-        "MONGO_URL": "mongodb://localhost:27017/",
-        "MONGODB_DATABASE": "opad",
-        "REDIS_URL": "redis://localhost:6379"
-      },
-      "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/.env"
     }
   ],
   "compounds": [

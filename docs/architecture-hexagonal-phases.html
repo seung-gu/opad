@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OPAD 헥사고날 구조 · 단계별 변경</title>
+  <style>
+    :root {
+      --bg: #0f0f1a;
+      --text: #e0e0e0;
+      --muted: #6b7894;
+      --flow: #00d2ff;
+      --flow-glow: rgba(0, 210, 255, 0.25);
+      --accent: #e94560;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      background: var(--bg);
+      color: var(--text);
+      overflow: auto;
+    }
+
+    #canvas {
+      position: relative;
+      width: 1320px;
+      height: 936px;
+      margin: 10px auto;
+    }
+
+    svg#bg,
+    svg#edges {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    svg#bg { z-index: 0; }
+    svg#edges { z-index: 1; pointer-events: none; }
+
+    /* ── Node Base ─────────────────────────── */
+    .n {
+      position: absolute;
+      padding: 4px 10px;
+      border-radius: 5px;
+      font-size: 9px;
+      cursor: pointer;
+      transition: all 0.3s;
+      border: 1.5px solid;
+      white-space: nowrap;
+      z-index: 2;
+      user-select: none;
+    }
+    .n:hover { transform: scale(1.06); z-index: 10; }
+
+    /* ── Node Colors (matched to hex zone) ─ */
+    /* Inner hex — amber/orange: rgba(217,119,6) */
+    .n.domain   { background: #2d2215; border-color: #d97706; color: #fcd34d; }
+    /* Middle hex — indigo: rgba(99,102,241) */
+    .n.service  { background: #111833; border-color: #6366f1; color: #a5b4fc; }
+    .n.subsvc   { background: #111833; border-color: #4f46e5; color: #a5b4fc; font-style: italic; font-size: 8px; }
+    .n.port     { background: #111833; border-color: #818cf8; color: #c7d2fe; }
+    /* Outer hex — purple: rgba(124,58,237) */
+    .n.adapter  { background: #1a1030; border-color: #7c3aed; color: #c4b5fd; }
+    .n.driving  { background: #1a1030; border-color: #a855f7; color: #d8b4fe; }
+    .n.external { background: #1a1012; border-color: #b45050; color: #e8a0a0; }
+
+    /* ── Node States ──────────────────────── */
+    .n.highlighted {
+      border-color: var(--flow) !important;
+      box-shadow: 0 0 14px var(--flow-glow);
+      z-index: 10;
+    }
+    .n.trigger {
+      border-color: var(--accent) !important;
+      box-shadow: 0 0 18px rgba(233, 69, 96, 0.4);
+      z-index: 11;
+    }
+    .n.dimmed { opacity: 0.12; }
+
+    /* ── Edges ────────────────────────────── */
+    .edge {
+      fill: none;
+      stroke: var(--flow);
+      stroke-width: 1.8;
+      opacity: 0;
+    }
+    .edge.visible {
+      opacity: 0.7;
+      stroke-dasharray: 6 4;
+      animation: dash 0.8s linear infinite;
+    }
+    .edge.async-edge {
+      stroke: var(--accent);
+      stroke-width: 2.5;
+      stroke-dasharray: 8 6;
+    }
+
+    .elabel {
+      font-size: 8px;
+      fill: var(--flow);
+      opacity: 0;
+      font-family: inherit;
+    }
+    .elabel.visible { opacity: 0.7; }
+    .elabel.async-label { fill: var(--accent); }
+
+    @keyframes dash { to { stroke-dashoffset: -20; } }
+
+    /* ── UI Controls ──────────────────────── */
+    #info {
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 12px;
+      color: var(--muted);
+      z-index: 20;
+      text-align: center;
+    }
+    #info.active { color: var(--flow); }
+
+    #reset-btn {
+      position: absolute;
+      bottom: 12px;
+      right: 20px;
+      padding: 5px 12px;
+      background: transparent;
+      border: 1px solid var(--muted);
+      color: var(--muted);
+      border-radius: 5px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 10px;
+      z-index: 20;
+      opacity: 0;
+    }
+    #reset-btn.visible { opacity: 1; }
+    #reset-btn:hover { border-color: var(--flow); color: var(--flow); }
+
+    /* ── Drag & Drop ─────────────────────── */
+    .n.dragging {
+      opacity: 0.8;
+      z-index: 100 !important;
+      cursor: grabbing;
+      box-shadow: 0 0 20px rgba(0, 210, 255, 0.4);
+    }
+
+    #export-btn,
+    #reset-pos-btn {
+      position: absolute;
+      bottom: 12px;
+      padding: 5px 12px;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.5);
+      color: rgba(99, 102, 241, 0.8);
+      border-radius: 5px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 10px;
+      z-index: 20;
+    }
+    #export-btn { left: 320px; }
+    #reset-pos-btn { left: 460px; }
+    #export-btn:hover,
+    #reset-pos-btn:hover { background: rgba(99, 102, 241, 0.3); }
+
+    #toast {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 8px 20px;
+      background: rgba(5, 150, 105, 0.9);
+      color: #fff;
+      border-radius: 5px;
+      font-family: inherit;
+      font-size: 11px;
+      z-index: 999;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ── Phase view ───────────────────── */
+    body { padding: 16px 0 40px; }
+    #phasebar { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin: 0 auto 6px; }
+    #phasebar button { background:transparent; border:1px solid #2a3350; color:#9aa6c4; padding:7px 14px; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer; }
+    #phasebar button:hover { border-color:#6366f1; color:#c7d2fe; }
+    #phasebar button.on { background:#1b2140; border-color:#818cf8; color:#e0e7ff; }
+    #stage { margin: 0 auto; transform-origin: top left; }
+    #panel { max-width: 1100px; margin: 4px auto 0; padding: 14px 18px; border:1px solid #232a44; border-radius:8px; background:#12152a; }
+    #panel h2 { font-size:14px; color:#e0e7ff; margin-bottom:8px; font-weight:600; }
+    #panel ul { list-style:none; display:grid; gap:5px; }
+    #panel li { font-size:12px; line-height:1.55; color:#c3c9dc; }
+    #panel .tag { display:inline-block; min-width:64px; font-size:10px; padding:1px 6px; margin-right:8px; border-radius:3px; text-align:center; }
+    .tag.new { background:#0f2a20; color:#6ee7b7; border:1px solid #34d399; }
+    .tag.changed { background:#2a250b; color:#fde047; border:1px dashed #facc15; }
+    .tag.removed { background:#2a1012; color:#fca5a5; border:1px dashed #ef4444; }
+    .tag.keep { background:#151a30; color:#9aa6c4; border:1px solid #2a3350; }
+    .n.st-hidden { display:none; }
+    .n.st-new { border-color:#34d399 !important; background:#0f2a20 !important; color:#a7f3d0 !important; box-shadow:0 0 10px rgba(52,211,153,.35); }
+    .n.st-added { border-color:#34d399 !important; }
+    .n.st-changed { border-style:dashed !important; border-color:#facc15 !important; box-shadow:0 0 10px rgba(250,204,21,.3); }
+    .n.st-removed { border-style:dashed !important; border-color:#ef4444 !important; text-decoration:line-through; opacity:.5; }
+    .n[data-badge]::after { content: attr(data-badge); position:absolute; top:-9px; right:-6px; font-size:6.5px; font-style:normal; letter-spacing:.5px; padding:0 3px; border-radius:3px; background:#0f0f1a; border:1px solid currentColor; text-decoration:none; }
+    .n.st-new[data-badge]::after { color:#6ee7b7; }
+    .n.st-changed[data-badge]::after { color:#fde047; }
+    .n.st-removed[data-badge]::after { color:#fca5a5; }
+  </style>
+</head>
+<body>
+<div id="phasebar"></div>
+<div id="stagewrap"><div id="stage">
+<div id="canvas">
+
+  <!--
+    Regular hexagons (정육각형), pointy-top, center (530, 385):
+    r=340  hw=294  Outer:  530,45   824,215  824,555  530,725  236,555  236,215
+    r=190  hw=165  Middle: 530,195  695,290  695,480  530,575  365,480  365,290
+    r=75   hw=65   Inner:  530,310  595,348  595,423  530,460  465,423  465,348
+  -->
+
+  <!-- ════════════════ Background SVG ════════════════ -->
+  <svg id="bg" viewBox="0 0 1320 936">
+    <polygon points="636,54 989,258 989,666 636,870 283,666 283,258" fill="rgba(124,58,237,.03)" stroke="rgba(124,58,237,.22)" stroke-width="2"/>
+    <polygon points="636,234 833,348 833,576 636,690 439,576 439,348" fill="rgba(99,102,241,.05)" stroke="rgba(99,102,241,.18)" stroke-width="1.5"/>
+    <polygon points="636,372 714,417 714,507 636,552 558,507 558,417" fill="rgba(217,119,6,.06)" stroke="rgba(217,119,6,.2)" stroke-width="1.5"/>
+    <text x="636" y="46" text-anchor="middle" letter-spacing="2" fill="rgba(124,58,237,.4)" font-size="10" font-weight="700" font-family="inherit">INFRASTRUCTURE</text>
+    <text x="636" y="226" text-anchor="middle" letter-spacing="1" fill="rgba(99,102,241,.35)" font-size="9" font-weight="600" font-family="inherit">APPLICATION</text>
+    <text x="636" y="364" text-anchor="middle" fill="rgba(217,119,6,.4)" font-size="8" font-weight="600" font-family="inherit">DOMAIN</text>
+    <text x="250" y="462" text-anchor="middle" transform="rotate(-90,250,462)" fill="rgba(96,165,250,.35)" font-size="10" font-weight="700" font-family="inherit">DRIVING</text>
+    <text x="1022" y="462" text-anchor="middle" transform="rotate(90,1022,462)" fill="rgba(168,85,247,.35)" font-size="10" font-weight="700" font-family="inherit">DRIVEN</text>
+    <text x="270" y="262" fill="rgba(96,165,250,.4)" font-size="8" font-family="inherit" font-weight="600">HTTP · FastAPI :8001</text>
+    <text x="382" y="726" fill="rgba(96,165,250,.4)" font-size="8" font-family="inherit" font-weight="600">Queue Consumer</text>
+    <rect x="15" y="872" width="560" height="56" rx="5" fill="rgba(15,25,50,.85)" stroke="rgba(30,58,95,.5)"/>
+    <rect x="25" y="880" width="9" height="9" rx="2" fill="#2d2215" stroke="#d97706" stroke-width="1.5"/>
+    <text x="38" y="888" fill="#fcd34d" font-size="7.5" font-family="inherit">Domain</text>
+    <rect x="110" y="880" width="9" height="9" rx="2" fill="#1a1030" stroke="#a855f7" stroke-width="1.5"/>
+    <text x="123" y="888" fill="#d8b4fe" font-size="7.5" font-family="inherit">Driving Adapter</text>
+    <rect x="215" y="880" width="9" height="9" rx="2" fill="#111833" stroke="#818cf8" stroke-width="1.5"/>
+    <text x="228" y="888" fill="#c7d2fe" font-size="7.5" font-family="inherit">Port</text>
+    <rect x="25" y="895" width="9" height="9" rx="2" fill="#111833" stroke="#6366f1" stroke-width="1.5"/>
+    <text x="38" y="903" fill="#a5b4fc" font-size="7.5" font-family="inherit">Service</text>
+    <rect x="110" y="895" width="9" height="9" rx="2" fill="#1a1030" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="123" y="903" fill="#c4b5fd" font-size="7.5" font-family="inherit">Driven Adapter</text>
+    <rect x="215" y="895" width="9" height="9" rx="2" fill="#1a1012" stroke="#b45050" stroke-width="1.5"/>
+    <text x="228" y="903" fill="#e8a0a0" font-size="7.5" font-family="inherit">External</text>
+    <rect x="320" y="880" width="9" height="9" rx="2" fill="#0f2a20" stroke="#34d399" stroke-width="1.5"/>
+    <text x="333" y="888" fill="#6ee7b7" font-size="7.5" font-family="inherit">NEW (이 단계에서 추가)</text>
+    <rect x="320" y="895" width="9" height="9" rx="2" fill="none" stroke="#facc15" stroke-width="1.5" stroke-dasharray="2 1.5"/>
+    <text x="333" y="903" fill="#fde047" font-size="7.5" font-family="inherit">CHANGED (이 단계에서 수정)</text>
+    <rect x="450" y="880" width="9" height="9" rx="2" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="2 1.5"/>
+    <text x="463" y="888" fill="#fca5a5" font-size="7.5" font-family="inherit">REMOVED</text>
+    <rect x="450" y="895" width="9" height="9" rx="2" fill="none" stroke="#34d399" stroke-width="1.5"/>
+    <text x="463" y="903" fill="#6ee7b7" font-size="7.5" font-family="inherit">앞 단계에서 추가</text>
+    <text x="25" y="920" fill="var(--muted)" font-size="6.5" font-family="inherit" font-style="italic">* 노드를 클릭하면 그 단계 기준의 흐름을 따라가요 · ESC로 초기화</text>
+  </svg>
+
+  <!-- ════════════════ Edge SVG (dynamic) ════════════════ -->
+  <svg id="edges" viewBox="0 0 1320 936"></svg>
+
+  <!-- ════════════════ Info Bar ════════════════ -->
+  <div id="info">Click any module to trace its flow — ESC to reset</div>
+
+  <!-- ════════════════ EXTERNAL (outside outer hex) ════════════════ -->
+  <div class="n external" data-id="client" style="left:108px; top:250px">Client (Browser)</div>
+  <div class="n external" data-id="x_freeapi" style="left:828px; top:112px">Free Dict API</div>
+  <div class="n external" data-id="x_openai" style="left:966px; top:193px">OpenAI API</div>
+  <div class="n external" data-id="x_stanza" style="left:904px; top:155px">Stanza NLP</div>
+  <div class="n external" data-id="x_mongo" style="left:1043px; top:313px">MongoDB</div>
+  <div class="n external" data-id="x_crewai" style="left:1045px; top:564px">CrewAI</div>
+  <div class="n external" data-id="x_redis" style="left:882px; top:764px">Redis</div>
+
+  <!-- ════════════════ DRIVING (left infra ring) ════════════════ -->
+  <div class="n driving" data-id="r_dict" style="left:265px; top:287px">dictionary.py</div>
+  <div class="n driving" data-id="r_vocab" style="left:264px; top:324px">vocabulary.py</div>
+  <div class="n driving" data-id="r_articles" style="left:264px; top:360px">articles.py</div>
+  <div class="n driving" data-id="r_jobs" style="left:270px; top:498px">jobs.py</div>
+  <div class="n driving" data-id="r_usage" style="left:271px; top:608px">usage.py</div>
+  <div class="n driving" data-id="r_auth" style="left:270px; top:576px">auth.py</div>
+  <div class="n driving" data-id="r_health" style="left:268px; top:527px">health.py</div>
+  <div class="n driving" data-id="processor" style="left:400px; top:733px">processor.py</div>
+
+  <!-- ════════════════ SERVICES (left app ring) ════════════════ -->
+  <div class="n service" data-id="s_dict" style="left:451px; top:301px">dictionary_service</div>
+  <div class="n subsvc" data-id="s_lemma" style="left:438px; top:344px">lemma_extraction</div>
+  <div class="n subsvc" data-id="s_sense" style="left:437px; top:374px">sense_selection</div>
+  <div class="n service" data-id="s_submit" style="left:445px; top:568px">article_submission_svc</div>
+  <div class="n service" data-id="s_auth" style="left:421px; top:492px">auth_service</div>
+  <div class="n service" data-id="s_token" style="left:422px; top:518px">token_usage_service</div>
+  <div class="n service" data-id="s_gen" style="left:443px; top:596px">article_generation_svc</div>
+
+  <!-- ════════════════ DOMAIN (inner hex) ════════════════ -->
+  <div class="n domain" data-id="d_article" style="left:550px; top:421px">Article</div>
+  <div class="n domain" data-id="d_vocab" style="left:634px; top:420px">Vocabulary</div>
+  <div class="n domain" data-id="d_user" style="left:548px; top:451px">User</div>
+  <div class="n domain" data-id="d_token" style="left:635px; top:450px">TokenUsage</div>
+  <div class="n domain" data-id="d_cefr" style="left:547px; top:481px">CEFRLevel</div>
+  <div class="n domain" data-id="d_job" style="left:635px; top:481px">JobContext</div>
+  <div class="n domain" data-id="d_lang" style="left:594px; top:391px">Language</div>
+  <div class="n domain" data-id="d_errors" style="left:628px; top:520px">Errors</div>
+
+  <!-- ════════════════ PORTS (right app ring) ════════════════ -->
+  <div class="n port" data-id="p_dict" style="left:616px; top:242px">DictionaryPort</div>
+  <div class="n port" data-id="p_llm" style="left:697px; top:302px">LLMPort</div>
+  <div class="n port" data-id="p_nlp" style="left:664px; top:274px">NLPPort</div>
+  <div class="n port" data-id="p_vocab_repo" style="left:680px; top:379px">VocabularyRepository</div>
+  <div class="n port" data-id="p_article" style="left:696px; top:517px">ArticleRepository</div>
+  <div class="n port" data-id="p_token" style="left:680px; top:346px">TokenUsageRepository</div>
+  <div class="n port" data-id="p_user" style="left:684px; top:589px">UserRepository</div>
+  <div class="n port" data-id="p_artgen" style="left:678px; top:550px">ArticleGeneratorPort</div>
+  <div class="n port" data-id="p_queue" style="left:619px; top:641px">JobQueuePort</div>
+
+  <!-- ════════════════ DRIVEN ADAPTERS (right infra ring) ════════════════ -->
+  <div class="n adapter" data-id="a_freeapi" style="left:618px; top:115px">FreeDictionaryAdapter</div>
+  <div class="n adapter" data-id="a_litellm" style="left:797px; top:199px">LiteLLMAdapter</div>
+  <div class="n adapter" data-id="a_stanza" style="left:731px; top:157px">StanzaAdapter</div>
+  <div class="n adapter" data-id="a_mongo_vocab" style="left:874px; top:349px">MongoVocabRepo</div>
+  <div class="n adapter" data-id="a_mongo_article" style="left:862px; top:382px">MongoArticleRepo</div>
+  <div class="n adapter" data-id="a_mongo_token" style="left:874px; top:317px">MongoTokenRepo</div>
+  <div class="n adapter" data-id="a_mongo_user" style="left:878px; top:282px">MongoUserRepo</div>
+  <div class="n adapter" data-id="a_crewai" style="left:869px; top:564px">CrewAIGenerator</div>
+  <div class="n adapter" data-id="a_redis" style="left:786px; top:710px">RedisJobQueue</div>
+
+
+  <!-- ════════════════ NEW (phase view) ════════════════ -->
+  <div class="n domain" data-id="d_stage" style="left:572px; top:520px">Stage</div>
+  <div class="n service" data-id="s_workflow" style="left:400px; top:408px">workflow</div>
+  <div class="n subsvc" data-id="svc_find" style="left:400px; top:434px">find</div>
+  <div class="n subsvc" data-id="svc_pick" style="left:450px; top:434px">pick</div>
+  <div class="n subsvc" data-id="svc_rewrite" style="left:400px; top:460px">rewrite</div>
+  <div class="n subsvc" data-id="svc_review" style="left:465px; top:460px">review</div>
+  <div class="n port" data-id="p_finder" style="left:720px; top:412px">FinderPort</div>
+  <div class="n port" data-id="p_picker" style="left:720px; top:440px">PickerPort</div>
+  <div class="n port" data-id="p_rewriter" style="left:720px; top:468px">RewriterPort</div>
+  <div class="n port" data-id="p_reviewer" style="left:720px; top:496px">ReviewerPort</div>
+  <div class="n adapter" data-id="a_finder" style="left:870px; top:412px">FinderAgent</div>
+  <div class="n adapter" data-id="a_picker" style="left:870px; top:440px">PickerAgent</div>
+  <div class="n adapter" data-id="a_rewriter" style="left:870px; top:468px">RewriterAgent</div>
+  <div class="n adapter" data-id="a_reviewer" style="left:870px; top:496px">ReviewerAgent</div>
+  <div class="n external" data-id="x_serper" style="left:1050px; top:412px">Serper API</div>
+  <div class="n driving" data-id="r_mcp" style="left:268px; top:420px">mcp/server.py</div>
+  <div class="n external" data-id="x_claude" style="left:140px; top:420px">Claude (MCP)</div>
+  <div class="n external" data-id="x_emcp" style="left:190px; top:324px">emcp</div>
+  <div class="n service" data-id="s_publish" style="left:437px; top:544px">publish_svc</div>
+  <div class="n service" data-id="s_vocabq" style="left:528px; top:544px">vocab_query</div>
+  <div class="n service" data-id="s_extract" style="left:470px; top:624px">extract_service</div>
+  <div class="n port" data-id="p_extract" style="left:714px; top:617px">TextExtractorPort</div>
+  <div class="n adapter" data-id="a_vision" style="left:850px; top:617px">VisionAdapter</div>
+
+  <!-- ════════════════ Buttons ════════════════ -->
+  <button id="reset-btn" onclick="reset()">ESC Reset</button>
+
+</div>
+</div></div>
+<div id="panel"><h2 id="ptitle"></h2><ul id="plist"></ul></div>
+<div id="toast">Positions copied to clipboard!</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+// Flow Definitions — each node maps to its data-flow path
+// ════════════════════════════════════════════════════════════
+
+const FLOWS = {
+
+  // ── Client ──
+  client: {
+    title: 'Client (Browser) — HTTP requests to API routes',
+    steps: [
+      ['client', 'r_dict',     '/dictionary'],
+      ['client', 'r_vocab',    '/vocabulary'],
+      ['client', 'r_articles', '/articles'],
+      ['client', 'r_jobs',     '/jobs'],
+      ['client', 'r_usage',    '/usage'],
+      ['client', 'r_auth',     '/auth'],
+      ['client', 'r_health',   '/health'],
+    ],
+    domains: [],
+  },
+
+  // ── Route: Dictionary ──
+  r_dict: {
+    title: 'Dictionary Lookup — 3-step hybrid pipeline',
+    steps: [
+      ['r_dict',  's_dict',        'search()'],
+      ['s_dict',  's_lemma',       'Step 1'],
+      ['s_lemma', 'p_nlp',        'extract()'],
+      ['s_lemma', 'p_llm',        'CEFR / reduced'],
+      ['s_dict',  'p_dict',       'Step 2: fetch()'],
+      ['s_dict',  's_sense',      'Step 3'],
+      ['s_sense', 'p_dict',       'get_sense()'],
+      ['s_sense', 'p_llm',        'X.Y.Z'],
+      ['s_dict',  'p_token',      'from_llm_result() + save()'],
+      ['p_dict',  'a_freeapi',    ''],
+      ['p_llm',   'a_litellm',    ''],
+      ['p_nlp',   'a_stanza',     ''],
+      ['p_token', 'a_mongo_token', ''],
+      ['a_freeapi',     'x_freeapi', ''],
+      ['a_litellm',     'x_openai',  ''],
+      ['a_stanza',      'x_stanza',  ''],
+      ['a_mongo_token', 'x_mongo',   ''],
+    ],
+    domains: ['d_vocab', 'd_token', 'd_cefr', 'd_lang'],
+  },
+
+  // ── Route: Vocabulary ──
+  r_vocab: {
+    title: 'Vocabulary — CRUD + aggregate queries',
+    steps: [
+      ['r_vocab',      'p_vocab_repo',  'save()/delete()/count_by_lemma()'],
+      ['p_vocab_repo', 'a_mongo_vocab', ''],
+      ['a_mongo_vocab', 'x_mongo',      ''],
+    ],
+    domains: ['d_vocab'],
+  },
+
+  // ── Route: Articles ──
+  r_articles: {
+    title: 'Article Submission — create → enqueue → (async) Worker',
+    steps: [
+      ['r_articles', 's_submit',        'submit_generation()'],
+      ['s_submit',   'p_article',       'save()'],
+      ['s_submit',   'p_queue',         'enqueue()'],
+      ['p_article',  'a_mongo_article', ''],
+      ['p_queue',    'a_redis',         'produce (enqueue)'],
+      ['a_mongo_article', 'x_mongo',    ''],
+      ['a_redis',         'x_redis',    ''],
+    ],
+    domains: ['d_article', 'd_errors'],
+    async_hint: { from: 'a_redis', to: 'processor', label: 'consume (dequeue)' },
+  },
+
+  // ── Route: Jobs ──
+  r_jobs: {
+    title: 'Job Status — poll Redis',
+    steps: [
+      ['r_jobs',  'p_queue', 'get_status()'],
+      ['p_queue', 'a_redis', 'GET'],
+      ['a_redis', 'x_redis', ''],
+    ],
+    domains: ['d_job'],
+  },
+
+  // ── Route: Usage ──
+  r_usage: {
+    title: 'Token Usage — summary & breakdown',
+    steps: [
+      ['r_usage', 'p_token',       'get_user_summary()'],
+      ['p_token', 'a_mongo_token', ''],
+      ['a_mongo_token', 'x_mongo', ''],
+    ],
+    domains: ['d_token'],
+  },
+
+  // ── Route: Auth ──
+  r_auth: {
+    title: 'Authentication — register / login',
+    steps: [
+      ['r_auth',  's_auth',       'register()/login()'],
+      ['s_auth',  'p_user',       'create()/get_by_email()'],
+      ['p_user',  'a_mongo_user', ''],
+      ['a_mongo_user', 'x_mongo', ''],
+    ],
+    domains: ['d_user'],
+  },
+
+  // ── Route: Health ──
+  r_health: {
+    title: 'Health Check — Redis ping',
+    steps: [
+      ['r_health', 'p_queue', 'ping()'],
+      ['p_queue',  'a_redis', 'PING'],
+      ['a_redis',  'x_redis', ''],
+    ],
+    domains: [],
+  },
+
+  // ── Worker: Processor ──
+  processor: {
+    title: 'Worker — dequeue → CrewAI (2-5 min) → save',
+    steps: [
+      ['processor', 'p_queue',         'dequeue()'],
+      ['p_queue',   'a_redis',         'BLPOP'],
+      ['a_redis',   'x_redis',         ''],
+      ['processor', 's_gen',           'generate_article()'],
+      ['s_gen',     'p_vocab_repo',    'find_lemmas()'],
+      ['p_vocab_repo', 'a_mongo_vocab', ''],
+      ['a_mongo_vocab', 'x_mongo',      ''],
+      ['s_gen',     'p_artgen',        'generate()'],
+      ['p_artgen',  'a_crewai',        '→ [(name, LLMCallResult)]'],
+      ['a_crewai',  'x_crewai',        'run() + cost_per_token()'],
+      ['s_gen',     'p_article',       'save()'],
+      ['p_article', 'a_mongo_article', ''],
+      ['a_mongo_article', 'x_mongo',   ''],
+      ['s_gen',     's_token',         'track_agent_usage()'],
+      ['s_token',   'p_token',         'from_llm_result() + save()'],
+      ['p_token',   'a_mongo_token',   ''],
+      ['a_mongo_token', 'x_mongo',     ''],
+    ],
+    domains: ['d_article', 'd_job', 'd_cefr', 'd_token'],
+  },
+
+  // ── Service: Dictionary ──
+  s_dict: {
+    title: 'Dictionary Service — orchestrates pipeline + fallback',
+    steps: [
+      ['s_dict',  's_lemma', 'Step 1'],
+      ['s_dict',  's_sense', 'Step 3'],
+      ['s_dict',  'p_dict',  'Step 2: fetch()'],
+      ['s_dict',  'p_llm',   'fallback'],
+      ['s_dict',  'p_token', 'from_llm_result() + save()'],
+      ['s_lemma', 'p_nlp',   'extract()'],
+      ['s_lemma', 'p_llm',   'reduced'],
+      ['s_sense', 'p_dict',  'get_sense()'],
+      ['s_sense', 'p_llm',   'X.Y.Z'],
+    ],
+    domains: ['d_vocab', 'd_cefr', 'd_lang', 'd_token'],
+  },
+
+  // ── Service: Submission ──
+  s_submit: {
+    title: 'Submission Service — duplicate check → create → enqueue',
+    steps: [
+      ['s_submit', 'p_article', 'save()/find_duplicate()'],
+      ['s_submit', 'p_queue',   'enqueue()/update_status()'],
+    ],
+    domains: ['d_article', 'd_errors'],
+  },
+
+  // ── Service: Generation ──
+  s_gen: {
+    title: 'Generation Service — vocab → generate → save → track',
+    steps: [
+      ['s_gen', 'p_vocab_repo', 'find_lemmas()'],
+      ['s_gen', 'p_artgen',     'generate()'],
+      ['s_gen', 'p_article',    'save()'],
+      ['s_gen', 's_token',      'track_agent_usage()'],
+    ],
+    domains: ['d_article', 'd_cefr'],
+  },
+
+  // ── Service: Token Usage ──
+  s_token: {
+    title: 'Token Service — track_agent_usage: (name, LLMCallResult) → from_llm_result() → save()',
+    steps: [
+      ['s_token', 'p_token', 'from_llm_result() + save()'],
+    ],
+    domains: ['d_token'],
+  },
+};
+
+// ── NODE_DOMAINS: per-node domain overrides for reverse flow ──
+// Prevents reverse flow from merging domains of ALL flows a node appears in.
+// Nodes NOT listed here fall back to the existing union-of-flows logic.
+const NODE_DOMAINS = {
+  // Ports
+  p_token:      ['d_token'],
+  p_vocab_repo: ['d_vocab'],
+  p_article:    ['d_article', 'd_errors'],
+  p_queue:      ['d_job'],
+  p_artgen:     ['d_article', 'd_cefr'],
+  p_nlp:        ['d_vocab', 'd_lang'],
+  p_dict:       ['d_vocab', 'd_lang'],
+  p_llm:        ['d_vocab', 'd_cefr', 'd_lang'],
+  p_user:       ['d_user'],
+  // Adapters
+  a_mongo_token:   ['d_token'],
+  a_mongo_vocab:   ['d_vocab'],
+  a_mongo_article: ['d_article'],
+  a_mongo_user:    ['d_user'],
+  a_redis:         ['d_job'],
+  a_freeapi:       ['d_vocab', 'd_lang'],
+  a_litellm:       [],
+  a_stanza:        ['d_vocab', 'd_lang'],
+  a_crewai:        ['d_article', 'd_cefr', 'd_token'],
+};
+
+// ════════════════════════════════════════════════════════════
+// Interactive Logic
+// ════════════════════════════════════════════════════════════
+
+const allNodes = document.querySelectorAll('.n');
+const svg      = document.getElementById('edges');
+const info     = document.getElementById('info');
+const resetBtn = document.getElementById('reset-btn');
+
+let active = null;
+
+function el(id) {
+  return document.querySelector(`.n[data-id="${id}"]`);
+}
+
+function center(id) {
+  const n = el(id);
+  if (!n) return null;
+  const c = document.getElementById('canvas').getBoundingClientRect();
+  const r = n.getBoundingClientRect();
+  const s = c.width / document.getElementById('canvas').offsetWidth || 1;
+  return {
+    x: (r.left - c.left + r.width / 2) / s,
+    y: (r.top  - c.top  + r.height / 2) / s,
+  };
+}
+
+function drawLine(a, b, label, delay, isAsync) {
+  const p1 = center(a);
+  const p2 = center(b);
+  if (!p1 || !p2) return;
+
+  const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  l.setAttribute('x1', p1.x);
+  l.setAttribute('y1', p1.y);
+  l.setAttribute('x2', p2.x);
+  l.setAttribute('y2', p2.y);
+  l.setAttribute('class', 'edge' + (isAsync ? ' async-edge' : ''));
+  svg.appendChild(l);
+
+  if (label) {
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('x', (p1.x + p2.x) / 2);
+    t.setAttribute('y', (p1.y + p2.y) / 2 - 6);
+    t.setAttribute('text-anchor', 'middle');
+    t.setAttribute('class', 'elabel' + (isAsync ? ' async-label' : ''));
+    t.textContent = label;
+    svg.appendChild(t);
+  }
+
+  setTimeout(() => {
+    l.classList.add('visible');
+    if (label) {
+      const ls = svg.querySelectorAll('text.elabel');
+      ls[ls.length - 1].classList.add('visible');
+    }
+  }, delay);
+}
+
+function drawLabel(a, b, label, delay) {
+  const p1 = center(a);
+  const p2 = center(b);
+  if (!p1 || !p2 || !label) return;
+
+  const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  t.setAttribute('x', (p1.x + p2.x) / 2);
+  t.setAttribute('y', (p1.y + p2.y) / 2 + 6);
+  t.setAttribute('text-anchor', 'middle');
+  t.setAttribute('class', 'elabel');
+  t.textContent = label;
+  svg.appendChild(t);
+
+  setTimeout(() => t.classList.add('visible'), delay);
+}
+
+function show(flow, triggerId) {
+  reset();
+  active = true;
+
+  // Collect involved node IDs
+  const inv = new Set();
+  if (triggerId) inv.add(triggerId);
+  flow.steps.forEach(s => { inv.add(s[0]); inv.add(s[1]); });
+  if (flow.domains) flow.domains.forEach(d => inv.add(d));
+  if (flow.async_hint) {
+    inv.add(flow.async_hint.from);
+    inv.add(flow.async_hint.to);
+  }
+
+  // Highlight / dim nodes
+  allNodes.forEach(n => {
+    const id = n.dataset.id;
+    if (inv.has(id)) {
+      n.classList.add('highlighted');
+      n.classList.remove('dimmed');
+    } else {
+      n.classList.add('dimmed');
+      n.classList.remove('highlighted');
+    }
+  });
+
+  // Mark trigger node
+  if (triggerId) {
+    const t = el(triggerId);
+    if (t) {
+      t.classList.remove('highlighted');
+      t.classList.add('trigger');
+    }
+  }
+
+  // Draw edges with sequential animation (deduplicate same-path edges)
+  const drawn = new Set();
+  let delay = 0;
+  flow.steps.forEach((s) => {
+    const key = s[0] + '→' + s[1];
+    const label = drawn.has(key) ? '' : s[2];
+    if (!drawn.has(key)) {
+      drawLine(s[0], s[1], label, delay * 100, false);
+      drawn.add(key);
+    } else if (s[2]) {
+      // Duplicate path but has a new label — draw label only
+      drawLabel(s[0], s[1], s[2], delay * 100);
+    }
+    delay++;
+  });
+
+  // Async hint edge
+  if (flow.async_hint) {
+    const h = flow.async_hint;
+    drawLine(h.from, h.to, h.label, flow.steps.length * 100, true);
+  }
+
+  info.textContent = flow.title;
+  info.classList.add('active');
+  resetBtn.classList.add('visible');
+}
+
+function reset() {
+  active = null;
+  allNodes.forEach(n => n.classList.remove('highlighted', 'dimmed', 'trigger'));
+  svg.innerHTML = '';
+  info.textContent = 'Click any module to trace its flow — ESC to reset';
+  info.classList.remove('active');
+  resetBtn.classList.remove('visible');
+}
+
+// Build reverse lookup — for nodes without their own FLOW
+function buildReverseFlow(nodeId) {
+  const steps = [];
+  for (const [, flow] of Object.entries(FLOWS)) {
+    for (const step of flow.steps) {
+      if (step[0] === nodeId || step[1] === nodeId) {
+        steps.push(step);
+      }
+    }
+  }
+  if (steps.length === 0) return null;
+
+  let domains;
+  if (NODE_DOMAINS[nodeId]) {
+    domains = NODE_DOMAINS[nodeId];
+  } else {
+    const domainSet = new Set();
+    for (const [, flow] of Object.entries(FLOWS)) {
+      if (flow.domains && flow.steps.some(s => s[0] === nodeId || s[1] === nodeId)) {
+        flow.domains.forEach(d => domainSet.add(d));
+      }
+    }
+    domains = [...domainSet];
+  }
+
+  const label = el(nodeId)?.textContent || nodeId;
+  return { title: `${label} — all connections`, steps, domains };
+}
+
+// ── Event Listeners ──
+allNodes.forEach(n => {
+  n.addEventListener('click', e => {
+    e.stopPropagation();
+    const id = n.dataset.id;
+    const flow = FLOWS[id] || buildReverseFlow(id);
+    if (flow) show(flow, id);
+  });
+});
+
+document.addEventListener('click', () => { if (active) reset(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') reset(); });
+
+// ════════════════════════════════════════════════════════════
+// Drag & Drop + localStorage Persistence
+// ════════════════════════════════════════════════════════════
+
+const STORAGE_KEY = 'opad-hex-phases-positions';
+
+// Restore saved positions on load
+function restorePositions() { try {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return;
+  try {
+    const positions = JSON.parse(saved);
+    allNodes.forEach(n => {
+      const id = n.dataset.id;
+      if (positions[id]) {
+        n.style.left = positions[id].left;
+        n.style.top  = positions[id].top;
+      }
+    });
+  } catch (e) { /* ignore corrupt data */ }
+} catch (e) {} }
+
+// Save all positions to localStorage
+function savePositions() {
+  const positions = {};
+  allNodes.forEach(n => {
+    positions[n.dataset.id] = {
+      left: n.style.left,
+      top:  n.style.top,
+    };
+  });
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(positions)); } catch (e) {}
+}
+
+try { restorePositions(); } catch (e) {}
+
+const DRAG_DELAY = 500; // ms — long-press threshold
+
+let dragTarget = null;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+let dragMoved = false;
+let dragReady = false; // true after long-press threshold
+let dragTimer = null;
+let pendingNode = null;
+
+allNodes.forEach(n => {
+  n.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+
+    pendingNode = n;
+    dragMoved = false;
+    dragReady = false;
+
+    const rect = n.getBoundingClientRect();
+    dragOffsetX = e.clientX - rect.left;
+    dragOffsetY = e.clientY - rect.top;
+
+    // Start drag only after holding for DRAG_DELAY ms
+    dragTimer = setTimeout(() => {
+      dragTarget = pendingNode;
+      dragReady = true;
+      dragTarget.classList.add('dragging');
+    }, DRAG_DELAY);
+  });
+});
+
+document.addEventListener('mousemove', e => {
+  if (!dragReady || !dragTarget) return;
+  dragMoved = true;
+
+  const canvasRect = document.getElementById('canvas').getBoundingClientRect();
+  const newLeft = e.clientX - canvasRect.left - dragOffsetX;
+  const newTop  = e.clientY - canvasRect.top  - dragOffsetY;
+
+  dragTarget.style.left = Math.round(newLeft) + 'px';
+  dragTarget.style.top  = Math.round(newTop)  + 'px';
+});
+
+document.addEventListener('mouseup', () => {
+  // Cancel pending long-press if released early
+  if (dragTimer) {
+    clearTimeout(dragTimer);
+    dragTimer = null;
+  }
+
+  if (dragTarget) {
+    dragTarget.classList.remove('dragging');
+
+    if (dragMoved) {
+      savePositions();
+      const suppress = ev => { ev.stopPropagation(); };
+      dragTarget.addEventListener('click', suppress, { capture: true, once: true });
+    }
+  }
+
+  dragTarget = null;
+  pendingNode = null;
+  dragReady = false;
+});
+
+// ════════════════════════════════════════════════════════════
+// Export Positions — copy current node positions to clipboard
+// ════════════════════════════════════════════════════════════
+
+function resetPositions() {
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+  location.reload();
+}
+
+function exportPositions() {
+  const lines = [];
+  const groups = {
+    driving:  '<!-- DRIVING -->',
+    service:  '<!-- SERVICES -->',
+    subsvc:   '<!-- SERVICES -->',
+    domain:   '<!-- DOMAIN -->',
+    port:     '<!-- PORTS -->',
+    adapter:  '<!-- ADAPTERS -->',
+    external: '<!-- EXTERNAL -->',
+  };
+
+  // Group nodes by type
+  const grouped = {};
+  allNodes.forEach(n => {
+    const cls = [...n.classList].find(c => groups[c]);
+    const group = groups[cls] || '<!-- OTHER -->';
+    if (!grouped[group]) grouped[group] = [];
+    grouped[group].push(n);
+  });
+
+  for (const [header, nodes] of Object.entries(grouped)) {
+    lines.push(header);
+    nodes.forEach(n => {
+      const id   = n.dataset.id;
+      const cls  = [...n.classList].find(c => c !== 'n' && c !== 'dragging' && c !== 'highlighted' && c !== 'dimmed' && c !== 'trigger');
+      const left = n.style.left;
+      const top  = n.style.top;
+      const text = n.textContent;
+      lines.push(`  <div class="n ${cls}" data-id="${id}" style="left:${left}; top:${top}">${text}</div>`);
+    });
+    lines.push('');
+  }
+
+  const output = lines.join('\n');
+  navigator.clipboard.writeText(output).then(() => {
+    const toast = document.getElementById('toast');
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2000);
+  });
+}
+// ════════════════════════════════════════════════════════════
+// Phase view — how the hexagon changes, step by step
+// ════════════════════════════════════════════════════════════
+
+const NEW_AT = {
+  d_stage: 1, s_workflow: 1, svc_find: 1, svc_pick: 1, svc_rewrite: 1, svc_review: 1,
+  p_finder: 1, p_picker: 1, p_rewriter: 1, p_reviewer: 1,
+  a_finder: 1, a_picker: 1, a_rewriter: 1, a_reviewer: 1, x_serper: 1,
+  r_mcp: 2, x_claude: 2, x_emcp: 2, s_publish: 2, s_vocabq: 2,
+  s_extract: 3, p_extract: 3, a_vision: 3,
+};
+const CHANGED_AT = {
+  d_article: [1, 2], d_job: [1], s_submit: [1], r_articles: [1, 3], processor: [1, 4],
+  r_vocab: [2], s_auth: [2], p_user: [2], d_user: [2],
+};
+const REMOVED_AT = { p_artgen: 4, a_crewai: 4, x_crewai: 4, s_gen: 4 };
+
+const PHASES = [
+  {
+    label: '0 · 현재',
+    title: '현재 구조 (main)',
+    items: [
+      ['keep', '입구는 웹(REST)과 워커 둘이고, 기사 생성은 processor → article_generation_svc → ArticleGeneratorPort → CrewAIGenerator 한 덩어리로 돌아요.'],
+      ['keep', 'OPAD의 LLM은 사전 조회(LLMPort)와 기사 생성(CrewAI) 두 곳에서 써요.'],
+      ['keep', '노드를 클릭하면 기존 그림처럼 흐름을 따라가 볼 수 있어요. 위 버튼으로 단계를 바꾸면 그 단계 기준으로 다시 그려져요.'],
+    ],
+  },
+  {
+    label: '1 · 생성 분리',
+    title: '1단계 · 기사 생성을 단계 서비스로 나누고 CrewAI와 비교',
+    items: [
+      ['new', 'workflow: start 단계부터 find → pick → rewrite → review를 차례로 부르고, 진행률·토큰을 기록해요.'],
+      ['new', '단계 서비스 find, pick, rewrite, review: 각자 단계 포트 하나만 불러요. rewrite는 VocabularyRepository로 아는 단어를 먼저 가져와요.'],
+      ['new', 'FinderPort, PickerPort, RewriterPort, ReviewerPort와 pydantic-ai 에이전트 4개. FinderAgent는 Serper API로 검색해요.'],
+      ['new', 'Stage: 단계 경계 모델(NewsArticleList, SelectedArticle, ReviewedArticle)과 시작 단계를 도메인으로 옮겨요.'],
+      ['changed', 'Article, JobContext: topic optional, start와 seed 추가. article_submission_svc는 start·seed를 검증하고 seed로 시작하면 중복 검사를 건너뛰어요. articles.py는 start를 받아요.'],
+      ['changed', 'processor.py: GENERATOR 환경 변수로 기존 article_generation_svc와 workflow 중 하나를 골라요.'],
+      ['keep', 'CrewAI 경로는 비교 기준선으로 그대로 둬요.'],
+    ],
+  },
+  {
+    label: '2 · MCP 입구',
+    title: '2단계 · MCP 입구 열기 (OPAD LLM 호출 없음)',
+    items: [
+      ['new', 'mcp/server.py: publish_article, get_vocabulary 두 툴. Claude가 글을 쓰고 OPAD는 저장과 조회만 해요.'],
+      ['new', 'publish_svc: 출처·길이·형식을 코드로 검증하고 COMPLETED Article로 저장한 뒤 OPAD 링크를 돌려줘요.'],
+      ['new', 'vocab_query: language, levels, limit, order, since로 단어장을 조회해요. MCP, REST, workflow가 같이 써요.'],
+      ['new', 'Claude (MCP)와 emcp: emcp는 REST 조회 엔드포인트로 단어를 가져가 e-ink에 띄워요.'],
+      ['changed', 'Article: origin(generated, published). vocabulary.py: 다른 서비스용 조회 엔드포인트.'],
+      ['changed', 'auth_service, User, UserRepository: 사용자별 API 토큰(해시 저장)으로 MCP와 서버 간 호출에 user_id를 붙여요.'],
+      ['keep', '이 경로는 OPAD 토큰을 쓰지 않아서 사용량 제한이 없어요.'],
+    ],
+  },
+  {
+    label: '3 · 사진 입력',
+    title: '3단계 · 앱에서 사진으로 글 올리기',
+    items: [
+      ['new', 'extract_service, TextExtractorPort, VisionAdapter: 사진에서 본문과 언어를 뽑아요(LiteLLM 비전 모델).'],
+      ['changed', 'articles.py: POST /articles/extract. 결과는 바로 저장하지 않고 사용자가 확인해요.'],
+      ['keep', '확인한 텍스트는 그대로 올리기(start=none) 또는 다시 쓰기(start=rewrite)로 article_submission_svc에 들어가요. 다시 쓰기는 1단계의 workflow를 rewrite부터 타요.'],
+    ],
+  },
+  {
+    label: '4 · CrewAI 정리',
+    title: '4단계 · 비교가 끝나면 CrewAI 경로 제거',
+    items: [
+      ['removed', 'ArticleGeneratorPort, CrewAIGenerator, CrewAI, article_generation_svc'],
+      ['changed', 'processor.py: workflow만 불러요.'],
+      ['keep', '비교 결과(성공률, 시간, 토큰, 같은 원문 기준 품질)가 괜찮을 때 진행해요.'],
+    ],
+  },
+  {
+    label: '최종',
+    title: '최종 구조',
+    items: [
+      ['new', '초록 테두리가 이번 개편으로 추가된 모듈이에요.'],
+      ['keep', 'OPAD의 LLM은 workflow(단계 에이전트), 사진 추출, 사전 조회에만 있고 모두 앱 경로예요. MCP 경로는 저장과 조회만 해요.'],
+    ],
+  },
+];
+
+const PHASE_FLOWS = [
+  { from: 1, id: 'svc_find', flow: { title: 'find — topic으로 후보 기사 찾기', steps: [
+    ['svc_find', 'p_finder', 'find()'], ['p_finder', 'a_finder', ''], ['a_finder', 'x_openai', ''], ['a_finder', 'x_serper', 'search · scrape']], domains: ['d_stage'] } },
+  { from: 1, id: 'svc_pick', flow: { title: 'pick — 후보 중 기사 하나 고르기', steps: [
+    ['svc_pick', 'p_picker', 'pick()'], ['p_picker', 'a_picker', ''], ['a_picker', 'x_openai', '']], domains: ['d_stage'] } },
+  { from: 1, id: 'svc_rewrite', flow: { title: 'rewrite — 수준에 맞게 다시 쓰기, 아는 단어 반영', steps: [
+    ['svc_rewrite', 'p_vocab_repo', 'find_lemmas()'], ['p_vocab_repo', 'a_mongo_vocab', ''], ['a_mongo_vocab', 'x_mongo', ''],
+    ['svc_rewrite', 'p_rewriter', 'rewrite()'], ['p_rewriter', 'a_rewriter', ''], ['a_rewriter', 'x_openai', '']], domains: ['d_stage', 'd_vocab', 'd_cefr'] } },
+  { from: 1, id: 'svc_review', flow: { title: 'review — 검토, 고친 문장 기록', steps: [
+    ['svc_review', 'p_reviewer', 'review()'], ['p_reviewer', 'a_reviewer', ''], ['a_reviewer', 'x_openai', '']], domains: ['d_stage'] } },
+  { from: 1, id: 's_workflow', flow: { title: 'Workflow Service — start 단계부터 find → pick → rewrite → review, 진행률 · 토큰 기록', steps: [
+    ['s_workflow', 'svc_find', 'find'], ['svc_find', 'p_finder', ''], ['p_finder', 'a_finder', ''], ['a_finder', 'x_serper', ''], ['a_finder', 'x_openai', ''],
+    ['s_workflow', 'svc_pick', 'pick'], ['svc_pick', 'p_picker', ''], ['p_picker', 'a_picker', ''], ['a_picker', 'x_openai', ''],
+    ['s_workflow', 'svc_rewrite', 'rewrite'], ['svc_rewrite', 'p_vocab_repo', 'find_lemmas()'], ['p_vocab_repo', 'a_mongo_vocab', ''], ['a_mongo_vocab', 'x_mongo', ''],
+    ['svc_rewrite', 'p_rewriter', ''], ['p_rewriter', 'a_rewriter', ''], ['a_rewriter', 'x_openai', ''],
+    ['s_workflow', 'svc_review', 'review'], ['svc_review', 'p_reviewer', ''], ['p_reviewer', 'a_reviewer', ''], ['a_reviewer', 'x_openai', ''],
+    ['s_workflow', 'p_article', 'save()'], ['p_article', 'a_mongo_article', ''], ['a_mongo_article', 'x_mongo', ''],
+    ['s_workflow', 'p_queue', 'update_status()'], ['p_queue', 'a_redis', ''],
+    ['s_workflow', 's_token', 'track usage'], ['s_token', 'p_token', ''], ['p_token', 'a_mongo_token', ''], ['a_mongo_token', 'x_mongo', '']],
+    domains: ['d_article', 'd_stage', 'd_cefr', 'd_token', 'd_job'] } },
+  { from: 1, id: 'processor', extend: [['processor', 's_workflow', 'GENERATOR=pydantic_ai']] },
+  { from: 4, id: 'processor', flow: { title: 'Worker — dequeue → workflow_service → save', steps: [
+    ['processor', 'p_queue', 'dequeue()'], ['p_queue', 'a_redis', 'BLPOP'], ['a_redis', 'x_redis', ''],
+    ['processor', 's_workflow', 'run(start)'], ['s_workflow', 'svc_find', ''], ['s_workflow', 'svc_pick', ''], ['s_workflow', 'svc_rewrite', ''], ['s_workflow', 'svc_review', ''],
+    ['s_workflow', 'p_article', 'save()'], ['p_article', 'a_mongo_article', ''], ['a_mongo_article', 'x_mongo', '']],
+    domains: ['d_article', 'd_job', 'd_stage'] } },
+  { from: 2, id: 'r_mcp', flow: { title: 'MCP Server — publish_article · get_vocabulary (OPAD LLM 호출 없음)', steps: [
+    ['r_mcp', 's_auth', 'API 토큰 확인'], ['s_auth', 'p_user', ''], ['p_user', 'a_mongo_user', ''], ['a_mongo_user', 'x_mongo', ''],
+    ['r_mcp', 's_publish', 'publish_article'], ['s_publish', 'p_article', 'save()'], ['p_article', 'a_mongo_article', ''], ['a_mongo_article', 'x_mongo', ''],
+    ['r_mcp', 's_vocabq', 'get_vocabulary'], ['s_vocabq', 'p_vocab_repo', 'query()'], ['p_vocab_repo', 'a_mongo_vocab', ''], ['a_mongo_vocab', 'x_mongo', '']],
+    domains: ['d_article', 'd_vocab', 'd_user'] } },
+  { from: 2, id: 'x_claude', flow: { title: 'Claude — 글은 Claude가 쓰고, OPAD에는 저장과 조회만', steps: [
+    ['x_claude', 'r_mcp', 'tools/call'], ['r_mcp', 's_vocabq', 'get_vocabulary'], ['r_mcp', 's_publish', 'publish_article'],
+    ['s_vocabq', 'p_vocab_repo', ''], ['s_publish', 'p_article', ''], ['p_vocab_repo', 'a_mongo_vocab', ''], ['p_article', 'a_mongo_article', '']],
+    domains: ['d_article', 'd_vocab'] } },
+  { from: 2, id: 'x_emcp', flow: { title: 'emcp — REST로 단어를 가져가 e-ink에 표시', steps: [
+    ['x_emcp', 'r_vocab', 'GET 조회 (API 토큰)'], ['r_vocab', 's_vocabq', 'query(order=random)'], ['s_vocabq', 'p_vocab_repo', ''], ['p_vocab_repo', 'a_mongo_vocab', ''], ['a_mongo_vocab', 'x_mongo', '']],
+    domains: ['d_vocab'] } },
+  { from: 2, id: 's_publish', flow: { title: 'publish_svc — 검증 후 COMPLETED로 저장, 링크 반환', steps: [
+    ['s_publish', 'p_article', 'save()'], ['p_article', 'a_mongo_article', ''], ['a_mongo_article', 'x_mongo', '']], domains: ['d_article'] } },
+  { from: 2, id: 's_vocabq', flow: { title: 'vocab_query — levels · order · since로 단어장 조회', steps: [
+    ['s_vocabq', 'p_vocab_repo', 'query()'], ['p_vocab_repo', 'a_mongo_vocab', ''], ['a_mongo_vocab', 'x_mongo', '']], domains: ['d_vocab', 'd_cefr'] } },
+  { from: 2, id: 'r_vocab', extend: [['r_vocab', 's_vocabq', '조회 엔드포인트']] },
+  { from: 3, id: 's_extract', flow: { title: 'extract_service — 사진에서 본문 추출 (비전 모델)', steps: [
+    ['s_extract', 'p_extract', 'extract(images)'], ['p_extract', 'a_vision', ''], ['a_vision', 'x_openai', '']], domains: [] } },
+  { from: 3, id: 'r_articles', extend: [['r_articles', 's_extract', 'POST /articles/extract']] },
+];
+
+const BASE_FLOWS = JSON.parse(JSON.stringify(FLOWS));
+let phase = 0;
+
+function isVisible(id, p) {
+  if (NEW_AT[id] !== undefined && NEW_AT[id] > p) return false;
+  if (REMOVED_AT[id] !== undefined && p > REMOVED_AT[id]) return false;
+  return true;
+}
+
+function rebuildFlows(p) {
+  const fp = p === 5 ? 5 : p;
+  Object.keys(FLOWS).forEach(k => delete FLOWS[k]);
+  Object.assign(FLOWS, JSON.parse(JSON.stringify(BASE_FLOWS)));
+  PHASE_FLOWS.forEach(pf => {
+    if (fp < pf.from) return;
+    if (pf.flow) FLOWS[pf.id] = JSON.parse(JSON.stringify(pf.flow));
+    else if (pf.extend && FLOWS[pf.id]) FLOWS[pf.id].steps.push(...JSON.parse(JSON.stringify(pf.extend)));
+  });
+  Object.keys(FLOWS).forEach(k => {
+    if (!isVisible(k, p)) { delete FLOWS[k]; return; }
+    const f = FLOWS[k];
+    f.steps = f.steps.filter(s => isVisible(s[0], p) && isVisible(s[1], p));
+    if (f.domains) f.domains = f.domains.filter(d => isVisible(d, p));
+    if (f.async_hint && !(isVisible(f.async_hint.from, p) && isVisible(f.async_hint.to, p))) delete f.async_hint;
+  });
+}
+
+function applyPhase(p) {
+  phase = p;
+  reset();
+  allNodes.forEach(n => {
+    const id = n.dataset.id;
+    n.classList.remove('st-new', 'st-changed', 'st-removed', 'st-added', 'st-hidden');
+    delete n.dataset.badge;
+    if (!isVisible(id, p)) { n.classList.add('st-hidden'); return; }
+    if (p === 5) { if (NEW_AT[id] !== undefined) n.classList.add('st-added'); return; }
+    if (NEW_AT[id] === p) { n.classList.add('st-new'); n.dataset.badge = 'NEW'; }
+    else if (NEW_AT[id] !== undefined) n.classList.add('st-added');
+    if (REMOVED_AT[id] === p) { n.classList.add('st-removed'); n.dataset.badge = 'REMOVED'; }
+    if ((CHANGED_AT[id] || []).includes(p)) { n.classList.add('st-changed'); n.dataset.badge = 'CHANGED'; }
+  });
+  rebuildFlows(p);
+  document.querySelectorAll('#phasebar button').forEach((b, i) => b.classList.toggle('on', i === p));
+  const ph = PHASES[p];
+  document.getElementById('ptitle').textContent = ph.title;
+  const names = { new: 'NEW', changed: 'CHANGED', removed: 'REMOVED', keep: '참고' };
+  document.getElementById('plist').innerHTML = ph.items.map(([k, t]) =>
+    `<li><span class="tag ${k}">${names[k]}</span>${t}</li>`).join('');
+}
+
+(function initPhases() {
+  const bar = document.getElementById('phasebar');
+  PHASES.forEach((ph, i) => {
+    const b = document.createElement('button');
+    b.textContent = ph.label;
+    b.addEventListener('click', e => { e.stopPropagation(); applyPhase(i); });
+    bar.appendChild(b);
+  });
+  function fit() {
+    const stage = document.getElementById('stage');
+    const wrap = document.getElementById('stagewrap');
+    const s = Math.min(1, (window.innerWidth - 24) / 1320);
+    stage.style.width = '1320px';
+    stage.style.transform = `scale(${s})`;
+    wrap.style.width = (1320 * s) + 'px';
+    wrap.style.height = (936 * s) + 'px';
+    wrap.style.margin = '0 auto';
+  }
+  window.addEventListener('resize', fit);
+  fit();
+  applyPhase(0);
+})();
+
+</script>
+</body>
+</html>
