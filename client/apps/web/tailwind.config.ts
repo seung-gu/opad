@@ -48,6 +48,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: ['var(--font-sans)', 'Noto Sans KR', 'sans-serif'],
+        serif: ['var(--font-serif)', 'Newsreader', 'Georgia', 'serif'],
         mono: ['var(--font-mono)', 'JetBrains Mono', 'monospace'],
       },
     },

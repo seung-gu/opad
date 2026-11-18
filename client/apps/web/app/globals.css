@@ -8,34 +8,34 @@
 
 :root {
   /* Background */
-  --bg: #0a0e17;
-  --card: #111827;
-  --card-hover: #1a2332;
-  --card-border: #1e293b;
+  --bg: #100f0e;
+  --card: #171614;
+  --card-hover: #1f1d1a;
+  --card-border: #2d2a25;
 
   /* Main Colors */
-  --accent: #34aee2;
-  --vocab: #34d399;
-  --system: #a78bfa;
-  --warn: #fbbf24;
-  --danger: #f87171;
+  --accent: #c75b3f;
+  --vocab: #c75b3f;
+  --system: #c75b3f;
+  --warn: #b08a4a;
+  --danger: #a8392e;
 
   /* Text */
-  --text: #94a3b8;
-  --text-dim: #5f6875;
-  --strong: #94a3b8;
-  --btn-text: #0a0e17;
+  --text: #d9d3c7;
+  --text-dim: #8b8478;
+  --strong: #efeae0;
+  --btn-text: #faf7f1;
 
   /* Status */
-  --good: #4ade80;
-  --weak: #fb923c;
+  --good: #6f8f7d;
+  --weak: #b08a4a;
 
   /* Hover */
-  --word-hover: #1b7252;
-  --accent-hover: rgba(52, 174, 226, 0.1);
-  --vocab-hover: rgba(52, 211, 153, 0.1);
-  --system-hover: rgba(167, 139, 250, 0.1);
-  --danger-hover: rgba(248, 113, 113, 0.1);
+  --word-hover: #c75b3f;
+  --accent-hover: rgba(199, 91, 63, 0.1);
+  --vocab-hover: rgba(199, 91, 63, 0.1);
+  --system-hover: rgba(199, 91, 63, 0.1);
+  --danger-hover: rgba(168, 57, 46, 0.1);
 }
 
 * {
@@ -50,26 +50,28 @@ body {
   line-height: 1.6;
 }
 
-/* Headings - JetBrains Mono + accent */
+/* Headings - Newsreader serif */
 h1 {
-  font-family: var(--font-mono), 'JetBrains Mono', monospace;
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--accent);
-  letter-spacing: -0.5px;
+  font-family: var(--font-serif), Newsreader, Georgia, serif;
+  font-size: 34px;
+  font-weight: 400;
+  color: var(--strong);
+  letter-spacing: -0.015em;
+  line-height: 1.1;
 }
 
 h2 {
-  font-family: var(--font-mono), 'JetBrains Mono', monospace;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--accent);
+  font-family: var(--font-serif), Newsreader, Georgia, serif;
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--strong);
+  letter-spacing: -0.01em;
 }
 
 h3, h4, h5, h6 {
-  font-family: var(--font-mono), 'JetBrains Mono', monospace;
-  font-weight: 600;
-  color: var(--accent);
+  font-family: var(--font-serif), Newsreader, Georgia, serif;
+  font-weight: 500;
+  color: var(--strong);
 }
 
 /* Body text */
@@ -87,7 +89,7 @@ strong, b {
 
 /* Links */
 a {
-  color: var(--vocab);
+  color: var(--accent);
   text-decoration: none;
   transition: opacity 0.2s;
 }
@@ -107,20 +109,20 @@ code, pre, .mono, .font-mono {
 }
 
 code {
-  color: var(--vocab);
+  color: var(--accent);
   font-size: 13px;
 }
 
 /* Label / Category */
 .label, .category {
-  font-weight: 700;
-  color: var(--system);
+  font-weight: 600;
+  color: var(--text-dim);
   font-size: 13px;
 }
 
 /* Highlight text */
 .highlight, .project {
-  color: var(--vocab);
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -151,7 +153,7 @@ small, .text-sm {
 }
 
 .prose-invert a {
-  color: var(--vocab) !important;
+  color: var(--accent) !important;
 }
 
 .prose-invert h1,
@@ -160,12 +162,13 @@ small, .text-sm {
 .prose-invert h4,
 .prose-invert h5,
 .prose-invert h6 {
-  font-family: var(--font-mono), 'JetBrains Mono', monospace !important;
-  color: var(--accent) !important;
+  font-family: var(--font-serif), Newsreader, Georgia, serif !important;
+  font-weight: 500 !important;
+  color: var(--strong) !important;
 }
 
 .prose-invert code {
-  color: var(--vocab) !important;
+  color: var(--accent) !important;
 }
 
 .prose-invert pre {
@@ -175,6 +178,7 @@ small, .text-sm {
 .prose-invert blockquote {
   color: var(--text-dim) !important;
   border-color: var(--card-border) !important;
+  font-style: italic;
 }
 
 /* ========================================
@@ -185,48 +189,48 @@ small, .text-sm {
   cursor: pointer;
   transition-property: color, text-decoration-color;
   transition-duration: 200ms;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 3px;
 }
 
+/* Resting state carries no underline - the reading column stays quiet. */
 .vocab-word.user-clickable {
-  color: inherit !important;
-  text-decoration-style: dotted;
-  text-decoration-color: rgba(107, 114, 128, 0.3);
+  color: inherit;
+  text-decoration: none;
   font-weight: normal;
 }
 
 .vocab-word.user-clickable:hover {
-  color: var(--word-hover) !important;
-  text-decoration-color: rgba(125, 211, 252, 0.5);
+  color: var(--word-hover);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--word-hover);
 }
 
 .vocab-word.vocab-saved {
   color: var(--vocab) !important;
+  text-decoration: underline;
   text-decoration-style: solid;
-  text-decoration-color: rgba(52, 211, 153, 0.4);
-  font-weight: 500;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: var(--vocab);
 }
 
 .vocab-word.vocab-saved:hover {
   opacity: 0.8;
-  text-decoration-color: rgba(52, 211, 153, 0.6);
 }
 
 .word-definition {
   display: block;
-  margin-top: 6px;
-  margin-bottom: 6px;
-  padding: 12px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  padding: 12px 16px;
   background: var(--card);
-  border-left: 4px solid var(--vocab);
-  border-radius: 4px;
+  border-left: 2px solid var(--accent);
   color: var(--text);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  font-size: 14px;
 }
 
 .word-definition strong {
-  color: var(--vocab);
+  color: var(--strong);
 }
 
 /* ========================================
@@ -236,43 +240,40 @@ small, .text-sm {
 @layer components {
   /* Section title */
   .section-title {
-    font-family: var(--font-mono), 'JetBrains Mono', monospace;
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--accent);
+    font-family: var(--font-serif), Newsreader, Georgia, serif;
+    font-size: 19px;
+    font-style: italic;
+    font-weight: 400;
+    color: var(--strong);
     display: flex;
-    align-items: center;
+    align-items: baseline;
     gap: 8px;
     margin-bottom: 12px;
   }
 
-  /* Tech tag */
+  /* Tag */
   .tech-tag {
     display: inline-block;
     padding: 2px 8px;
-    border-radius: 4px;
-    font-family: var(--font-mono), 'JetBrains Mono', monospace;
     font-size: 11px;
     font-weight: 600;
-    background: rgba(56, 189, 248, 0.12);
+    background: var(--accent-hover);
     color: var(--accent);
-    border: 1px solid rgba(56, 189, 248, 0.25);
+    border: 1px solid var(--card-border);
     transition: all 0.2s ease;
   }
 
   .tech-tag:hover {
-    background: rgba(56, 189, 248, 0.2);
-    border-color: rgba(56, 189, 248, 0.4);
+    border-color: var(--accent);
   }
 
   /* Card hover effect */
   .card-hover {
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    transition: border-color 0.2s ease;
   }
 
   .card-hover:hover {
     border-color: var(--accent);
-    box-shadow: 0 0 20px rgba(56, 189, 248, 0.1);
   }
 
   /* Styled table */
@@ -280,35 +281,24 @@ small, .text-sm {
     width: 100%;
     border-collapse: collapse;
     background: var(--card);
-    border-radius: 10px;
-    overflow: hidden;
     border: 1px solid var(--card-border);
   }
 
   .styled-table thead th {
     background: var(--card-hover);
-    font-family: var(--font-mono), 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: var(--accent);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 12px 16px;
+    font-family: var(--font-serif), Newsreader, Georgia, serif;
+    font-style: italic;
+    font-size: 14px;
+    color: var(--strong);
+    padding: 10px 16px;
     text-align: left;
-    border-bottom: 2px solid var(--accent);
+    border-bottom: 1px solid var(--card-border);
   }
 
   .styled-table tbody td {
-    padding: 12px 16px;
+    padding: 10px 16px;
     border-bottom: 1px solid var(--card-border);
     color: var(--text);
-  }
-
-  .styled-table tbody tr {
-    transition: background-color 0.2s ease;
-  }
-
-  .styled-table tbody tr:hover {
-    background: rgba(56, 189, 248, 0.04);
   }
 
   .styled-table tbody tr:last-child td {
@@ -322,75 +312,69 @@ small, .text-sm {
   /* Primary button - solid bg for main actions */
   .btn-primary {
     display: inline-block;
-    padding: 10px 20px;
+    padding: 9px 18px;
     background: var(--accent);
-    border: none;
-    border-radius: 8px;
-    font-family: var(--font-mono), 'JetBrains Mono', monospace;
-    font-size: 14px;
+    border: 1px solid var(--accent);
+    border-radius: 2px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--btn-text);
-    transition: all 0.2s ease;
+    transition: opacity 0.2s ease;
     cursor: pointer;
   }
 
   .btn-primary:hover {
-    opacity: 0.85;
+    opacity: 0.9;
   }
 
   .btn-primary:disabled {
-    opacity: 0.5;
+    opacity: 0.4;
     cursor: not-allowed;
   }
 
   .btn-primary.btn-generate {
     background: var(--system);
+    border-color: var(--system);
   }
 
   .btn-primary.btn-delete {
     background: var(--danger);
+    border-color: var(--danger);
   }
 
-  /* Outline button - transparent bg with border for secondary actions */
+  /* Outline button - secondary actions */
   .btn-outline {
     display: inline-block;
     padding: 8px 16px;
     background: transparent;
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    font-family: var(--font-mono), 'JetBrains Mono', monospace;
-    font-size: 14px;
+    border: 1px solid var(--card-border);
+    border-radius: 2px;
+    font-size: 13px;
     font-weight: 500;
-    color: var(--accent);
+    color: var(--text);
     transition: all 0.2s ease;
     cursor: pointer;
   }
 
   .btn-outline:hover {
-    background: var(--accent-hover);
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
   .btn-outline:disabled {
-    opacity: 0.5;
+    opacity: 0.4;
     cursor: not-allowed;
   }
 
-  .btn-outline.btn-generate {
-    border-color: var(--system);
-    color: var(--system);
-  }
-
-  .btn-outline.btn-generate:hover {
-    background: var(--system-hover);
-  }
-
+  .btn-outline.btn-generate,
   .btn-outline.btn-vocab {
-    border-color: var(--vocab);
-    color: var(--vocab);
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
+  .btn-outline.btn-generate:hover,
   .btn-outline.btn-vocab:hover {
-    background: var(--vocab-hover);
+    background: var(--accent-hover);
   }
 
   .btn-outline.btn-delete {

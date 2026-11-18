@@ -1,455 +1,283 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import MarkdownViewer from '@/components/MarkdownViewer'
+import Link from 'next/link'
 import InputForm from '@/components/InputForm'
+import SiteHeader from '@/components/SiteHeader'
+import ErrorAlert from '@/components/ErrorAlert'
 import { fetchWithAuth } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
+import { Article, ArticleListResponse, formatDate } from '@opad/libs'
+
+const STEPS = [
+  { verb: 'Search', desc: 'Recent news and stories on the topic you gave.' },
+  { verb: 'Collect', desc: 'The sources that are actually worth reading.' },
+  { verb: 'Transform', desc: 'The text, rewritten to your level and length.' },
+  { verb: 'Deliver', desc: 'An article whose every word you can look up.' },
+]
+
+const RECENT_LIMIT = 3
 
 export default function Home() {
   const router = useRouter()
-  const { isAuthenticated, user, logout } = useAuth()
-  const [content, setContent] = useState<string>('')
-  const [loading, setLoading] = useState(false)
+  const { isAuthenticated } = useAuth()
   const [generating, setGenerating] = useState(false)
-  const [showForm, setShowForm] = useState(false)
-  const [progress, setProgress] = useState({ current_task: '', progress: 0, message: '', error: null as string | null })
+  const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState({ progress: 0, message: '', error: null as string | null })
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [currentArticleId, setCurrentArticleId] = useState<string | null>(null)
-  const statusPollIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const fetchAbortControllerRef = useRef<AbortController | null>(null)
+  const [recent, setRecent] = useState<Article[]>([])
 
-  const loadContent = useCallback((showLoading = true, articleId?: string | null) => {
-    // Use provided articleId or fall back to currentArticleId
-    const targetArticleId = articleId !== undefined ? articleId : currentArticleId
-    
-    // Cancel any pending fetch request to prevent race conditions
-    if (fetchAbortControllerRef.current) {
-      fetchAbortControllerRef.current.abort()
-      fetchAbortControllerRef.current = null
-    }
-    
-    if (showLoading) {
-      setLoading(true)
-    }
-    
-    // If no article_id, show welcome message
-    if (!targetArticleId) {
-      const welcomeMessage = `# 👋 Welcome to One Story A Day
-
-**One Story A Day** is an AI-powered tool that creates personalized reading materials for language learners using real, current news content.
-
-🌍 **One Story A Day supports all languages** — choose any language you want to learn and get customized reading materials at your proficiency level.
-
----
-
-## ✨ How It Works
-
-Generate an article by choosing your topic, language, and proficiency level:
-
-**1. 🔍 Search**  
-One Story A Day searches the web for recent news articles, stories, and other content on your topic.
-
-**2. 📚 Collect**  
-It gathers relevant articles from various sources.
-
-**3. 🎨 Transform**  
-The content is adapted to match your language level.
-
-**4. 📖 Deliver**  
-You receive a customized study resource ready to use.
-
-Instead of outdated textbooks, get **real, current news content, stories, and other content** tailored to your learning needs. 🚀
-
----
-
-## 🎯 Get Started
-
-Click **"Generate New Article"** above to create your first reading material, or click **"Articles"** to view and manage all your generated articles.
-
-Choose a topic you're interested in and start learning with content that matches your level! 💪`
-      setContent(prev => prev !== welcomeMessage ? welcomeMessage : prev)
-      if (showLoading) {
-        setLoading(false)
-      }
+  // Recent articles for the signed-in landing view
+  const fetchRecent = useCallback(async () => {
+    if (!isAuthenticated) {
+      setRecent([])
       return
     }
-    
-    // Create new AbortController for this request
-    const abortController = new AbortController()
-    fetchAbortControllerRef.current = abortController
-    
-    // Add timestamp to bypass cache
-    const timestamp = new Date().getTime()
-    // Call FastAPI through web API route
-    fetchWithAuth(`/api/articles/${targetArticleId}/content?t=${timestamp}`, {
-      signal: abortController.signal
-    })
-      .then(res => {
-        if (res.ok) {
-          return res.text()
-        }
-        throw new Error('Failed to fetch article')
-      })
-      .then(text => {
-        // Only update if this request wasn't aborted
-        if (!abortController.signal.aborted) {
-          setContent(prev => prev !== text ? text : prev)
-          if (showLoading) {
-            setLoading(false)
-          }
-          // Only clear ref if it still points to this controller
-          // This prevents race conditions when multiple fetches are triggered
-          if (fetchAbortControllerRef.current === abortController) {
-            fetchAbortControllerRef.current = null
-          }
-        }
-      })
-      .catch((error) => {
-        // Ignore abort errors (expected when cancelling)
-        if (error.name === 'AbortError') {
-          return
-        }
-        // On error, show error message
-        if (!abortController.signal.aborted) {
-          const errorMessage = `# ⚠️ Error Loading Article\n\n**Failed to load article content.**\n\nThis could be due to:\n- Database connection issue\n- Article not found\n- Network error\n\nPlease try:\n- Clicking "Refresh" button\n- Generating a new article`
-          setContent(prev => prev !== errorMessage ? errorMessage : prev)
-          if (showLoading) {
-            setLoading(false)
-          }
-          // Only clear ref if it still points to this controller
-          // This prevents race conditions when multiple fetches are triggered
-          if (fetchAbortControllerRef.current === abortController) {
-            fetchAbortControllerRef.current = null
-          }
-          console.error('Failed to load article:', error)
-        }
-      })
-  }, [currentArticleId])
+    try {
+      const response = await fetchWithAuth(`/api/articles?skip=0&limit=${RECENT_LIMIT}`)
+      if (!response.ok) return
+      const data: ArticleListResponse = await response.json()
+      setRecent(data.articles)
+    } catch (err) {
+      // Non-critical: the landing page works without the recent list
+      console.error('Failed to load recent articles:', err)
+    }
+  }, [isAuthenticated])
 
   useEffect(() => {
-    // Call loadContent when currentArticleId changes
-    // loadContent handles the case when currentArticleId is null (shows welcome message)
-    // Only load if not currently generating (to prevent flicker when cancelling duplicate)
-    // Note: We call loadContent even when currentArticleId is null to show welcome message
-    // Don't auto-load when generating becomes false - let the completion handler manage that
-    if (!generating) {
-      // Only load if currentArticleId is set, or if content is empty (show welcome message)
-      // Note: 'content' is intentionally omitted from deps to prevent infinite loops
-      if (currentArticleId || !content) {
-        loadContent(true)
-      }
-    }
+    fetchRecent()
+  }, [fetchRecent])
 
-    // Cleanup: cancel any pending fetch when article_id changes or component unmounts
-    return () => {
-      if (fetchAbortControllerRef.current) {
-        fetchAbortControllerRef.current.abort()
-        fetchAbortControllerRef.current = null
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- content omitted to prevent infinite loop
-  }, [currentArticleId, generating, loadContent])
-  
-  // Poll status when generating
+  // Poll job status while generating
   useEffect(() => {
-    if (!generating) {
-      // Clear interval when not generating
-      if (statusPollIntervalRef.current) {
-        clearInterval(statusPollIntervalRef.current)
-        statusPollIntervalRef.current = null
-      }
-      return
-    }
+    if (!generating || !currentJobId) return
 
-    // Helper: create progress update function to reduce nesting
-    const createProgressUpdate = (data: { current_task?: string; progress?: number; message?: string; error?: string | null }) => {
-      return (prev: typeof progress) => {
-        const newProgress = {
-          current_task: data.current_task || '',
-          progress: data.progress || 0,
-          message: data.message || '',
-          error: data.error || null
-        }
-        if (prev.current_task !== newProgress.current_task ||
-            prev.progress !== newProgress.progress ||
-            prev.message !== newProgress.message ||
-            prev.error !== newProgress.error) {
-          return newProgress
-        }
-        return prev
-      }
-    }
+    let interval: ReturnType<typeof setInterval> | null = null
 
     const loadStatus = () => {
-      // jobId가 없으면 폴링하지 않음
-      if (!currentJobId) {
-        return
-      }
-
       fetchWithAuth(`/api/status?job_id=${currentJobId}`)
-        .then(res => res.json())
-        .then(data => {
-          setProgress(createProgressUpdate(data))
-          
+        .then((res) => res.json())
+        .then((data) => {
+          setProgress({
+            progress: data.progress || 0,
+            message: data.message || '',
+            error: data.error || null,
+          })
+
           if (data.status === 'completed') {
             setGenerating(false)
-            setCurrentJobId(null) // Clear jobId
-            // Clear interval immediately
-            if (statusPollIntervalRef.current) {
-              clearInterval(statusPollIntervalRef.current)
-              statusPollIntervalRef.current = null
-            }
-            // Redirect to article page
+            setCurrentJobId(null)
+            if (interval) clearInterval(interval)
             const articleId = data.article_id || currentArticleId
             if (articleId) {
               router.push(`/articles/${articleId}`)
             }
           } else if (data.status === 'error') {
             setGenerating(false)
-            setCurrentJobId(null) // Clear jobId
-            // Show error message in content area
-            const errorMessage = `# ❌ Generation Failed\n\n**Error:** ${data.error || data.message || 'Unknown error occurred'}\n\nPlease try generating a new article.`
-            setContent(errorMessage)
-            // Clear interval on error
-            if (statusPollIntervalRef.current) {
-              clearInterval(statusPollIntervalRef.current)
-              statusPollIntervalRef.current = null
-            }
+            setCurrentJobId(null)
+            setError(data.error || data.message || 'Generation failed')
+            if (interval) clearInterval(interval)
           }
         })
         .catch((err) => {
           console.error('Failed to fetch status:', err)
         })
     }
-    
-    // Load immediately
+
     loadStatus()
-    
-    // Set up polling interval
-    const interval = setInterval(loadStatus, 5000) // Poll every 5 seconds
-    statusPollIntervalRef.current = interval
-    
+    interval = setInterval(loadStatus, 5000)
+
     return () => {
-      if (statusPollIntervalRef.current) {
-        clearInterval(statusPollIntervalRef.current)
-        statusPollIntervalRef.current = null
-      }
+      if (interval) clearInterval(interval)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- currentArticleId/router omitted to prevent unintended re-polls
-  }, [generating, currentJobId, loadContent])
-  
-  // No need to poll content - status polling will trigger loadContent when completed
+  }, [generating, currentJobId])
 
-  // Helper: Handle user's choice to use existing job (called when user cancels regeneration)
-  const handleUseExistingJob = useCallback((job: { id: string; status: string; error?: string; progress?: number }, articleId?: string) => {
-    if (job.status === 'completed' && articleId) {
-      if (currentArticleId !== articleId) {
-        loadContent(false, articleId)
-        setCurrentArticleId(articleId)
+  // Resume an existing job instead of starting a duplicate
+  const handleUseExistingJob = useCallback(
+    (job: { id: string; status: string; error?: string }, articleId?: string) => {
+      if (job.status === 'completed' && articleId) {
+        router.push(`/articles/${articleId}`)
+        return
+      }
+      if (job.status === 'running' || job.status === 'queued') {
+        setCurrentJobId(job.id)
+        if (articleId) setCurrentArticleId(articleId)
+        setGenerating(true)
+        return
+      }
+      if (job.status === 'failed') {
+        setError(job.error || 'Previous generation failed')
       }
       setGenerating(false)
-      return
-    }
-    if (job.status === 'running' || job.status === 'queued') {
-      setCurrentJobId(job.id)
-      if (articleId) {
-        setCurrentArticleId(articleId)
-      }
-      setGenerating(true)
-      return
-    }
-    if (job.status === 'failed') {
-      const errorMessage = `# ❌ Generation Failed\n\n**Error:** ${job.error || 'Unknown error occurred'}\n\nPlease try generating a new article.`
-      setContent(errorMessage)
-      setProgress(prev => ({
-        ...prev,
-        error: job.error || 'Generation failed',
-        message: 'Previous generation failed',
-        progress: 0
-      }))
-    }
-    setGenerating(false)
-  }, [currentArticleId, loadContent])
+    },
+    [router]
+  )
 
-  const handleGenerate = async (inputs: {
-    language: string
-    level: string
-    length: string
-    topic: string
-  }, force: boolean = false) => {
-    // Check authentication
+  const handleGenerate = async (
+    inputs: { language: string; level: string; length: string; topic: string },
+    force = false
+  ): Promise<void> => {
     if (!isAuthenticated) {
-      alert('You need to log in to generate articles. Please log in first.')
+      router.push('/login')
       return
     }
 
+    setError(null)
     setGenerating(true)
     try {
       const response = await fetchWithAuth('/api/generate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...inputs, force }),
       })
 
       const data = await response.json()
 
-      // Handle duplicate job (409 Conflict) - must check before general error handling
-      // since 409 has response.ok === false
+      // Duplicate job (409) must be handled before the generic error branch
       if (response.status === 409 || data.duplicate) {
-        // If existing_job is null, job status data couldn't be retrieved
         if (!data.existing_job) {
-          // Still show message and allow regeneration
           const shouldRegenerate = globalThis.confirm(
-            'A duplicate job was detected, but its status could not be retrieved. Do you want to generate a new article anyway?'
+            'A duplicate job was detected, but its status could not be retrieved. Generate a new article anyway?'
           )
           if (shouldRegenerate) {
             return await handleGenerate(inputs, true)
           }
-          // User cancelled: clear generating state
           setGenerating(false)
           return
         }
-        
+
         const job = data.existing_job
         const messages: Record<string, string> = {
-          completed: 'A completed job exists within the last 24 hours. Do you want to generate new?',
-          running: `A running job exists (${job.progress}%). Do you want to generate new?`,
-          failed: `Previous job failed: ${job.error || 'Unknown error'}. Do you want to generate new?`,
-          queued: 'A queued job already exists. Do you want to generate new?'
+          completed: 'A completed job exists within the last 24 hours. Generate a new one?',
+          running: `A job is already running (${job.progress}%). Generate a new one?`,
+          failed: `The previous job failed: ${job.error || 'Unknown error'}. Generate a new one?`,
+          queued: 'A job is already queued. Generate a new one?',
         }
-        
-        // User confirms: generate new job (OK = true)
+
         if (globalThis.confirm(messages[job.status])) {
           return await handleGenerate(inputs, true)
         }
-        
-        // User cancels: use existing job (Cancel = false)
+
         handleUseExistingJob(job, data.article_id)
         return
       }
 
-      // Handle other non-2xx errors (409 duplicate is already handled above)
       if (!response.ok) {
         throw new Error(data.error || 'Failed to generate article')
       }
 
-      // Save jobId and articleId for polling
-      if (data.job_id) {
-        setCurrentJobId(data.job_id)
-      }
-      if (data.article_id) {
-        setCurrentArticleId(data.article_id)
-      }
-
-      // Show success message
-      alert('Article generation started! It will take a few minutes. The page will update automatically when ready.')
-      
-      // generating state is already true, useEffect will handle polling
-
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
-      alert(`Error: ${message}`)
+      if (data.job_id) setCurrentJobId(data.job_id)
+      if (data.article_id) setCurrentArticleId(data.article_id)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
       setGenerating(false)
-      setCurrentJobId(null) // Clear jobId on error
+      setCurrentJobId(null)
     }
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-xl text-foreground">Loading...</div>
-      </div>
-    )
-  }
-
-  const handleArticlesClick = () => {
-    if (!isAuthenticated) {
-      alert('You need to log in to view articles. Please log in first.')
-      return
-    }
-    router.push('/articles')
-  }
-
-  const handleGenerateClick = () => {
-    setShowForm(!showForm)
   }
 
   return (
-    <main className="min-h-screen p-8 max-w-4xl mx-auto bg-card rounded-lg border border-border-card my-8">
-      <div className="flex justify-between items-center mb-8">
-        <div className="flex items-center gap-3">
-          {isAuthenticated ? (
-            <>
-              <span className="text-text-dim font-medium">
-                {user?.name || user?.email}
-              </span>
-              <button
-                onClick={logout}
-                className="btn-outline btn-delete"
-              >
-                Logout
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => router.push('/login')}
-              className="btn-outline"
-            >
-              Login
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleArticlesClick}
-            className="btn-outline"
-          >
-            Articles
-          </button>
-          <button
-            onClick={handleGenerateClick}
-            className="btn-outline btn-generate"
-          >
-            {showForm ? 'Hide Form' : 'Generate New Article'}
-          </button>
-        </div>
-      </div>
+    <div className="min-h-screen bg-background">
+      <SiteHeader />
 
-      {showForm && (
-        <div className="mb-8">
-          <InputForm onSubmit={handleGenerate} loading={generating} />
-        </div>
-      )}
+      <main className="mx-auto max-w-3xl px-6">
+        <section className="pb-12 pt-14">
+          <p className="font-serif text-[15px] italic text-text-dim">One story a day</p>
+          <h1 className="mt-3 max-w-[18ch] font-serif text-[40px] font-normal leading-[1.06] tracking-[-0.015em] text-text-strong sm:text-[54px]">
+            Read today&rsquo;s news in the language you&rsquo;re learning.
+          </h1>
+          <p className="mt-7 max-w-xl text-[15px] leading-[1.7] text-text-dim">
+            Real news, published today, rewritten to your level. Any language, any topic, a new one each morning.
+          </p>
+        </section>
 
-      {generating && (
-        <div className="mb-4 p-4 bg-card-hover border border-border-card rounded-lg">
-          <div className="mb-2">
-            <p className="text-foreground font-medium mb-2">
-              ⏳ {progress.message || 'Generating article...'}
-            </p>
-            {progress.error && (
-              <div className="mb-2 p-3 bg-accent-danger/20 border border-accent-danger/50 rounded-md">
-                <p className="text-accent-danger text-sm font-medium">Error:</p>
-                <p className="text-accent-danger/80 text-sm">{progress.error}</p>
+        <div className="space-y-12 pb-4">
+          <section>
+            <ErrorAlert error={error} />
+            <InputForm onSubmit={handleGenerate} loading={generating} />
+
+            {generating && (
+              <div className="mt-4">
+                <div className="flex items-baseline justify-between text-[13px]">
+                  <span className="font-serif italic text-foreground">
+                    {progress.message || 'Starting'}&hellip;
+                  </span>
+                  <span className="tabular-nums text-text-dim">{progress.progress}%</span>
+                </div>
+                <div className="mt-2 h-px w-full bg-border-card">
+                  <div
+                    className="h-px bg-accent transition-all duration-300"
+                    style={{ width: `${progress.progress}%` }}
+                  />
+                </div>
+                {progress.error && <p className="mt-2 text-[13px] text-accent-danger">{progress.error}</p>}
               </div>
             )}
-            <div className="w-full bg-border-card rounded-full h-3">
-              <div
-                className="bg-system h-3 rounded-full transition-all duration-300"
-                style={{ width: `${progress.progress}%` }}
-              ></div>
-            </div>
-            <p className="text-sm text-system mt-2">{progress.progress}%</p>
-          </div>
-        </div>
-      )}
+          </section>
 
-      <MarkdownViewer content={content} dark={true} clickable={false} />
-    </main>
+          <section className="border-t border-border-card pt-10">
+            <div className="grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
+              {STEPS.map((step, i) => (
+                <div key={step.verb}>
+                  <div className="font-serif text-[30px] leading-none text-accent">{i + 1}</div>
+                  <h3 className="mt-3 font-serif text-[19px] font-medium text-text-strong">{step.verb}</h3>
+                  <p className="mt-1.5 text-[13px] leading-[1.65] text-text-dim">{step.desc}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {isAuthenticated ? (
+            <section className="border-t border-border-card pt-8">
+              <div className="flex items-baseline justify-between">
+                <h2 className="font-serif text-[19px] italic text-text-strong">Recent</h2>
+                <Link href="/articles" className="text-[13px] text-accent">
+                  All articles
+                </Link>
+              </div>
+              {recent.length === 0 ? (
+                <p className="mt-3 text-[13px] text-text-dim">
+                  Nothing yet. Generate your first article above.
+                </p>
+              ) : (
+                <ul className="mt-2">
+                  {recent.map((article) => (
+                    <li key={article.id} className="group border-b border-border-card last:border-b-0">
+                      <Link
+                        href={`/articles/${article.id}`}
+                        className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1 py-4"
+                      >
+                        <span className="font-serif text-[19px] leading-snug text-text-strong transition-colors group-hover:text-accent">
+                          {article.topic || 'Untitled Article'}
+                        </span>
+                        <span className="shrink-0 text-[12px] text-text-dim">
+                          {article.language} · {article.level} · {article.length} words ·{' '}
+                          {formatDate(article.created_at)}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : (
+            <section className="border-t border-border-card pt-8">
+              <p className="text-[14px] leading-relaxed text-text-dim">
+                <Link href="/login" className="font-medium text-accent">
+                  Sign in
+                </Link>{' '}
+                to keep your articles and the words you look up.
+              </p>
+            </section>
+          )}
+        </div>
+
+        <footer className="mt-14 border-t border-border-card py-6 text-[12px] text-text-dim">
+          One story a day
+        </footer>
+      </main>
+    </div>
   )
 }
-
