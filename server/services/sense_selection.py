@@ -21,6 +21,7 @@ DEFAULT_LABEL = "0.0"
 # Public interface
 # ---------------------------------------------------------------------------
 
+
 async def select_best_sense(
     sentence: str,
     word: str,
@@ -43,6 +44,7 @@ async def select_best_sense(
 # ---------------------------------------------------------------------------
 # LLM sense selection
 # ---------------------------------------------------------------------------
+
 
 async def _pick_sense(
     sentence: str,
@@ -83,6 +85,7 @@ async def _pick_sense(
 # ---------------------------------------------------------------------------
 # Prompt construction
 # ---------------------------------------------------------------------------
+
 
 def _build_sense_prompt(sentence: str, word: str, listing: str) -> str:
     """Wrap a sense listing with LLM instructions for sense selection."""

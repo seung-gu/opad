@@ -13,7 +13,6 @@ from domain.model.errors import DomainError, DuplicateError, ValidationError
 from port.user_repository import UserRepository
 from services import auth_service
 
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -21,6 +20,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 class RegisterRequest(BaseModel):
     """Request model for user registration."""
+
     email: EmailStr
     password: str
     name: str
@@ -28,12 +28,14 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     """Request model for user login."""
+
     email: EmailStr
     password: str
 
 
 class AuthResponse(BaseModel):
     """Response model for authentication."""
+
     token: str
     user: dict
 
@@ -51,7 +53,7 @@ async def register(request: RegisterRequest, repo: UserRepository = Depends(get_
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     token = create_access_token(user.id)
-    user_response = {k: v for k, v in asdict(user).items() if k != 'password_hash'}
+    user_response = {k: v for k, v in asdict(user).items() if k != "password_hash"}
 
     logger.info("User registered", extra={"userId": user.id, "email": request.email})
     return AuthResponse(token=token, user=user_response)
@@ -63,13 +65,10 @@ async def login(request: LoginRequest, repo: UserRepository = Depends(get_user_r
     try:
         user = auth_service.authenticate(repo, request.email, request.password)
     except ValidationError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     token = create_access_token(user.id)
-    user_response = {k: v for k, v in asdict(user).items() if k != 'password_hash'}
+    user_response = {k: v for k, v in asdict(user).items() if k != "password_hash"}
 
     logger.info("User logged in", extra={"userId": user.id, "email": request.email})
     return AuthResponse(token=token, user=user_response)
@@ -79,5 +78,5 @@ async def login(request: LoginRequest, repo: UserRepository = Depends(get_user_r
 async def get_me(current_user: UserResponse = Depends(get_current_user_required)):
     """Get current authenticated user info."""
     user_dict = current_user.model_dump()
-    user_response = {k: v for k, v in user_dict.items() if k != 'password_hash'}
+    user_response = {k: v for k, v in user_dict.items() if k != "password_hash"}
     return user_response

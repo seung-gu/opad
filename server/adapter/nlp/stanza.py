@@ -41,6 +41,7 @@ class StanzaAdapter:
     def preload(self) -> None:
         """Import stanza at startup to avoid memory fragmentation later (~400MB)."""
         import stanza  # noqa: F401
+
         logger.info("Stanza module imported (preload)")
 
     # ------------------------------------------------------------------
@@ -94,7 +95,8 @@ class StanzaAdapter:
         try:
             loop = asyncio.get_event_loop()
             self._unload_timer = loop.call_later(
-                _IDLE_TTL_SECONDS, self._unload_pipeline,
+                _IDLE_TTL_SECONDS,
+                self._unload_pipeline,
             )
         except RuntimeError:
             pass  # No event loop (e.g. testing)
@@ -105,9 +107,11 @@ class StanzaAdapter:
             self._pipeline = None
             self._unload_timer = None
         import gc
+
         gc.collect()
         try:
             import ctypes
+
             ctypes.CDLL("libc.so.6").malloc_trim(0)
         except OSError:
             pass  # macOS — no libc.so.6
@@ -149,10 +153,14 @@ class StanzaAdapter:
             "xpos": word_token.xpos,
             "gender": self._read_gender(word_token),
             "prefix": self._child_text(
-                sentence, word_token.id, relation="compound:prt",
+                sentence,
+                word_token.id,
+                relation="compound:prt",
             ),
             "reflexive": self._child_text(
-                sentence, word_token.id, xpos="PRF",
+                sentence,
+                word_token.id,
+                xpos="PRF",
             ),
             "parts": self._collect_parts(sentence, word_token),
         }
@@ -197,9 +205,7 @@ class StanzaAdapter:
         parts: list[tuple[int, str]] = []
         for w in sentence.words:
             is_self = w.id == word_token.id
-            is_dependent = w.head == word_token.id and (
-                w.deprel == "compound:prt" or w.xpos == "PRF"
-            )
+            is_dependent = w.head == word_token.id and (w.deprel == "compound:prt" or w.xpos == "PRF")
             if is_self or is_dependent:
                 parts.append((w.id, w.text))
 

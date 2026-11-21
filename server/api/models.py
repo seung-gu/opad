@@ -1,10 +1,10 @@
 """Pydantic models for API request/response."""
 
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Literal, Optional
+
 from pydantic import BaseModel, Field, field_validator
 from server.domain.model.article import ArticleStatus
-
 
 # Type definitions for vocabulary metadata
 CEFRLevel = Literal["A1", "A2", "B1", "B2", "C1", "C2"]
@@ -12,6 +12,7 @@ CEFRLevel = Literal["A1", "A2", "B1", "B2", "C1", "C2"]
 
 class Conjugations(BaseModel):
     """Verb conjugation forms and noun declension forms."""
+
     # Verb forms
     present: Optional[str] = None
     past: Optional[str] = None
@@ -23,14 +24,15 @@ class Conjugations(BaseModel):
 
     def __bool__(self) -> bool:
         """Return False if all fields are None."""
-        return any(v is not None for v in (
-            self.present, self.past, self.participle, self.auxiliary,
-            self.genitive, self.plural
-        ))
+        return any(
+            v is not None
+            for v in (self.present, self.past, self.participle, self.auxiliary, self.genitive, self.plural)
+        )
 
 
 class ArticleResponse(BaseModel):
     """Response model for article."""
+
     id: str = Field(..., description="Article ID")
     language: str
     level: str
@@ -45,6 +47,7 @@ class ArticleResponse(BaseModel):
 
 class GenerateRequest(BaseModel):
     """Request model for generating article."""
+
     language: str
     level: str
     length: str
@@ -53,6 +56,7 @@ class GenerateRequest(BaseModel):
 
 class JobResponse(BaseModel):
     """Response model for job status."""
+
     id: str = Field(..., description="Job ID")
     article_id: Optional[str] = Field(None, description="Associated article ID")
     status: str = Field(..., description="Job status: queued, running, completed, failed")
@@ -66,6 +70,7 @@ class JobResponse(BaseModel):
 
 class GenerateResponse(BaseModel):
     """Response model for generate endpoint (only returned when generation actually starts)."""
+
     job_id: str = Field(..., description="Job ID for tracking")
     article_id: str = Field(..., description="Article ID")
     message: str = Field(..., description="Status message")
@@ -73,6 +78,7 @@ class GenerateResponse(BaseModel):
 
 class ArticleListResponse(BaseModel):
     """Response model for article list with pagination."""
+
     articles: list[ArticleResponse]
     total: int = Field(..., description="Total number of articles matching filters")
     skip: int = Field(..., description="Number of articles skipped")
@@ -81,21 +87,25 @@ class ArticleListResponse(BaseModel):
 
 class SearchRequest(BaseModel):
     """Request model for word search."""
+
     word: str = Field(..., min_length=1, max_length=100, description="Word to search")
     sentence: str = Field(..., min_length=1, max_length=2000, description="Sentence containing the word")
     language: str = Field(..., min_length=2, max_length=50, description="Language of the sentence")
     article_id: Optional[str] = Field(
         None,
         pattern=r"^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
-        description="Article ID for token usage tracking (UUID format)"
+        description="Article ID for token usage tracking (UUID format)",
     )
 
 
 class SearchResponse(BaseModel):
     """Response model for word search."""
+
     lemma: str
     definition: str
-    related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma (e.g., for separable verbs)")
+    related_words: Optional[list[str]] = Field(
+        None, description="All words in sentence belonging to this lemma (e.g., for separable verbs)"
+    )
     pos: Optional[str] = Field(None, description="Part of speech: noun, verb, adjective, etc.")
     gender: Optional[str] = Field(None, description="Grammatical gender: der/die/das, le/la, el/la")
     phonetics: Optional[str] = Field(None, description="IPA pronunciation (e.g., /hʊnt/)")
@@ -106,6 +116,7 @@ class SearchResponse(BaseModel):
 
 class VocabularyRequest(BaseModel):
     """Request model for adding vocabulary."""
+
     article_id: str = Field(..., description="Article ID")
     word: str = Field(..., description="Original word clicked")
     lemma: str = Field(..., description="Dictionary form (lemma)")
@@ -121,7 +132,7 @@ class VocabularyRequest(BaseModel):
     level: Optional[CEFRLevel] = Field(None, description="CEFR level (A1-C2)")
     examples: Optional[list[str]] = Field(None, description="Example sentences from dictionary")
 
-    @field_validator('conjugations', mode='before')
+    @field_validator("conjugations", mode="before")
     @classmethod
     def convert_conjugations(cls, v):
         """Convert Conjugations to dict, return None if empty."""
@@ -136,6 +147,7 @@ class VocabularyRequest(BaseModel):
 
 class VocabularyResponse(BaseModel):
     """Response model for vocabulary."""
+
     id: str = Field(..., description="Vocabulary ID")
     article_id: str = Field(..., description="Article ID")
     word: str = Field(..., description="Original word clicked")
@@ -157,6 +169,7 @@ class VocabularyResponse(BaseModel):
 
 class VocabularyCountResponse(BaseModel):
     """Response model for vocabulary with count (grouped by lemma)."""
+
     id: str = Field(..., description="Most recent vocabulary ID")
     article_id: str = Field(..., description="Most recent article ID")
     word: str = Field(..., description="Most recent word form")
@@ -180,6 +193,7 @@ class VocabularyCountResponse(BaseModel):
 
 class UserResponse(BaseModel):
     """User model for API responses and authentication."""
+
     id: str = Field(..., description="User ID (MongoDB _id)")
     email: str = Field(..., description="User email")
     name: str = Field(..., description="Display name")
@@ -192,6 +206,7 @@ class UserResponse(BaseModel):
 # Token Usage Models
 class OperationUsage(BaseModel):
     """Token usage breakdown by operation type."""
+
     tokens: int = Field(..., description="Total tokens used for this operation")
     cost: float = Field(..., description="Total cost in USD for this operation")
     count: int = Field(..., description="Number of API calls for this operation")
@@ -199,6 +214,7 @@ class OperationUsage(BaseModel):
 
 class DailyUsage(BaseModel):
     """Token usage for a single day."""
+
     date: str = Field(..., description="Date in YYYY-MM-DD format")
     tokens: int = Field(..., description="Total tokens used on this day")
     cost: float = Field(..., description="Total cost in USD on this day")
@@ -206,20 +222,20 @@ class DailyUsage(BaseModel):
 
 class TokenUsageSummary(BaseModel):
     """Summary of user's token usage over a time period."""
+
     total_tokens: int = Field(..., description="Total tokens used")
     total_cost: float = Field(..., description="Total estimated cost in USD")
     by_operation: dict[str, OperationUsage] = Field(
-        default_factory=dict,
-        description="Usage breakdown by operation type (dictionary_search, article_generation)"
+        default_factory=dict, description="Usage breakdown by operation type (dictionary_search, article_generation)"
     )
     daily_usage: list[DailyUsage] = Field(
-        default_factory=list,
-        description="Daily usage breakdown sorted by date ascending"
+        default_factory=list, description="Daily usage breakdown sorted by date ascending"
     )
 
 
 class TokenUsageResponse(BaseModel):
     """Single token usage response."""
+
     id: str = Field(..., description="Usage record ID")
     user_id: str = Field(..., description="User ID who incurred the usage")
     operation: str = Field(..., description="Operation type: dictionary_search or article_generation")

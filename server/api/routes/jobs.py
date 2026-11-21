@@ -1,10 +1,11 @@
 """Job-related API routes."""
 
 import logging
-from fastapi import APIRouter, HTTPException, Depends
 
-from api.models import JobResponse
+from fastapi import APIRouter, Depends, HTTPException
+
 from api.dependencies import get_job_queue
+from api.models import JobResponse
 from port.job_queue import JobQueuePort
 
 logger = logging.getLogger(__name__)
@@ -24,12 +25,12 @@ async def get_job_status(
         raise HTTPException(status_code=404, detail="Job not found")
 
     return JobResponse(
-        id=status_data.get('id', job_id),
-        article_id=status_data.get('article_id'),
-        status=status_data.get('status', 'unknown'),
-        progress=status_data.get('progress', 0),
-        message=status_data.get('message'),
-        created_at=status_data.get('created_at'),
-        updated_at=status_data.get('updated_at'),
-        error=status_data.get('error')
+        id=status_data.get("id", job_id),
+        article_id=status_data.get("article_id"),
+        status=status_data.get("status", "unknown"),
+        progress=status_data.get("progress", 0),
+        message=status_data.get("message"),
+        created_at=status_data.get("created_at"),
+        updated_at=status_data.get("updated_at"),
+        error=status_data.get("error"),
     )

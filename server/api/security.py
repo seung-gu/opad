@@ -1,11 +1,12 @@
 """JWT authentication and security dependencies."""
 
-import os
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
 from api.dependencies import get_user_repo
@@ -19,8 +20,7 @@ logger = logging.getLogger(__name__)
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 if not JWT_SECRET_KEY:
     raise ValueError(
-        "JWT_SECRET_KEY environment variable is required. "
-        "Generate a secure key with: openssl rand -hex 32"
+        "JWT_SECRET_KEY environment variable is required. Generate a secure key with: openssl rand -hex 32"
     )
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_DAYS = 7

@@ -43,8 +43,22 @@ type = "crew"
 [dependency-groups]
 dev = [
     "radon>=6.0.1",
+    "ruff>=0.17.6",
 ]
 
 [project.scripts]
 opad = "crew.main:run"
 run_crew = "crew.main:run"
+
+[tool.ruff]
+line-length = 120
+src = ["server"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]  # the formatter wraps code; long strings and comments stay as written
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exports
+"server/api/main.py" = ["E402"]  # load_dotenv() and sys.path must run before the imports
+"scripts/*" = ["E402"]

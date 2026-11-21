@@ -7,12 +7,12 @@ and reflexive pronoun stripping with proper edge cases.
 import unittest
 
 from adapter.external.free_dictionary import (
+    _extract_forms,
     _extract_gender_from_pos,
     _extract_gender_from_senses,
     _extract_phonetics,
-    _extract_forms,
 )
-from domain.model.language import get_language, LANGUAGES, GERMAN, FRENCH, SPANISH
+from domain.model.language import FRENCH, GERMAN, LANGUAGES, SPANISH, get_language
 
 
 class TestGetLanguage(unittest.TestCase):
@@ -80,6 +80,7 @@ class TestStripReflexive(unittest.TestCase):
     def test_english_no_strip(self):
         """Test English doesn't strip reflexive pronouns."""
         from domain.model.language import ENGLISH
+
         self.assertEqual(ENGLISH.strip_reflexive("sich test"), "sich test")
 
     def test_other_pronouns(self):
@@ -169,6 +170,7 @@ class TestExtractGenderFromPos(unittest.TestCase):
     def test_non_gendered_language_returns_none(self):
         """Test languages without gender support return None."""
         from domain.model.language import ENGLISH
+
         self.assertIsNone(_extract_gender_from_pos("masculine noun", ENGLISH))
 
     def test_french_gender_extraction(self):
@@ -210,57 +212,34 @@ class TestExtractGenderFromSenses(unittest.TestCase):
 
     def test_masculine_tag_german(self):
         """Test masculine tag returns 'der'."""
-        entry = {
-            "senses": [
-                {"definition": "dog", "tags": ["masculine"]}
-            ]
-        }
+        entry = {"senses": [{"definition": "dog", "tags": ["masculine"]}]}
         self.assertEqual(_extract_gender_from_senses(entry, GERMAN), "der")
 
     def test_feminine_tag_german(self):
         """Test feminine tag returns 'die'."""
-        entry = {
-            "senses": [
-                {"definition": "cat", "tags": ["feminine"]}
-            ]
-        }
+        entry = {"senses": [{"definition": "cat", "tags": ["feminine"]}]}
         self.assertEqual(_extract_gender_from_senses(entry, GERMAN), "die")
 
     def test_neuter_tag_german(self):
         """Test neuter tag returns 'das'."""
-        entry = {
-            "senses": [
-                {"definition": "child", "tags": ["neuter"]}
-            ]
-        }
+        entry = {"senses": [{"definition": "child", "tags": ["neuter"]}]}
         self.assertEqual(_extract_gender_from_senses(entry, GERMAN), "das")
 
     def test_case_insensitive(self):
         """Test gender extraction is case-insensitive."""
-        entry = {
-            "senses": [
-                {"definition": "test", "tags": ["MASCULINE"]}
-            ]
-        }
+        entry = {"senses": [{"definition": "test", "tags": ["MASCULINE"]}]}
         self.assertEqual(_extract_gender_from_senses(entry, GERMAN), "der")
 
     def test_non_gendered_language_returns_none(self):
         """Test languages without gender support return None."""
         from domain.model.language import ENGLISH
-        entry = {
-            "senses": [
-                {"definition": "test", "tags": ["masculine"]}
-            ]
-        }
+
+        entry = {"senses": [{"definition": "test", "tags": ["masculine"]}]}
         self.assertIsNone(_extract_gender_from_senses(entry, ENGLISH))
 
     def test_french_gender_from_senses(self):
         """Test French gender extraction from senses tags."""
-        entry = {
-            "senses": [
-                {"definition": "test", "tags": ["masculine"]}
-            ]
-        }
+        entry = {"senses": [{"definition": "test", "tags": ["masculine"]}]}
         self.assertEqual(_extract_gender_from_senses(entry, FRENCH), "le")
         entry["senses"][0]["tags"] = ["feminine"]
         self.assertEqual(_extract_gender_from_senses(entry, FRENCH), "la")
@@ -271,11 +250,7 @@ class TestExtractGenderFromSenses(unittest.TestCase):
 
     def test_spanish_gender_from_senses(self):
         """Test Spanish gender extraction from senses tags."""
-        entry = {
-            "senses": [
-                {"definition": "test", "tags": ["masculine"]}
-            ]
-        }
+        entry = {"senses": [{"definition": "test", "tags": ["masculine"]}]}
         self.assertEqual(_extract_gender_from_senses(entry, SPANISH), "el")
         entry["senses"][0]["tags"] = ["feminine"]
         self.assertEqual(_extract_gender_from_senses(entry, SPANISH), "la")
@@ -291,20 +266,12 @@ class TestExtractGenderFromSenses(unittest.TestCase):
 
     def test_no_tags_returns_none(self):
         """Test sense without tags returns None."""
-        entry = {
-            "senses": [
-                {"definition": "test"}
-            ]
-        }
+        entry = {"senses": [{"definition": "test"}]}
         self.assertIsNone(_extract_gender_from_senses(entry, GERMAN))
 
     def test_no_gender_tag_returns_none(self):
         """Test sense with non-gender tags returns None."""
-        entry = {
-            "senses": [
-                {"definition": "test", "tags": ["verb", "transitive"]}
-            ]
-        }
+        entry = {"senses": [{"definition": "test", "tags": ["verb", "transitive"]}]}
         self.assertIsNone(_extract_gender_from_senses(entry, GERMAN))
 
 
@@ -313,11 +280,7 @@ class TestExtractPhonetics(unittest.TestCase):
 
     def test_extract_ipa_phonetics(self):
         """Test extracting IPA phonetics."""
-        entry = {
-            "pronunciations": [
-                {"type": "ipa", "text": "/hʊnt/"}
-            ]
-        }
+        entry = {"pronunciations": [{"type": "ipa", "text": "/hʊnt/"}]}
         self.assertEqual(_extract_phonetics(entry), "/hʊnt/")
 
     def test_multiple_pronunciations_returns_first_ipa(self):
@@ -326,19 +289,14 @@ class TestExtractPhonetics(unittest.TestCase):
             "pronunciations": [
                 {"type": "phonetic", "text": "hoont"},
                 {"type": "ipa", "text": "/hʊnt/"},
-                {"type": "ipa", "text": "/huːnt/"}
+                {"type": "ipa", "text": "/huːnt/"},
             ]
         }
         self.assertEqual(_extract_phonetics(entry), "/hʊnt/")
 
     def test_non_ipa_pronunciations_skipped(self):
         """Test that non-IPA pronunciations are skipped."""
-        entry = {
-            "pronunciations": [
-                {"type": "phonetic", "text": "hoont"},
-                {"type": "written", "text": "hunt"}
-            ]
-        }
+        entry = {"pronunciations": [{"type": "phonetic", "text": "hoont"}, {"type": "written", "text": "hunt"}]}
         self.assertIsNone(_extract_phonetics(entry))
 
     def test_no_pronunciations(self):
@@ -353,20 +311,12 @@ class TestExtractPhonetics(unittest.TestCase):
 
     def test_phonetics_with_empty_text(self):
         """Test IPA entry with empty text returns empty string."""
-        entry = {
-            "pronunciations": [
-                {"type": "ipa", "text": ""}
-            ]
-        }
+        entry = {"pronunciations": [{"type": "ipa", "text": ""}]}
         self.assertEqual(_extract_phonetics(entry), "")
 
     def test_phonetics_missing_text_key(self):
         """Test pronunciation without text key returns None."""
-        entry = {
-            "pronunciations": [
-                {"type": "ipa"}
-            ]
-        }
+        entry = {"pronunciations": [{"type": "ipa"}]}
         self.assertIsNone(_extract_phonetics(entry))
 
 
@@ -386,24 +336,15 @@ class TestExtractForms(unittest.TestCase):
             "forms": [
                 {"word": "Hundes", "tags": ["genitive"]},
                 {"word": "Hunde", "tags": ["plural"]},
-                {"word": "Hündin", "tags": ["feminine"]}
-            ]
+                {"word": "Hündin", "tags": ["feminine"]},
+            ],
         }
         result = _extract_forms(entry)
-        self.assertEqual(result, {
-            "genitive": "Hundes",
-            "plural": "Hunde",
-            "feminine": "Hündin"
-        })
+        self.assertEqual(result, {"genitive": "Hundes", "plural": "Hunde", "feminine": "Hündin"})
 
     def test_noun_single_form(self):
         """Test extracting single noun form."""
-        entry = {
-            "partOfSpeech": "noun",
-            "forms": [
-                {"word": "Katzen", "tags": ["plural"]}
-            ]
-        }
+        entry = {"partOfSpeech": "noun", "forms": [{"word": "Katzen", "tags": ["plural"]}]}
         result = _extract_forms(entry)
         self.assertEqual(result, {"plural": "Katzen"})
 
@@ -417,24 +358,19 @@ class TestExtractForms(unittest.TestCase):
                 {"word": "fuhr", "tags": ["past"]},
                 {"word": "gefahren", "tags": ["participle", "past"]},
                 {"word": "haben", "tags": ["auxiliary"]},
-                {"word": "sein", "tags": ["auxiliary"]}
-            ]
+                {"word": "sein", "tags": ["auxiliary"]},
+            ],
         }
         result = _extract_forms(entry)
-        self.assertEqual(result, {
-            "present": "fährt",
-            "past": "fuhr",
-            "participle": "gefahren",
-            "auxiliary": "haben / sein"
-        })
+        self.assertEqual(
+            result, {"present": "fährt", "past": "fuhr", "participle": "gefahren", "auxiliary": "haben / sein"}
+        )
 
     def test_verb_preterite_form(self):
         """Test extracting preterite as past form."""
         entry = {
             "partOfSpeech": "verb",
-            "forms": [
-                {"word": "ging", "tags": ["preterite", "singular", "third-person", "indicative"]}
-            ]
+            "forms": [{"word": "ging", "tags": ["preterite", "singular", "third-person", "indicative"]}],
         }
         result = _extract_forms(entry)
         self.assertEqual(result, {"past": "ging"})
@@ -445,8 +381,8 @@ class TestExtractForms(unittest.TestCase):
             "partOfSpeech": "verb",
             "forms": [
                 {"word": "sein", "tags": ["auxiliary"]},
-                {"word": "geht", "tags": ["present", "singular", "third-person"]}
-            ]
+                {"word": "geht", "tags": ["present", "singular", "third-person"]},
+            ],
         }
         result = _extract_forms(entry)
         self.assertEqual(result["auxiliary"], "sein")
@@ -458,8 +394,8 @@ class TestExtractForms(unittest.TestCase):
             "partOfSpeech": "verb",
             "forms": [
                 {"word": "habe gefahren", "tags": ["multiword-construction", "perfect"]},
-                {"word": "fährt", "tags": ["present", "singular", "third-person"]}
-            ]
+                {"word": "fährt", "tags": ["present", "singular", "third-person"]},
+            ],
         }
         result = _extract_forms(entry)
         self.assertEqual(result, {"present": "fährt"})
@@ -471,8 +407,8 @@ class TestExtractForms(unittest.TestCase):
             "forms": [
                 {"word": "strong", "tags": ["table-tags"]},
                 {"word": "de-conj", "tags": ["inflection-template"]},
-                {"word": "fährt", "tags": ["present", "singular", "third-person"]}
-            ]
+                {"word": "fährt", "tags": ["present", "singular", "third-person"]},
+            ],
         }
         result = _extract_forms(entry)
         self.assertEqual(result, {"present": "fährt"})
@@ -490,50 +426,27 @@ class TestExtractForms(unittest.TestCase):
 
     def test_form_missing_word_is_skipped(self):
         """Test form without word is skipped."""
-        entry = {
-            "partOfSpeech": "noun",
-            "forms": [
-                {"tags": ["genitive"]},
-                {"word": "Hunde", "tags": ["plural"]}
-            ]
-        }
+        entry = {"partOfSpeech": "noun", "forms": [{"tags": ["genitive"]}, {"word": "Hunde", "tags": ["plural"]}]}
         result = _extract_forms(entry)
         self.assertEqual(result, {"plural": "Hunde"})
 
     def test_form_missing_tags_is_skipped(self):
         """Test form without tags is skipped."""
-        entry = {
-            "partOfSpeech": "noun",
-            "forms": [
-                {"word": "Hund"},
-                {"word": "Hunde", "tags": ["plural"]}
-            ]
-        }
+        entry = {"partOfSpeech": "noun", "forms": [{"word": "Hund"}, {"word": "Hunde", "tags": ["plural"]}]}
         result = _extract_forms(entry)
         self.assertEqual(result, {"plural": "Hunde"})
 
     def test_all_forms_invalid_returns_none(self):
         """Test that all invalid forms returns None."""
-        entry = {
-            "partOfSpeech": "noun",
-            "forms": [
-                {"word": "Hund"},
-                {"tags": ["genitive"]}
-            ]
-        }
+        entry = {"partOfSpeech": "noun", "forms": [{"word": "Hund"}, {"tags": ["genitive"]}]}
         self.assertIsNone(_extract_forms(entry))
 
     def test_unknown_pos_extracts_noun_forms(self):
         """Test that unknown POS extracts noun forms (default)."""
-        entry = {
-            "partOfSpeech": "adjective",
-            "forms": [
-                {"word": "schneller", "tags": ["plural"]}
-            ]
-        }
+        entry = {"partOfSpeech": "adjective", "forms": [{"word": "schneller", "tags": ["plural"]}]}
         result = _extract_forms(entry)
         self.assertEqual(result, {"plural": "schneller"})
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -1,20 +1,21 @@
 """Unit tests for vocabulary routes."""
 
+import sys
 import unittest
 import uuid
-import sys
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from fastapi.testclient import TestClient
 from fastapi import HTTPException
-from api.main import app
-from api.models import UserResponse, VocabularyRequest
-from api.security import get_current_user_required
-from api.dependencies import get_vocab_repo
+from fastapi.testclient import TestClient
+
 from adapter.fake.vocabulary_repository import FakeVocabularyRepository
+from api.dependencies import get_vocab_repo
+from api.main import app
+from api.models import UserResponse
+from api.security import get_current_user_required
 from domain.model.vocabulary import GrammaticalInfo, Vocabulary
 
 
@@ -30,7 +31,7 @@ class TestGetVocabulariesList(unittest.TestCase):
             name="Test User",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
-            provider="email"
+            provider="email",
         )
         self.vocab_repo = FakeVocabularyRepository()
 
@@ -42,19 +43,18 @@ class TestGetVocabulariesList(unittest.TestCase):
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         app.dependency_overrides[get_vocab_repo] = lambda: self.vocab_repo
 
-
     def _make_vocab(self, **overrides) -> Vocabulary:
         """Create a Vocabulary domain object with sensible defaults."""
         defaults = dict(
             id=str(uuid.uuid4()),
-            article_id='article-1',
-            word='testing',
-            lemma='test',
-            definition='a procedure',
-            sentence='This is a test.',
-            language='English',
+            article_id="article-1",
+            word="testing",
+            lemma="test",
+            definition="a procedure",
+            sentence="This is a test.",
+            language="English",
             created_at=datetime.now(timezone.utc),
-            user_id='test-user-123',
+            user_id="test-user-123",
         )
         defaults.update(overrides)
         return Vocabulary(**defaults)
@@ -63,43 +63,55 @@ class TestGetVocabulariesList(unittest.TestCase):
         """Test successful retrieval of vocabulary list."""
         self._setup()
         # Save same lemma twice to get count=2
-        for article_id in ['article-1', 'article-2']:
-            self.vocab_repo.save(self._make_vocab(
-                article_id=article_id,
-                level='B1',
-                grammar=GrammaticalInfo(pos='noun'),
-            ))
+        for article_id in ["article-1", "article-2"]:
+            self.vocab_repo.save(
+                self._make_vocab(
+                    article_id=article_id,
+                    level="B1",
+                    grammar=GrammaticalInfo(pos="noun"),
+                )
+            )
 
         response = self.client.get("/dictionary/vocabularies")
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]['lemma'], 'test')
-        self.assertEqual(data[0]['count'], 2)
-        self.assertEqual(data[0]['pos'], 'noun')
-        self.assertEqual(data[0]['level'], 'B1')
+        self.assertEqual(data[0]["lemma"], "test")
+        self.assertEqual(data[0]["count"], 2)
+        self.assertEqual(data[0]["pos"], "noun")
+        self.assertEqual(data[0]["level"], "B1")
 
     def test_get_vocabularies_list_with_language_filter(self):
         """Test vocabulary list with language filter."""
         self._setup()
-        self.vocab_repo.save(self._make_vocab(
-            article_id='a1', word='Hund', lemma='Hund',
-            definition='dog', sentence='Der Hund.',
-            language='German',
-        ))
-        self.vocab_repo.save(self._make_vocab(
-            article_id='a2', word='dog', lemma='dog',
-            definition='dog', sentence='The dog.',
-            language='English',
-        ))
+        self.vocab_repo.save(
+            self._make_vocab(
+                article_id="a1",
+                word="Hund",
+                lemma="Hund",
+                definition="dog",
+                sentence="Der Hund.",
+                language="German",
+            )
+        )
+        self.vocab_repo.save(
+            self._make_vocab(
+                article_id="a2",
+                word="dog",
+                lemma="dog",
+                definition="dog",
+                sentence="The dog.",
+                language="English",
+            )
+        )
 
         response = self.client.get("/dictionary/vocabularies?language=German")
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]['lemma'], 'Hund')
+        self.assertEqual(data[0]["lemma"], "Hund")
 
     def test_get_vocabularies_list_with_pagination(self):
         """Test vocabulary list with pagination parameters."""
@@ -154,7 +166,7 @@ class TestAddVocabulary(unittest.TestCase):
             name="Test User",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
-            provider="email"
+            provider="email",
         )
         self.vocab_repo = FakeVocabularyRepository()
 
@@ -165,7 +177,6 @@ class TestAddVocabulary(unittest.TestCase):
     def _setup(self):
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         app.dependency_overrides[get_vocab_repo] = lambda: self.vocab_repo
-
 
     def test_add_vocabulary_success(self):
         """Test successful vocabulary addition returns 200 with VocabularyResponse fields."""
@@ -185,26 +196,27 @@ class TestAddVocabulary(unittest.TestCase):
             "phonetics": "/test/",
             "conjugations": None,
             "level": "B1",
-            "examples": None
+            "examples": None,
         }
 
         response = self.client.post("/dictionary/vocabulary", json=request_data)
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data['word'], 'testing')
-        self.assertEqual(data['lemma'], 'test')
-        self.assertEqual(data['definition'], 'a procedure')
-        self.assertEqual(data['sentence'], 'This is a test.')
-        self.assertEqual(data['language'], 'English')
-        self.assertEqual(data['pos'], 'noun')
-        self.assertEqual(data['level'], 'B1')
-        self.assertEqual(data['user_id'], 'test-user-123')
-        self.assertIn('id', data)
-        self.assertIn('created_at', data)
+        self.assertEqual(data["word"], "testing")
+        self.assertEqual(data["lemma"], "test")
+        self.assertEqual(data["definition"], "a procedure")
+        self.assertEqual(data["sentence"], "This is a test.")
+        self.assertEqual(data["language"], "English")
+        self.assertEqual(data["pos"], "noun")
+        self.assertEqual(data["level"], "B1")
+        self.assertEqual(data["user_id"], "test-user-123")
+        self.assertIn("id", data)
+        self.assertIn("created_at", data)
 
     def test_add_vocabulary_requires_authentication(self):
         """Test that add_vocabulary requires authentication."""
+
         def mock_auth_fail():
             raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -217,7 +229,7 @@ class TestAddVocabulary(unittest.TestCase):
             "lemma": "test",
             "definition": "a procedure",
             "sentence": "This is a test.",
-            "language": "English"
+            "language": "English",
         }
 
         response = self.client.post("/dictionary/vocabulary", json=request_data)
@@ -244,14 +256,14 @@ class TestAddVocabulary(unittest.TestCase):
             "lemma": "test",
             "definition": "a procedure",
             "sentence": "This is a test.",
-            "language": "English"
+            "language": "English",
         }
 
         response = self.client.post("/dictionary/vocabulary", json=request_data)
 
         self.assertEqual(response.status_code, 500)
         data = response.json()
-        self.assertEqual(data['detail'], "Failed to save vocabulary")
+        self.assertEqual(data["detail"], "Failed to save vocabulary")
 
 
 class TestDeleteVocabulary(unittest.TestCase):
@@ -266,7 +278,7 @@ class TestDeleteVocabulary(unittest.TestCase):
             name="Test User",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
-            provider="email"
+            provider="email",
         )
         self.vocab_repo = FakeVocabularyRepository()
 
@@ -278,19 +290,18 @@ class TestDeleteVocabulary(unittest.TestCase):
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
         app.dependency_overrides[get_vocab_repo] = lambda: self.vocab_repo
 
-
     def _make_vocab(self, **overrides) -> Vocabulary:
         """Create a Vocabulary domain object with sensible defaults."""
         defaults = dict(
             id=str(uuid.uuid4()),
-            article_id='article-1',
-            word='testing',
-            lemma='test',
-            definition='a procedure',
-            sentence='This is a test.',
-            language='English',
+            article_id="article-1",
+            word="testing",
+            lemma="test",
+            definition="a procedure",
+            sentence="This is a test.",
+            language="English",
             created_at=datetime.now(timezone.utc),
-            user_id='test-user-123',
+            user_id="test-user-123",
         )
         defaults.update(overrides)
         return Vocabulary(**defaults)
@@ -307,7 +318,7 @@ class TestDeleteVocabulary(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data['message'], "Vocabulary deleted successfully")
+        self.assertEqual(data["message"], "Vocabulary deleted successfully")
 
         # Verify it's actually deleted
         self.assertIsNone(self.vocab_repo.get_by_id(vocab_id))
@@ -339,7 +350,7 @@ class TestDeleteVocabulary(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
         data = response.json()
-        self.assertEqual(data['detail'], "Vocabulary not found")
+        self.assertEqual(data["detail"], "Vocabulary not found")
 
     def test_delete_vocabulary_permission_denied(self):
         """Test that user cannot delete another user's vocabulary."""
@@ -353,11 +364,11 @@ class TestDeleteVocabulary(unittest.TestCase):
 
         self.assertEqual(response.status_code, 403)
         data = response.json()
-        self.assertEqual(data['detail'], "You don't have permission to delete this vocabulary")
+        self.assertEqual(data["detail"], "You don't have permission to delete this vocabulary")
 
         # Verify vocabulary still exists
         self.assertIsNotNone(self.vocab_repo.get_by_id(vocab_id))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

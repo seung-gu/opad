@@ -4,12 +4,12 @@ from fastapi import HTTPException
 
 from adapter.external.free_dictionary import FreeDictionaryAdapter
 from adapter.external.litellm import LiteLLMAdapter
-from adapter.nlp.stanza import StanzaAdapter
-from adapter.mongodb.connection import get_mongodb_client, DATABASE_NAME
 from adapter.mongodb.article_repository import MongoArticleRepository
+from adapter.mongodb.connection import DATABASE_NAME, get_mongodb_client
 from adapter.mongodb.token_usage_repository import MongoTokenUsageRepository
 from adapter.mongodb.user_repository import MongoUserRepository
 from adapter.mongodb.vocabulary_repository import MongoVocabularyRepository
+from adapter.nlp.stanza import StanzaAdapter
 from adapter.queue.redis_job_queue import RedisJobQueueAdapter
 from port.article_repository import ArticleRepository
 from port.dictionary import DictionaryPort

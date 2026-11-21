@@ -2,15 +2,24 @@
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends
 
-from api.models import ArticleResponse, GenerateRequest, GenerateResponse, JobResponse, ArticleListResponse, UserResponse, VocabularyResponse
-from api.security import get_current_user_required
+from fastapi import APIRouter, Depends, HTTPException
+
 from api.dependencies import get_article_repo, get_job_queue, get_vocab_repo
+from api.models import (
+    ArticleListResponse,
+    ArticleResponse,
+    GenerateRequest,
+    GenerateResponse,
+    JobResponse,
+    UserResponse,
+    VocabularyResponse,
+)
+from api.security import get_current_user_required
+from domain.model.article import Article, ArticleInputs, ArticleStatus
+from domain.model.errors import DomainError, DuplicateArticleError, EnqueueError
 from port.article_repository import ArticleRepository
 from port.job_queue import JobQueuePort
-from domain.model.article import ArticleInputs, ArticleStatus, Article
-from domain.model.errors import DomainError, DuplicateArticleError, EnqueueError
 from port.vocabulary_repository import VocabularyRepository
 from services.article_submission_service import submit_generation
 
@@ -27,24 +36,24 @@ def _build_article_response(article: Article) -> dict:
     if created_at.tzinfo is not None:
         formatted_time = created_at.isoformat()
     else:
-        formatted_time = created_at.isoformat() + 'Z'
+        formatted_time = created_at.isoformat() + "Z"
 
     return {
-        'id': article.id,
-        'language': article.inputs.language,
-        'level': article.inputs.level,
-        'length': article.inputs.length,
-        'topic': article.inputs.topic,
-        'status': article.status.value if isinstance(article.status, ArticleStatus) else article.status,
-        'created_at': formatted_time,
-        'user_id': article.user_id,
-        'job_id': article.job_id,
-        'inputs': {
-            'language': article.inputs.language,
-            'level': article.inputs.level,
-            'length': article.inputs.length,
-            'topic': article.inputs.topic,
-        }
+        "id": article.id,
+        "language": article.inputs.language,
+        "level": article.inputs.level,
+        "length": article.inputs.length,
+        "topic": article.inputs.topic,
+        "status": article.status.value if isinstance(article.status, ArticleStatus) else article.status,
+        "created_at": formatted_time,
+        "user_id": article.user_id,
+        "job_id": article.job_id,
+        "inputs": {
+            "language": article.inputs.language,
+            "level": article.inputs.level,
+            "length": article.inputs.length,
+            "topic": article.inputs.topic,
+        },
     }
 
 
@@ -53,21 +62,12 @@ def _check_ownership(article: Article, current_user: UserResponse, article_id: s
     if not article.is_owned_by(current_user.id):
         logger.warning(
             f"Unauthorized {action} attempt",
-            extra={
-                "articleId": article_id,
-                "articleUserId": article.user_id,
-                "requestUserId": current_user.id
-            }
+            extra={"articleId": article_id, "articleUserId": article.user_id, "requestUserId": current_user.id},
         )
-        raise HTTPException(
-            status_code=403,
-            detail=f"You don't have permission to {action} this article"
-        )
+        raise HTTPException(status_code=403, detail=f"You don't have permission to {action} this article")
 
 
-def _get_article_or_404(
-    repo: ArticleRepository, article_id: str, check_deleted: bool = True
-) -> Article:
+def _get_article_or_404(repo: ArticleRepository, article_id: str, check_deleted: bool = True) -> Article:
     """Retrieve article or raise 404."""
     article = repo.get_by_id(article_id)
     if not article:
@@ -99,7 +99,13 @@ async def list_articles(
         raise HTTPException(status_code=422, detail=f"Invalid status: {status}")
 
     result = repo.find_many(
-        skip, limit, status_enum, language, level, current_user.id, exclude_deleted=True,
+        skip,
+        limit,
+        status_enum,
+        language,
+        level,
+        current_user.id,
+        exclude_deleted=True,
     )
 
     article_responses = []
@@ -107,24 +113,13 @@ async def list_articles(
         try:
             article_responses.append(_build_article_response(article))
         except Exception as e:
-            logger.warning("Skipping invalid article", extra={
-                "articleId": article.id,
-                "error": str(e)
-            })
+            logger.warning("Skipping invalid article", extra={"articleId": article.id, "error": str(e)})
 
-    logger.info("Listed articles", extra={
-        "count": len(article_responses),
-        "total": result.total,
-        "skip": skip,
-        "limit": limit
-    })
-
-    return ArticleListResponse(
-        articles=article_responses,
-        total=result.total,
-        skip=skip,
-        limit=limit
+    logger.info(
+        "Listed articles", extra={"count": len(article_responses), "total": result.total, "skip": skip, "limit": limit}
     )
+
+    return ArticleListResponse(articles=article_responses, total=result.total, skip=skip, limit=limit)
 
 
 @router.post("/generate", response_model=GenerateResponse)
@@ -152,12 +147,15 @@ async def generate_article(
                 existing_job = JobResponse(**e.job_data)
             except Exception:
                 pass
-        raise HTTPException(status_code=409, detail={
-            "error": "Duplicate article detected",
-            "message": "An article with identical parameters was created within the last 24 hours.",
-            "existing_job": existing_job.model_dump(mode='json') if existing_job else None,
-            "article_id": e.article_id,
-        })
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "Duplicate article detected",
+                "message": "An article with identical parameters was created within the last 24 hours.",
+                "existing_job": existing_job.model_dump(mode="json") if existing_job else None,
+                "article_id": e.article_id,
+            },
+        )
     except EnqueueError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except DomainError as e:
@@ -199,7 +197,7 @@ async def get_article_content(
     if not article.has_content:
         raise HTTPException(status_code=404, detail="Article content not found")
 
-    return Response(content=article.content, media_type='text/markdown')
+    return Response(content=article.content, media_type="text/markdown")
 
 
 @router.get("/{article_id}/vocabularies", response_model=list[VocabularyResponse])
@@ -215,31 +213,30 @@ async def get_article_vocabularies(
 
     vocabs = vocab_repo.find(article_id=article_id, user_id=current_user.id)
 
-    logger.info("Article vocabularies retrieved", extra={
-        "articleId": article_id,
-        "count": len(vocabs),
-        "userId": current_user.id
-    })
+    logger.info(
+        "Article vocabularies retrieved",
+        extra={"articleId": article_id, "count": len(vocabs), "userId": current_user.id},
+    )
 
     return [
         {
-            'id': v.id,
-            'article_id': v.article_id,
-            'word': v.word,
-            'lemma': v.lemma,
-            'definition': v.definition,
-            'sentence': v.sentence,
-            'language': v.language,
-            'related_words': v.related_words,
-            'span_id': v.span_id,
-            'created_at': v.created_at,
-            'user_id': v.user_id,
-            'pos': v.grammar.pos if v.grammar else None,
-            'gender': v.grammar.gender if v.grammar else None,
-            'phonetics': v.grammar.phonetics if v.grammar else None,
-            'conjugations': v.grammar.conjugations if v.grammar else None,
-            'level': v.level,
-            'examples': v.grammar.examples if v.grammar else None,
+            "id": v.id,
+            "article_id": v.article_id,
+            "word": v.word,
+            "lemma": v.lemma,
+            "definition": v.definition,
+            "sentence": v.sentence,
+            "language": v.language,
+            "related_words": v.related_words,
+            "span_id": v.span_id,
+            "created_at": v.created_at,
+            "user_id": v.user_id,
+            "pos": v.grammar.pos if v.grammar else None,
+            "gender": v.grammar.gender if v.grammar else None,
+            "phonetics": v.grammar.phonetics if v.grammar else None,
+            "conjugations": v.grammar.conjugations if v.grammar else None,
+            "level": v.level,
+            "examples": v.grammar.examples if v.grammar else None,
         }
         for v in vocabs
     ]
@@ -261,8 +258,4 @@ async def delete_article(
 
     logger.info("Article deleted via API", extra={"articleId": article_id, "userId": current_user.id})
 
-    return {
-        "success": True,
-        "article_id": article_id,
-        "message": "Article soft deleted (status='deleted')"
-    }
+    return {"success": True, "article_id": article_id, "message": "Article soft deleted (status='deleted')"}

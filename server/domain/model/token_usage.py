@@ -17,6 +17,7 @@ class LLMCallResult:
         estimated_cost: Estimated cost in USD based on model pricing.
         provider: Optional provider name (e.g., "openai", "anthropic", "google").
     """
+
     model: str
     prompt_tokens: int
     completion_tokens: int
@@ -32,6 +33,7 @@ class TokenUsage:
     Tracks who used how many tokens for which operation.
     Created by service layer, persisted by adapter.
     """
+
     id: str
     user_id: str
     operation: str
@@ -47,12 +49,12 @@ class TokenUsage:
     @classmethod
     def from_llm_result(
         cls,
-        stats: 'LLMCallResult',
+        stats: "LLMCallResult",
         user_id: str,
         operation: str,
         article_id: str | None = None,
         metadata: dict | None = None,
-    ) -> 'TokenUsage':
+    ) -> "TokenUsage":
         """Create a TokenUsage record from an LLM call result."""
         return cls(
             id=str(uuid.uuid4()),

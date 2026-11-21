@@ -14,15 +14,17 @@ if TYPE_CHECKING:
 
 class ArticleStatus(str, Enum):
     """Enumeration of possible article processing statuses."""
-    RUNNING = 'running'
-    COMPLETED = 'completed'
-    FAILED = 'failed'
-    DELETED = 'deleted'
+
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    DELETED = "deleted"
 
 
 @dataclass(frozen=True)
 class ArticleInputs:
     """Input parameters for article generation."""
+
     language: str
     level: str
     length: str
@@ -35,6 +37,7 @@ class ArticleInputs:
 @dataclass(frozen=True)
 class SourceInfo:
     """Source metadata from the original news article."""
+
     title: str
     source_name: str
     source_url: str | None = None
@@ -45,6 +48,7 @@ class SourceInfo:
 @dataclass(frozen=True)
 class EditRecord:
     """Record of a sentence edited during the review process."""
+
     original: str
     replaced: str
     rationale: str
@@ -53,6 +57,7 @@ class EditRecord:
 @dataclass(frozen=True)
 class GenerationResult:
     """Article generation result — framework-agnostic domain DTO."""
+
     content: str
     source: SourceInfo
     edit_history: list[EditRecord]
@@ -65,6 +70,7 @@ class GenerationResult:
 @dataclass
 class Article:
     """Domain model representing an article."""
+
     id: str
     inputs: ArticleInputs
     status: ArticleStatus
@@ -81,7 +87,7 @@ class Article:
     # ── factory ───────────────────────────────────────────
 
     @staticmethod
-    def create(inputs: ArticleInputs, user_id: str) -> 'Article':
+    def create(inputs: ArticleInputs, user_id: str) -> "Article":
         """Create a new Article in RUNNING status with generated IDs."""
         now = datetime.now(timezone.utc)
         return Article(
@@ -140,5 +146,6 @@ class Article:
 @dataclass
 class Articles:
     """Collection wrapper for paginated article results."""
+
     items: list[Article]
     total: int

@@ -6,11 +6,12 @@ This module handles token usage tracking and analytics:
 """
 
 import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.dependencies import get_article_repo, get_token_usage_repo
-from api.security import get_current_user_required
 from api.models import TokenUsageResponse, TokenUsageSummary, UserResponse
+from api.security import get_current_user_required
 from port.article_repository import ArticleRepository
 from port.token_usage_repository import TokenUsageRepository
 
@@ -39,12 +40,15 @@ async def get_my_usage(
     """
     summary = repo.get_user_summary(user_id=current_user.id, days=days)
 
-    logger.info("Token usage summary retrieved", extra={
-        "userId": current_user.id,
-        "days": days,
-        "totalTokens": summary.get("total_tokens", 0),
-        "totalCost": summary.get("total_cost", 0.0)
-    })
+    logger.info(
+        "Token usage summary retrieved",
+        extra={
+            "userId": current_user.id,
+            "days": days,
+            "totalTokens": summary.get("total_tokens", 0),
+            "totalCost": summary.get("total_cost", 0.0),
+        },
+    )
 
     return summary
 
@@ -78,10 +82,9 @@ async def get_article_usage(
 
     usage_records = token_usage_repo.get_by_article(article_id)
 
-    logger.info("Article token usage retrieved", extra={
-        "userId": current_user.id,
-        "articleId": article_id,
-        "recordCount": len(usage_records)
-    })
+    logger.info(
+        "Article token usage retrieved",
+        extra={"userId": current_user.id, "articleId": article_id, "recordCount": len(usage_records)},
+    )
 
     return usage_records

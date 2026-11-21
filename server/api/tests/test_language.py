@@ -8,14 +8,14 @@ import unittest
 from types import MappingProxyType
 
 from domain.model.language import (
-    Language,
-    GERMAN,
     ENGLISH,
     FRENCH,
-    SPANISH,
+    GERMAN,
     ITALIAN,
     KOREAN,
     LANGUAGES,
+    SPANISH,
+    Language,
 )
 
 
@@ -54,22 +54,14 @@ class TestLanguageImmutability(unittest.TestCase):
 
     def test_gender_articles_dict_converted_to_proxy_at_init(self):
         """Test that dict passed to Language is converted to MappingProxyType."""
-        lang = Language(
-            name="TestLang",
-            code="tl",
-            gender_articles={"test": "value"}
-        )
+        lang = Language(name="TestLang", code="tl", gender_articles={"test": "value"})
         self.assertIsInstance(lang.gender_articles, MappingProxyType)
         self.assertEqual(lang.gender_articles["test"], "value")
 
     def test_gender_articles_proxy_already_passed_unchanged(self):
         """Test that MappingProxyType passed to Language stays as MappingProxyType."""
         proxy = MappingProxyType({"test": "value"})
-        lang = Language(
-            name="TestLang",
-            code="tl",
-            gender_articles=proxy
-        )
+        lang = Language(name="TestLang", code="tl", gender_articles=proxy)
         self.assertIsInstance(lang.gender_articles, MappingProxyType)
         self.assertEqual(lang.gender_articles["test"], "value")
 
@@ -205,5 +197,5 @@ class TestLanguagesRegistry(unittest.TestCase):
             self.assertTrue(len(lang.code) > 0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

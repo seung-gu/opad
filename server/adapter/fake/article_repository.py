@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from domain.model.article import Article, ArticleInputs, ArticleStatus, Articles
+from domain.model.article import Article, ArticleInputs, Articles, ArticleStatus
 
 
 class FakeArticleRepository:
@@ -63,7 +63,7 @@ class FakeArticleRepository:
 
         results.sort(key=lambda a: a.created_at, reverse=True)
         total = len(results)
-        return Articles(items=results[skip:skip + limit], total=total)
+        return Articles(items=results[skip : skip + limit], total=total)
 
     def find_duplicate(
         self,

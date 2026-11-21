@@ -6,10 +6,11 @@ Token usage is tracked per LLM call via token_usage_service.
 """
 
 import logging
+
 from json_repair import repair_json
 
-from domain.model.vocabulary import GrammaticalInfo, LookupResult
 from domain.model.token_usage import TokenUsage
+from domain.model.vocabulary import GrammaticalInfo, LookupResult
 from port.dictionary import DictionaryPort
 from port.llm import LLMPort
 from port.nlp import NLPPort
@@ -45,21 +46,36 @@ async def lookup(
     Token usage is tracked per LLM call if token_usage_repo is provided.
     """
     hybrid_result = await _perform_hybrid_lookup(
-        word, sentence, language, dictionary, llm, nlp,
-        reduced_llm_model, full_llm_model,
-        token_usage_repo, user_id, article_id,
+        word,
+        sentence,
+        language,
+        dictionary,
+        llm,
+        nlp,
+        reduced_llm_model,
+        full_llm_model,
+        token_usage_repo,
+        user_id,
+        article_id,
     )
     if hybrid_result is not None:
         return hybrid_result
     return await _fallback_full_llm(
-        word, sentence, language, llm, full_llm_model,
-        token_usage_repo, user_id, article_id,
+        word,
+        sentence,
+        language,
+        llm,
+        full_llm_model,
+        token_usage_repo,
+        user_id,
+        article_id,
     )
 
 
 # ------------------------------------------------------------------
 # Hybrid pipeline
 # ------------------------------------------------------------------
+
 
 async def _perform_hybrid_lookup(
     word: str,
@@ -77,7 +93,12 @@ async def _perform_hybrid_lookup(
     """Execute the hybrid pipeline: lemma → API → sense selection."""
     # Step 1: Lemma extraction
     lemma_data, lemma_stats = await extract_lemma(
-        word, sentence, language, llm, nlp=nlp, model=reduced_llm_model,
+        word,
+        sentence,
+        language,
+        llm,
+        nlp=nlp,
+        model=reduced_llm_model,
     )
     if lemma_data is None:
         return None
@@ -85,7 +106,8 @@ async def _perform_hybrid_lookup(
     # Track lemma extraction usage
     if token_usage_repo and user_id and lemma_stats:
         usage = TokenUsage.from_llm_result(
-            lemma_stats, user_id,
+            lemma_stats,
+            user_id,
             operation="dictionary_search",
             article_id=article_id,
             metadata={"word": word, "language": language, "step": "lemma_extraction"},
@@ -93,28 +115,37 @@ async def _perform_hybrid_lookup(
         token_usage_repo.save(usage)
 
     lemma = lemma_data["lemma"]
-    logger.info("Lemma extracted", extra={
-        "word": word, "lemma": lemma,
-        "related_words": lemma_data["related_words"],
-        "level": lemma_data["level"],
-    })
+    logger.info(
+        "Lemma extracted",
+        extra={
+            "word": word,
+            "lemma": lemma,
+            "related_words": lemma_data["related_words"],
+            "level": lemma_data["level"],
+        },
+    )
 
     # Step 2: Dictionary API
     entries = await dictionary.fetch(word=lemma, language=language)
     if not entries:
-        logger.info("Dictionary API unavailable, falling back to full LLM",
-                     extra={"word": word, "lemma": lemma})
+        logger.info("Dictionary API unavailable, falling back to full LLM", extra={"word": word, "lemma": lemma})
         return None
 
     # Step 3: Sense selection
     sense, sense_label, sense_stats = await select_best_sense(
-        sentence, word, entries, dictionary, llm, model=full_llm_model,
+        sentence,
+        word,
+        entries,
+        dictionary,
+        llm,
+        model=full_llm_model,
     )
 
     # Track sense selection usage
     if token_usage_repo and user_id and sense_stats:
         usage = TokenUsage.from_llm_result(
-            sense_stats, user_id,
+            sense_stats,
+            user_id,
             operation="dictionary_search",
             article_id=article_id,
             metadata={"word": word, "language": language, "step": "sense_selection"},
@@ -127,20 +158,25 @@ async def _perform_hybrid_lookup(
     # Build final result
     result = _build_result(lemma_data, grammar, sense)
 
-    logger.info("Word definition extracted (hybrid)", extra={
-        "word": word, "lemma": result.lemma,
-        "related_words": result.related_words,
-        "pos": result.grammar.pos,
-        "gender": result.grammar.gender,
-        "level": result.level,
-        "language": language,
-    })
+    logger.info(
+        "Word definition extracted (hybrid)",
+        extra={
+            "word": word,
+            "lemma": result.lemma,
+            "related_words": result.related_words,
+            "pos": result.grammar.pos,
+            "gender": result.grammar.gender,
+            "level": result.level,
+            "language": language,
+        },
+    )
     return result
 
 
 # ------------------------------------------------------------------
 # Full LLM fallback
 # ------------------------------------------------------------------
+
 
 async def _fallback_full_llm(
     word: str,
@@ -154,7 +190,9 @@ async def _fallback_full_llm(
 ) -> LookupResult:
     """Fallback to full LLM when hybrid pipeline fails."""
     prompt = _build_full_prompt(
-        language=language, sentence=sentence, word=word,
+        language=language,
+        sentence=sentence,
+        word=word,
     )
 
     content, stats = await llm.call(
@@ -167,7 +205,8 @@ async def _fallback_full_llm(
     # Track full LLM fallback usage
     if token_usage_repo and user_id and stats:
         usage = TokenUsage.from_llm_result(
-            stats, user_id,
+            stats,
+            user_id,
             operation="dictionary_search",
             article_id=article_id,
             metadata={"word": word, "step": "full_llm_fallback"},
@@ -176,10 +215,14 @@ async def _fallback_full_llm(
 
     result = repair_json(content, return_objects=True)
     if isinstance(result, dict):
-        logger.info("Word definition extracted (full LLM fallback)", extra={
-            "word": word, "lemma": result.get("lemma", word),
-            "language": language,
-        })
+        logger.info(
+            "Word definition extracted (full LLM fallback)",
+            extra={
+                "word": word,
+                "lemma": result.get("lemma", word),
+                "language": language,
+            },
+        )
         return LookupResult(
             lemma=result.get("lemma", word),
             definition=result.get("definition", DEFAULT_DEFINITION),
@@ -192,9 +235,13 @@ async def _fallback_full_llm(
             ),
         )
 
-    logger.warning("Failed to parse JSON in fallback", extra={
-        "word": word, "content_preview": content[:200] if content else None,
-    })
+    logger.warning(
+        "Failed to parse JSON in fallback",
+        extra={
+            "word": word,
+            "content_preview": content[:200] if content else None,
+        },
+    )
     return LookupResult(
         lemma=word,
         definition=DEFAULT_DEFINITION,
@@ -204,6 +251,7 @@ async def _fallback_full_llm(
 # ------------------------------------------------------------------
 # Result building helpers
 # ------------------------------------------------------------------
+
 
 def _build_result(
     lemma_data: LemmaResult,
