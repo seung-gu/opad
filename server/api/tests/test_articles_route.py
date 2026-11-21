@@ -1,8 +1,7 @@
 """Tests for articles route error handling."""
 
-import unittest
-from unittest.mock import patch, MagicMock
 import sys
+import unittest
 from pathlib import Path
 
 # Add server to path
@@ -11,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from fastapi.testclient import TestClient
+
 from api.main import app
 
 
@@ -33,6 +33,5 @@ class TestArticlesRouteErrorHandling(unittest.TestCase):
         self.assertTrue(True)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
-

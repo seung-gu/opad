@@ -19,7 +19,7 @@ from port.job_queue import JobQueuePort
 
 logger = logging.getLogger(__name__)
 
-DEQUEUE_TIMEOUT = 5      # BLPOP blocks this long, so no extra sleep is needed
+DEQUEUE_TIMEOUT = 5  # BLPOP blocks this long, so no extra sleep is needed
 RETRY_DELAY = 5
 MAX_QUEUE_FAILURES = 10  # ~50s unreachable -> exit and let the platform restart us
 
@@ -49,30 +49,32 @@ def process_job(
     """Process a single job from the queue."""
 
     def mark_failed(message: str, error: str | None = None):
-        job_queue.update_status(ctx.job_id, 'failed', 0, message, error, ctx.article_id)
+        job_queue.update_status(ctx.job_id, "failed", 0, message, error, ctx.article_id)
         if ctx.article_id:
             repo.update_status(ctx.article_id, ArticleStatus.FAILED)
 
     logger.info("Processing job", extra=ctx.log_extra)
-    job_queue.update_status(ctx.job_id, 'running', 0, 'Starting article generation...', article_id=ctx.article_id)
+    job_queue.update_status(ctx.job_id, "running", 0, "Starting article generation...", article_id=ctx.article_id)
 
     try:
         if not generate:
-            mark_failed('Internal configuration error', 'generate function is None')
+            mark_failed("Internal configuration error", "generate function is None")
             return False
 
         article = repo.get_by_id(ctx.article_id) if ctx.article_id else None
         if not article:
-            mark_failed('Article not found', f'Article {ctx.article_id} not found in database')
+            mark_failed("Article not found", f"Article {ctx.article_id} not found in database")
             return False
 
         success = generate(article=article, user_id=ctx.user_id, inputs=ctx.inputs, job_id=ctx.job_id)
 
         if success:
-            job_queue.update_status(ctx.job_id, 'completed', 100, 'Article generated successfully!', article_id=ctx.article_id)
+            job_queue.update_status(
+                ctx.job_id, "completed", 100, "Article generated successfully!", article_id=ctx.article_id
+            )
             logger.info("Job completed", extra=ctx.log_extra)
         else:
-            mark_failed('Failed to generate or save article', 'Generation returned False')
+            mark_failed("Failed to generate or save article", "Generation returned False")
 
         return success
 

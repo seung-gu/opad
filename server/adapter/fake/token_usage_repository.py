@@ -18,17 +18,17 @@ class FakeTokenUsageRepository:
             return None
 
         self.store[usage.id] = {
-            'id': usage.id,
-            'user_id': usage.user_id,
-            'operation': usage.operation,
-            'model': usage.model,
-            'prompt_tokens': usage.prompt_tokens,
-            'completion_tokens': usage.completion_tokens,
-            'total_tokens': usage.total_tokens,
-            'estimated_cost': usage.estimated_cost,
-            'created_at': usage.created_at,
-            'article_id': usage.article_id,
-            'metadata': usage.metadata or {},
+            "id": usage.id,
+            "user_id": usage.user_id,
+            "operation": usage.operation,
+            "model": usage.model,
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+            "estimated_cost": usage.estimated_cost,
+            "created_at": usage.created_at,
+            "article_id": usage.article_id,
+            "metadata": usage.metadata or {},
         }
         return usage.id
 
@@ -44,45 +44,44 @@ class FakeTokenUsageRepository:
         total_cost = 0.0
 
         for record in self.store.values():
-            if record['user_id'] != user_id or record['created_at'] < cutoff:
+            if record["user_id"] != user_id or record["created_at"] < cutoff:
                 continue
 
-            total_tokens += record['total_tokens']
-            total_cost += record['estimated_cost']
+            total_tokens += record["total_tokens"]
+            total_cost += record["estimated_cost"]
 
-            op = record['operation']
+            op = record["operation"]
             if op in by_operation:
                 existing = by_operation[op]
-                existing['tokens'] += record['total_tokens']
-                existing['cost'] = round(existing['cost'] + record['estimated_cost'], 6)
-                existing['count'] += 1
+                existing["tokens"] += record["total_tokens"]
+                existing["cost"] = round(existing["cost"] + record["estimated_cost"], 6)
+                existing["count"] += 1
             else:
                 by_operation[op] = {
-                    'tokens': record['total_tokens'],
-                    'cost': round(record['estimated_cost'], 6),
-                    'count': 1,
+                    "tokens": record["total_tokens"],
+                    "cost": round(record["estimated_cost"], 6),
+                    "count": 1,
                 }
 
-            date_key = record['created_at'].strftime('%Y-%m-%d')
+            date_key = record["created_at"].strftime("%Y-%m-%d")
             if date_key in daily_buckets:
-                daily_buckets[date_key]['tokens'] += record['total_tokens']
-                daily_buckets[date_key]['cost'] += record['estimated_cost']
+                daily_buckets[date_key]["tokens"] += record["total_tokens"]
+                daily_buckets[date_key]["cost"] += record["estimated_cost"]
             else:
                 daily_buckets[date_key] = {
-                    'tokens': record['total_tokens'],
-                    'cost': record['estimated_cost'],
+                    "tokens": record["total_tokens"],
+                    "cost": record["estimated_cost"],
                 }
 
         daily_usage = [
-            {'date': k, 'tokens': v['tokens'], 'cost': round(v['cost'], 6)}
-            for k, v in sorted(daily_buckets.items())
+            {"date": k, "tokens": v["tokens"], "cost": round(v["cost"], 6)} for k, v in sorted(daily_buckets.items())
         ]
 
         return {
-            'total_tokens': total_tokens,
-            'total_cost': round(total_cost, 6),
-            'by_operation': by_operation,
-            'daily_usage': daily_usage,
+            "total_tokens": total_tokens,
+            "total_cost": round(total_cost, 6),
+            "by_operation": by_operation,
+            "daily_usage": daily_usage,
         }
 
     def get_by_article(self, article_id: str) -> list[dict]:
@@ -90,6 +89,6 @@ class FakeTokenUsageRepository:
             return []
 
         return sorted(
-            [r for r in self.store.values() if r['article_id'] == article_id],
-            key=lambda r: r['created_at'],
+            [r for r in self.store.values() if r["article_id"] == article_id],
+            key=lambda r: r["created_at"],
         )

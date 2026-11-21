@@ -1,30 +1,29 @@
 """Unit tests for article_generation_service module."""
 
-import unittest
-from unittest.mock import MagicMock, patch
 import sys
+import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from services.article_generation_service import (
-    generate_article,
-    _get_vocabulary,
-)
 from adapter.fake.article_repository import FakeArticleRepository
 from domain.model.article import (
     Article,
     ArticleInputs,
     ArticleStatus,
-    SourceInfo,
     EditRecord,
     GenerationResult,
+    SourceInfo,
 )
 from domain.model.token_usage import LLMCallResult
+from services.article_generation_service import (
+    _get_vocabulary,
+    generate_article,
+)
 
-
-TEST_INPUTS = ArticleInputs(language='German', level='B2', length='500', topic='AI')
+TEST_INPUTS = ArticleInputs(language="German", level="B2", length="500", topic="AI")
 
 
 class TestGetVocabulary(unittest.TestCase):
@@ -34,8 +33,8 @@ class TestGetVocabulary(unittest.TestCase):
         """Test that empty list is returned when user_id is None."""
         result = _get_vocabulary(
             user_id=None,
-            language='German',
-            level='B2',
+            language="German",
+            level="B2",
             vocab=MagicMock(),
         )
 
@@ -44,9 +43,9 @@ class TestGetVocabulary(unittest.TestCase):
     def test_get_vocabulary_returns_empty_if_no_language(self):
         """Test that empty list is returned when language is empty."""
         result = _get_vocabulary(
-            user_id='user-123',
-            language='',
-            level='B2',
+            user_id="user-123",
+            language="",
+            level="B2",
             vocab=MagicMock(),
         )
 
@@ -55,9 +54,9 @@ class TestGetVocabulary(unittest.TestCase):
     def test_get_vocabulary_returns_empty_if_no_vocab_port(self):
         """Test that empty list is returned when vocab port is None."""
         result = _get_vocabulary(
-            user_id='user-123',
-            language='German',
-            level='B2',
+            user_id="user-123",
+            language="German",
+            level="B2",
             vocab=None,
         )
 
@@ -66,12 +65,12 @@ class TestGetVocabulary(unittest.TestCase):
     def test_get_vocabulary_filters_by_cefr_range(self):
         """Test that vocabulary is filtered by correct CEFR range."""
         mock_vocab = MagicMock()
-        mock_vocab.find_lemmas.return_value = ['word1', 'word2']
+        mock_vocab.find_lemmas.return_value = ["word1", "word2"]
 
         result = _get_vocabulary(
-            user_id='user-123',
-            language='German',
-            level='B2',
+            user_id="user-123",
+            language="German",
+            level="B2",
             vocab=mock_vocab,
         )
 
@@ -79,22 +78,22 @@ class TestGetVocabulary(unittest.TestCase):
         mock_vocab.find_lemmas.assert_called_once()
         call_kwargs = mock_vocab.find_lemmas.call_args[1]
 
-        self.assertEqual(call_kwargs['user_id'], 'user-123')
-        self.assertEqual(call_kwargs['language'], 'German')
+        self.assertEqual(call_kwargs["user_id"], "user-123")
+        self.assertEqual(call_kwargs["language"], "German")
         # B2 should include A1, A2, B1, B2, and optionally B2+1 (C1)
-        self.assertIn('B2', call_kwargs['levels'])
-        self.assertEqual(call_kwargs['limit'], 50)
+        self.assertIn("B2", call_kwargs["levels"])
+        self.assertEqual(call_kwargs["limit"], 50)
 
     def test_get_vocabulary_returns_vocab_list(self):
         """Test that vocabulary list is returned correctly."""
-        expected_lemmas = ['laufen', 'gehen', 'sprechen']
+        expected_lemmas = ["laufen", "gehen", "sprechen"]
         mock_vocab = MagicMock()
         mock_vocab.find_lemmas.return_value = expected_lemmas
 
         result = _get_vocabulary(
-            user_id='user-123',
-            language='German',
-            level='B2',
+            user_id="user-123",
+            language="German",
+            level="B2",
             vocab=mock_vocab,
         )
 
@@ -106,9 +105,9 @@ class TestGetVocabulary(unittest.TestCase):
         mock_vocab.find_lemmas.return_value = None
 
         result = _get_vocabulary(
-            user_id='user-123',
-            language='German',
-            level='B2',
+            user_id="user-123",
+            language="German",
+            level="B2",
             vocab=mock_vocab,
         )
 
@@ -121,18 +120,18 @@ class TestGenerateArticle(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.repo = FakeArticleRepository()
-        self.article = Article.create(TEST_INPUTS, 'user-123')
+        self.article = Article.create(TEST_INPUTS, "user-123")
         self.repo.save(self.article)
 
     def test_generate_article_success(self):
         """Test successful article generation."""
         mock_generator = MagicMock()
         result = GenerationResult(
-            content='Test article content',
+            content="Test article content",
             source=SourceInfo(
-                title='Test Title',
-                source_name='Test Source',
-                source_url='https://example.com',
+                title="Test Title",
+                source_name="Test Source",
+                source_url="https://example.com",
             ),
             edit_history=[],
             agent_usage=[],
@@ -141,13 +140,13 @@ class TestGenerateArticle(unittest.TestCase):
 
         success = generate_article(
             article=self.article,
-            user_id='user-123',
+            user_id="user-123",
             inputs=TEST_INPUTS,
             generator=mock_generator,
             repo=self.repo,
             token_usage_repo=None,
             vocab=None,
-            job_id='job-123',
+            job_id="job-123",
         )
 
         self.assertTrue(success)
@@ -156,10 +155,10 @@ class TestGenerateArticle(unittest.TestCase):
         """Test that article status is updated to COMPLETED."""
         mock_generator = MagicMock()
         result = GenerationResult(
-            content='Test article content',
+            content="Test article content",
             source=SourceInfo(
-                title='Test Title',
-                source_name='Test Source',
+                title="Test Title",
+                source_name="Test Source",
             ),
             edit_history=[],
             agent_usage=[],
@@ -168,7 +167,7 @@ class TestGenerateArticle(unittest.TestCase):
 
         generate_article(
             article=self.article,
-            user_id='user-123',
+            user_id="user-123",
             inputs=TEST_INPUTS,
             generator=mock_generator,
             repo=self.repo,
@@ -176,25 +175,25 @@ class TestGenerateArticle(unittest.TestCase):
 
         saved_article = self.repo.get_by_id(self.article.id)
         self.assertEqual(saved_article.status, ArticleStatus.COMPLETED)
-        self.assertEqual(saved_article.content, 'Test article content')
+        self.assertEqual(saved_article.content, "Test article content")
 
     def test_generate_article_saves_source_and_edit_history(self):
         """Test that source and edit_history are saved."""
         mock_generator = MagicMock()
         edit_records = [
             EditRecord(
-                original='Old sentence',
-                replaced='New sentence',
-                rationale='Clarity',
+                original="Old sentence",
+                replaced="New sentence",
+                rationale="Clarity",
             ),
         ]
         result = GenerationResult(
-            content='Test article content',
+            content="Test article content",
             source=SourceInfo(
-                title='Test Title',
-                source_name='Test Source',
-                source_url='https://example.com',
-                author='John Doe',
+                title="Test Title",
+                source_name="Test Source",
+                source_url="https://example.com",
+                author="John Doe",
             ),
             edit_history=edit_records,
             agent_usage=[],
@@ -203,7 +202,7 @@ class TestGenerateArticle(unittest.TestCase):
 
         generate_article(
             article=self.article,
-            user_id='user-123',
+            user_id="user-123",
             inputs=TEST_INPUTS,
             generator=mock_generator,
             repo=self.repo,
@@ -211,19 +210,19 @@ class TestGenerateArticle(unittest.TestCase):
 
         saved_article = self.repo.get_by_id(self.article.id)
         self.assertIsNotNone(saved_article.source)
-        self.assertEqual(saved_article.source.title, 'Test Title')
-        self.assertEqual(saved_article.source.author, 'John Doe')
+        self.assertEqual(saved_article.source.title, "Test Title")
+        self.assertEqual(saved_article.source.author, "John Doe")
         self.assertEqual(len(saved_article.edit_history), 1)
-        self.assertEqual(saved_article.edit_history[0].original, 'Old sentence')
+        self.assertEqual(saved_article.edit_history[0].original, "Old sentence")
 
     def test_generate_article_returns_false_if_save_fails(self):
         """Test that False is returned if repo.save fails."""
         mock_generator = MagicMock()
         result = GenerationResult(
-            content='Test article content',
+            content="Test article content",
             source=SourceInfo(
-                title='Test Title',
-                source_name='Test Source',
+                title="Test Title",
+                source_name="Test Source",
             ),
             edit_history=[],
             agent_usage=[],
@@ -235,7 +234,7 @@ class TestGenerateArticle(unittest.TestCase):
 
         success = generate_article(
             article=self.article,
-            user_id='user-123',
+            user_id="user-123",
             inputs=TEST_INPUTS,
             generator=mock_generator,
             repo=mock_repo,
@@ -247,10 +246,10 @@ class TestGenerateArticle(unittest.TestCase):
         """Test that job_id and article_id are passed to generate()."""
         mock_generator = MagicMock()
         result = GenerationResult(
-            content='Test article content',
+            content="Test article content",
             source=SourceInfo(
-                title='Test Title',
-                source_name='Test Source',
+                title="Test Title",
+                source_name="Test Source",
             ),
             edit_history=[],
             agent_usage=[],
@@ -259,26 +258,26 @@ class TestGenerateArticle(unittest.TestCase):
 
         generate_article(
             article=self.article,
-            user_id='user-123',
+            user_id="user-123",
             inputs=TEST_INPUTS,
             generator=mock_generator,
             repo=self.repo,
-            job_id='job-123',
+            job_id="job-123",
         )
 
         mock_generator.generate.assert_called_once()
         call_kwargs = mock_generator.generate.call_args[1]
-        self.assertEqual(call_kwargs['job_id'], 'job-123')
-        self.assertEqual(call_kwargs['article_id'], self.article.id)
+        self.assertEqual(call_kwargs["job_id"], "job-123")
+        self.assertEqual(call_kwargs["article_id"], self.article.id)
 
     def test_generate_article_uses_empty_job_id_when_none(self):
         """Test that empty string is passed when job_id is None."""
         mock_generator = MagicMock()
         result = GenerationResult(
-            content='Test article content',
+            content="Test article content",
             source=SourceInfo(
-                title='Test Title',
-                source_name='Test Source',
+                title="Test Title",
+                source_name="Test Source",
             ),
             edit_history=[],
             agent_usage=[],
@@ -287,7 +286,7 @@ class TestGenerateArticle(unittest.TestCase):
 
         generate_article(
             article=self.article,
-            user_id='user-123',
+            user_id="user-123",
             inputs=TEST_INPUTS,
             generator=mock_generator,
             repo=self.repo,
@@ -295,26 +294,29 @@ class TestGenerateArticle(unittest.TestCase):
         )
 
         call_kwargs = mock_generator.generate.call_args[1]
-        self.assertEqual(call_kwargs['job_id'], '')
+        self.assertEqual(call_kwargs["job_id"], "")
 
-    @patch('services.article_generation_service.track_agent_usage')
+    @patch("services.article_generation_service.track_agent_usage")
     def test_generate_article_tracks_token_usage(self, mock_track):
         """Test that token usage is tracked when available."""
         mock_generator = MagicMock()
         agent_usage = [
-            ('ArticleResearcher', LLMCallResult(
-                model='gpt-4',
-                prompt_tokens=100,
-                completion_tokens=50,
-                total_tokens=150,
-                estimated_cost=0.001,
-            )),
+            (
+                "ArticleResearcher",
+                LLMCallResult(
+                    model="gpt-4",
+                    prompt_tokens=100,
+                    completion_tokens=50,
+                    total_tokens=150,
+                    estimated_cost=0.001,
+                ),
+            ),
         ]
         result = GenerationResult(
-            content='Test article content',
+            content="Test article content",
             source=SourceInfo(
-                title='Test Title',
-                source_name='Test Source',
+                title="Test Title",
+                source_name="Test Source",
             ),
             edit_history=[],
             agent_usage=agent_usage,
@@ -325,39 +327,42 @@ class TestGenerateArticle(unittest.TestCase):
 
         generate_article(
             article=self.article,
-            user_id='user-123',
+            user_id="user-123",
             inputs=TEST_INPUTS,
             generator=mock_generator,
             repo=self.repo,
             token_usage_repo=mock_token_repo,
-            job_id='job-123',
+            job_id="job-123",
         )
 
         # Verify track_agent_usage was called
         mock_track.assert_called_once()
         call_args = mock_track.call_args[0]
         self.assertEqual(call_args[0], mock_token_repo)  # token_usage_repo
-        self.assertEqual(call_args[2], 'user-123')       # user_id
-        self.assertEqual(call_args[3], self.article.id)   # article_id
-        self.assertEqual(call_args[4], 'job-123')         # job_id
+        self.assertEqual(call_args[2], "user-123")  # user_id
+        self.assertEqual(call_args[3], self.article.id)  # article_id
+        self.assertEqual(call_args[4], "job-123")  # job_id
 
     def test_generate_article_skips_token_tracking_if_no_user_id(self):
         """Test that token tracking is skipped if user_id is None."""
         mock_generator = MagicMock()
         agent_usage = [
-            ('ArticleResearcher', LLMCallResult(
-                model='gpt-4',
-                prompt_tokens=0,
-                completion_tokens=0,
-                total_tokens=150,
-                estimated_cost=0.0,
-            )),
+            (
+                "ArticleResearcher",
+                LLMCallResult(
+                    model="gpt-4",
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=150,
+                    estimated_cost=0.0,
+                ),
+            ),
         ]
         result = GenerationResult(
-            content='Test article content',
+            content="Test article content",
             source=SourceInfo(
-                title='Test Title',
-                source_name='Test Source',
+                title="Test Title",
+                source_name="Test Source",
             ),
             edit_history=[],
             agent_usage=agent_usage,
@@ -366,7 +371,7 @@ class TestGenerateArticle(unittest.TestCase):
 
         mock_token_repo = MagicMock()
 
-        with patch('services.article_generation_service.track_agent_usage') as mock_track:
+        with patch("services.article_generation_service.track_agent_usage") as mock_track:
             success = generate_article(
                 article=self.article,
                 user_id=None,  # No user
@@ -383,10 +388,10 @@ class TestGenerateArticle(unittest.TestCase):
         """Test that token tracking is skipped if agent_usage is empty."""
         mock_generator = MagicMock()
         result = GenerationResult(
-            content='Test article content',
+            content="Test article content",
             source=SourceInfo(
-                title='Test Title',
-                source_name='Test Source',
+                title="Test Title",
+                source_name="Test Source",
             ),
             edit_history=[],
             agent_usage=[],  # No usage data
@@ -395,10 +400,10 @@ class TestGenerateArticle(unittest.TestCase):
 
         mock_token_repo = MagicMock()
 
-        with patch('services.article_generation_service.track_agent_usage') as mock_track:
+        with patch("services.article_generation_service.track_agent_usage") as mock_track:
             success = generate_article(
                 article=self.article,
-                user_id='user-123',
+                user_id="user-123",
                 inputs=TEST_INPUTS,
                 generator=mock_generator,
                 repo=self.repo,
@@ -412,10 +417,10 @@ class TestGenerateArticle(unittest.TestCase):
         """Test that vocabulary is retrieved and passed to generator."""
         mock_generator = MagicMock()
         result = GenerationResult(
-            content='Test article content',
+            content="Test article content",
             source=SourceInfo(
-                title='Test Title',
-                source_name='Test Source',
+                title="Test Title",
+                source_name="Test Source",
             ),
             edit_history=[],
             agent_usage=[],
@@ -423,11 +428,11 @@ class TestGenerateArticle(unittest.TestCase):
         mock_generator.generate.return_value = result
 
         mock_vocab = MagicMock()
-        mock_vocab.find_lemmas.return_value = ['word1', 'word2']
+        mock_vocab.find_lemmas.return_value = ["word1", "word2"]
 
         generate_article(
             article=self.article,
-            user_id='user-123',
+            user_id="user-123",
             inputs=TEST_INPUTS,
             generator=mock_generator,
             repo=self.repo,
@@ -438,8 +443,8 @@ class TestGenerateArticle(unittest.TestCase):
         mock_generator.generate.assert_called_once()
         call_args = mock_generator.generate.call_args
         vocab_arg = call_args[0][1]  # Second positional argument
-        self.assertEqual(vocab_arg, ['word1', 'word2'])
+        self.assertEqual(vocab_arg, ["word1", "word2"])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

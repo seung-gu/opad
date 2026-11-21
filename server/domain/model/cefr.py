@@ -4,7 +4,7 @@
 class CEFRLevel:
     """CEFR proficiency level rules for language learning."""
 
-    ALL = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+    ALL = ["A1", "A2", "B1", "B2", "C1", "C2"]
 
     @staticmethod
     def range(target: str | None, max_above: int = 1) -> list[str]:
@@ -29,4 +29,4 @@ class CEFRLevel:
 
         idx = CEFRLevel.ALL.index(target_upper)
         hi = min(idx + max_above, len(CEFRLevel.ALL) - 1)
-        return CEFRLevel.ALL[:hi + 1]
+        return CEFRLevel.ALL[: hi + 1]

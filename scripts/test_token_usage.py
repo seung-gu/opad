@@ -3,6 +3,7 @@
 
 import asyncio
 import sys
+
 sys.path.insert(0, "src")
 
 from adapter.external.litellm import LiteLLMAdapter
@@ -19,13 +20,11 @@ async def test_token_usage():
     print("=" * 50)
 
     content, stats = await llm.call(
-        messages=[{"role": "user", "content": "Say hello in German"}],
-        model="gpt-4.1-mini",
-        max_tokens=50
+        messages=[{"role": "user", "content": "Say hello in German"}], model="gpt-4.1-mini", max_tokens=50
     )
 
     print(f"Response: {content}")
-    print(f"\nToken Usage:")
+    print("\nToken Usage:")
     print(f"  - Model: {stats.model}")
     print(f"  - Provider: {stats.provider}")
     print(f"  - Prompt tokens: {stats.prompt_tokens}")
@@ -51,14 +50,11 @@ Return ONLY valid JSON:
 }"""
 
     content2, stats2 = await llm.call(
-        messages=[{"role": "user", "content": prompt}],
-        model="gpt-4.1-mini",
-        max_tokens=200,
-        temperature=0
+        messages=[{"role": "user", "content": prompt}], model="gpt-4.1-mini", max_tokens=200, temperature=0
     )
 
     print(f"Response: {content2[:200]}...")
-    print(f"\nToken Usage:")
+    print("\nToken Usage:")
     print(f"  - Model: {stats2.model}")
     print(f"  - Provider: {stats2.provider}")
     print(f"  - Prompt tokens: {stats2.prompt_tokens}")

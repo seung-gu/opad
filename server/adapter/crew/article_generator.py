@@ -31,11 +31,11 @@ class CrewAIArticleGenerator:
         from crewai.events.event_bus import crewai_event_bus
 
         crew_inputs = {
-            'language': inputs.language,
-            'level': inputs.level,
-            'length': inputs.length,
-            'topic': inputs.topic,
-            'vocabulary_list': vocabulary if vocabulary else "",
+            "language": inputs.language,
+            "level": inputs.level,
+            "length": inputs.length,
+            "topic": inputs.topic,
+            "vocabulary_list": vocabulary if vocabulary else "",
         }
 
         with crewai_event_bus.scoped_handlers():

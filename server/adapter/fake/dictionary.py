@@ -32,7 +32,9 @@ class FakeDictionaryAdapter:
         return "\n".join(lines)
 
     def get_sense(
-        self, entries: list[dict[str, Any]], label: str,
+        self,
+        entries: list[dict[str, Any]],
+        label: str,
     ) -> SenseResult:
         parts = label.split(".")
         ei = int(parts[0]) if parts else 0
@@ -45,13 +47,13 @@ class FakeDictionaryAdapter:
         sense = senses[si]
         definition = sense.get("definition", "")
         raw_examples = sense.get("examples", [])[:3]
-        examples = [
-            e if isinstance(e, str) else e.get("text", "")
-            for e in raw_examples
-        ] or None
+        examples = [e if isinstance(e, str) else e.get("text", "") for e in raw_examples] or None
         return SenseResult(definition=definition, examples=examples)
 
     def extract_grammar(
-        self, entries: list[dict[str, Any]], label: str, language: str,
+        self,
+        entries: list[dict[str, Any]],
+        label: str,
+        language: str,
     ) -> GrammaticalInfo:
         return GrammaticalInfo()

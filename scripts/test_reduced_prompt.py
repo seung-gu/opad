@@ -13,25 +13,24 @@ import random
 import time
 
 import litellm
+from scripts.test_cases import TEST_CASES_DE, TEST_CASES_EN
 
 from services.lemma_extraction import _build_reduced_prompt as build_reduced_word_definition_prompt
-from scripts.test_cases import TEST_CASES_DE, TEST_CASES_EN
 
 # Use German test cases by default (imported from test_cases.py)
 TEST_CASES = TEST_CASES_DE
 
 
-async def test_single(model: str, sentence: str, word: str, expected_lemma: str, expected_rw: list[str], language: str = "German") -> dict:
+async def test_single(
+    model: str, sentence: str, word: str, expected_lemma: str, expected_rw: list[str], language: str = "German"
+) -> dict:
     """Test a single case and return result."""
     prompt = build_reduced_word_definition_prompt(language, sentence, word)
 
     start_time = time.time()
     try:
         response = await litellm.acompletion(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            timeout=20
+            model=model, messages=[{"role": "user", "content": prompt}], temperature=0, timeout=20
         )
         elapsed = time.time() - start_time
 
@@ -68,7 +67,7 @@ async def test_single(model: str, sentence: str, word: str, expected_lemma: str,
             "lemma": lemma,
             "rw": rw,
             "error": None,
-            "time_ms": int(elapsed * 1000)
+            "time_ms": int(elapsed * 1000),
         }
 
     except Exception as e:
@@ -80,11 +79,19 @@ async def test_single(model: str, sentence: str, word: str, expected_lemma: str,
             "lemma": None,
             "rw": None,
             "error": str(e)[:50],
-            "time_ms": int(elapsed * 1000)
+            "time_ms": int(elapsed * 1000),
         }
 
 
-async def run_tests(model: str, delay: float = 0.5, sample_pct: int = 100, test_cases_input: list = None, language: str = "German", start_index: int = 0, end_index: int = None):
+async def run_tests(
+    model: str,
+    delay: float = 0.5,
+    sample_pct: int = 100,
+    test_cases_input: list = None,
+    language: str = "German",
+    start_index: int = 0,
+    end_index: int = None,
+):
     """Run all tests and print results."""
     all_cases = test_cases_input or TEST_CASES
 
@@ -98,14 +105,14 @@ async def run_tests(model: str, delay: float = 0.5, sample_pct: int = 100, test_
     if sample_pct < 100:
         sample_size = max(1, int(len(all_cases) * sample_pct / 100))
         test_cases = random.sample(all_cases, sample_size)
-        print(f"=" * 80)
+        print("=" * 80)
         print(f"Testing: {model} [{language}] (sampling {sample_pct}% = {sample_size}/{len(all_cases)} cases)")
-        print(f"=" * 80)
+        print("=" * 80)
     else:
         test_cases = all_cases
-        print(f"=" * 80)
+        print("=" * 80)
         print(f"Testing: {model} [{language}]")
-        print(f"=" * 80)
+        print("=" * 80)
 
     results_by_category = {}
     total_passed = 0
@@ -123,7 +130,7 @@ async def run_tests(model: str, delay: float = 0.5, sample_pct: int = 100, test_
             results_by_category[category] = {"passed": 0, "total": 0}
         results_by_category[category]["total"] += 1
 
-        ms = result['time_ms']
+        ms = result["time_ms"]
         if result["success"]:
             total_passed += 1
             results_by_category[category]["passed"] += 1
@@ -132,8 +139,8 @@ async def run_tests(model: str, delay: float = 0.5, sample_pct: int = 100, test_
             if result["error"]:
                 print(f"❌ {word:15} → ERROR: {result['error']}")
             else:
-                got_l = result['lemma'] or '(none)'
-                got_r = result['rw'] or []
+                got_l = result["lemma"] or "(none)"
+                got_r = result["rw"] or []
 
                 # Check if only order is wrong
                 if result["lemma_ok"] and result.get("rw_set_ok") and not result.get("rw_order_ok"):
@@ -162,63 +169,48 @@ async def run_tests(model: str, delay: float = 0.5, sample_pct: int = 100, test_
     print(f"\n{'=' * 80}")
     print(f"SUMMARY: {model}")
     print(f"{'=' * 80}")
-    print(f"\nOverall: {total_passed}/{total} ({total_passed/total*100:.0f}%)")
-    print(f"Lemma correct: {total_lemma_ok}/{total} ({total_lemma_ok/total*100:.0f}%)")
-    print(f"Related words correct: {total_rw_ok}/{total} ({total_rw_ok/total*100:.0f}%)")
+    print(f"\nOverall: {total_passed}/{total} ({total_passed / total * 100:.0f}%)")
+    print(f"Lemma correct: {total_lemma_ok}/{total} ({total_lemma_ok / total * 100:.0f}%)")
+    print(f"Related words correct: {total_rw_ok}/{total} ({total_rw_ok / total * 100:.0f}%)")
     if total_rw_order_wrong > 0:
         print(f"  └─ Order wrong (content ok): {total_rw_order_wrong}")
     print(f"Avg response time: {avg_time:.0f}ms")
 
-    print(f"\nBy Category:")
+    print("\nBy Category:")
     for cat, stats in results_by_category.items():
         pct = stats["passed"] / stats["total"] * 100
         print(f"  {cat}: {stats['passed']}/{stats['total']} ({pct:.0f}%)")
 
     # Pass/Fail
     if total_passed / total >= 0.95:
-        print(f"\n🎉 PASSED (≥95%)")
+        print("\n🎉 PASSED (≥95%)")
     elif total_passed / total >= 0.90:
-        print(f"\n⚠️  CLOSE (90-95%)")
+        print("\n⚠️  CLOSE (90-95%)")
     else:
-        print(f"\n❌ FAILED (<90%)")
+        print("\n❌ FAILED (<90%)")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Test reduced prompt accuracy")
+    parser.add_argument("--model", default="openai/gpt-4.1-mini", help="Model to test (default: openai/gpt-4.1-mini)")
+    parser.add_argument("--delay", type=float, default=0.5, help="Delay between requests in seconds (default: 0.5)")
     parser.add_argument(
-        "--model",
-        default="openai/gpt-4.1-mini",
-        help="Model to test (default: openai/gpt-4.1-mini)"
+        "--sample", type=int, default=100, help="Percentage of test cases to sample (default: 100, use 20 for 20%%)"
     )
     parser.add_argument(
-        "--delay",
-        type=float,
-        default=0.5,
-        help="Delay between requests in seconds (default: 0.5)"
-    )
-    parser.add_argument(
-        "--sample",
-        type=int,
-        default=100,
-        help="Percentage of test cases to sample (default: 100, use 20 for 20%%)"
-    )
-    parser.add_argument(
-        "--lang",
-        choices=["de", "en"],
-        default="de",
-        help="Language to test: de (German) or en (English). Default: de"
+        "--lang", choices=["de", "en"], default="de", help="Language to test: de (German) or en (English). Default: de"
     )
     parser.add_argument(
         "--start-index",
         type=int,
         default=0,
-        help="Start from this test case index (0-based). Useful for resuming interrupted runs."
+        help="Start from this test case index (0-based). Useful for resuming interrupted runs.",
     )
     parser.add_argument(
         "--end-index",
         type=int,
         default=None,
-        help="End at this test case index (exclusive, 0-based). e.g., --start-index 70 --end-index 110"
+        help="End at this test case index (exclusive, 0-based). e.g., --start-index 70 --end-index 110",
     )
     args = parser.parse_args()
 

@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from domain.model.article import Article, ArticleInputs, ArticleStatus, Articles
+from domain.model.article import Article, ArticleInputs, Articles, ArticleStatus
 
 
 class ArticleRepository(Protocol):

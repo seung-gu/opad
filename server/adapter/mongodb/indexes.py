@@ -33,10 +33,10 @@ def _resolve_conflict(collection, keys: list, name: str, **kwargs) -> bool:
     keys_dict = dict(keys)
 
     for idx_name, idx_info in collection.index_information().items():
-        if idx_name == '_id_':
+        if idx_name == "_id_":
             continue
 
-        idx_keys = dict(idx_info.get('key', []))
+        idx_keys = dict(idx_info.get("key", []))
         same_name = idx_name == name
         same_keys = idx_keys == keys_dict
 
@@ -54,9 +54,9 @@ def _resolve_conflict(collection, keys: list, name: str, **kwargs) -> bool:
 def ensure_all_indexes(db) -> bool:
     """Ensure indexes for all collections. Called at app startup."""
     from adapter.mongodb.article_repository import MongoArticleRepository
+    from adapter.mongodb.token_usage_repository import MongoTokenUsageRepository
     from adapter.mongodb.user_repository import MongoUserRepository
     from adapter.mongodb.vocabulary_repository import MongoVocabularyRepository
-    from adapter.mongodb.token_usage_repository import MongoTokenUsageRepository
 
     results = [
         MongoArticleRepository(db).ensure_indexes(),

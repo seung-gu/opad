@@ -15,7 +15,7 @@ class JobQueuePort(Protocol):
         job_id: str,
         status: str,
         progress: int = 0,
-        message: str = '',
+        message: str = "",
         error: str | None = None,
         article_id: str | None = None,
     ) -> bool: ...

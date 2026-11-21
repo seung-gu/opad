@@ -39,7 +39,7 @@ class Language:
         word_lower = word.lower()
         for prefix in self.reflexive_prefixes:
             if word_lower.startswith(prefix):
-                return word[len(prefix):]
+                return word[len(prefix) :]
         for suffix in self.reflexive_suffixes:
             if word_lower.endswith(suffix):
                 # Strip "se" (2 chars) — Spanish reflexive endings (arse/erse/irse)
@@ -53,9 +53,12 @@ GERMAN = Language(
     name="German",
     code="de",
     gender_articles={
-        "masculine": "der", "männlich": "der",
-        "feminine": "die", "weiblich": "die",
-        "neuter": "das", "sächlich": "das",
+        "masculine": "der",
+        "männlich": "der",
+        "feminine": "die",
+        "weiblich": "die",
+        "neuter": "das",
+        "sächlich": "das",
     },
     reflexive_prefixes=("sich ", "mich ", "dich ", "uns ", "euch "),
     reflexive_suffixes=(),
@@ -73,8 +76,10 @@ FRENCH = Language(
     name="French",
     code="fr",
     gender_articles={
-        "masculine": "le", "masculin": "le",
-        "feminine": "la", "féminin": "la",
+        "masculine": "le",
+        "masculin": "le",
+        "feminine": "la",
+        "féminin": "la",
     },
     reflexive_prefixes=("se ", "s'"),
     reflexive_suffixes=(),
@@ -84,8 +89,10 @@ SPANISH = Language(
     name="Spanish",
     code="es",
     gender_articles={
-        "masculine": "el", "masculino": "el",
-        "feminine": "la", "femenino": "la",
+        "masculine": "el",
+        "masculino": "el",
+        "feminine": "la",
+        "femenino": "la",
     },
     reflexive_prefixes=(),
     reflexive_suffixes=("arse", "erse", "irse"),
@@ -113,7 +120,12 @@ KOREAN = Language(
 LANGUAGES: dict[str, Language] = {
     lang.name: lang
     for lang in (
-        GERMAN, ENGLISH, FRENCH, SPANISH, ITALIAN, KOREAN,
+        GERMAN,
+        ENGLISH,
+        FRENCH,
+        SPANISH,
+        ITALIAN,
+        KOREAN,
     )
 }
 

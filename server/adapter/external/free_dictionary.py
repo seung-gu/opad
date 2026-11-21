@@ -15,9 +15,9 @@ from urllib.parse import quote
 import httpx
 from tenacity import (
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
 )
 
 from domain.model.language import Language, get_language
@@ -35,6 +35,7 @@ API_TIMEOUT_SECONDS = 5.0
 @dataclass(frozen=True)
 class _SenseIndex:
     """Adapter-internal addressing for Free Dictionary entry/sense/subsense."""
+
     entry: int = 0
     sense: int = 0
     subsense: int = -1
@@ -63,7 +64,9 @@ class FreeDictionaryAdapter:
         return _format_sense_listing(entries)
 
     def get_sense(
-        self, entries: list[dict[str, Any]], label: str,
+        self,
+        entries: list[dict[str, Any]],
+        label: str,
     ) -> SenseResult:
         index = _SenseIndex.from_label(label)
         clamped = _clamp_index(entries, index)
@@ -72,7 +75,10 @@ class FreeDictionaryAdapter:
         return SenseResult(definition=definition, examples=examples)
 
     def extract_grammar(
-        self, entries: list[dict[str, Any]], label: str, language: str,
+        self,
+        entries: list[dict[str, Any]],
+        label: str,
+        language: str,
     ) -> GrammaticalInfo:
         lang = get_language(language)
         if not lang:

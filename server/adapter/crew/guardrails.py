@@ -41,16 +41,13 @@ def repair_json_output(result: TaskOutput) -> tuple[bool, Any]:
         if repaired != raw_output:
             logger.info(
                 "JSON repaired successfully",
-                extra={"original_length": len(raw_output), "repaired_length": len(repaired)}
+                extra={"original_length": len(raw_output), "repaired_length": len(repaired)},
             )
 
         return (True, repaired)
 
     except Exception as e:
-        logger.warning(
-            f"JSON repair failed: {e}",
-            extra={"error": str(e), "errorType": type(e).__name__}
-        )
+        logger.warning(f"JSON repair failed: {e}", extra={"error": str(e), "errorType": type(e).__name__})
         return (False, f"JSON repair failed: {str(e)}")
 
 
@@ -72,7 +69,7 @@ def require_articles(result: TaskOutput) -> tuple[bool, Any]:
     except json.JSONDecodeError as e:
         return (False, f"Output is not valid JSON after repair: {e}")
 
-    articles = data.get('articles') if isinstance(data, dict) else None
+    articles = data.get("articles") if isinstance(data, dict) else None
     if not articles:
         logger.error(
             "No news articles found — the search tool returned nothing. "
@@ -105,7 +102,7 @@ def require_selected_article(result: TaskOutput) -> tuple[bool, Any]:
     except json.JSONDecodeError as e:
         return (False, f"Output is not valid JSON after repair: {e}")
 
-    article = data.get('article') if isinstance(data, dict) else None
+    article = data.get("article") if isinstance(data, dict) else None
     if not isinstance(article, dict) or not article:
         logger.error(
             "No article was selected — the picker found nothing matching the topic "
