@@ -5,7 +5,7 @@ from typing import Optional
 
 from pymongo.errors import PyMongoError
 
-from adapter.mongodb import COLLECTION_NAME, VOCABULARY_COLLECTION_NAME
+from adapter.mongodb.connection import COLLECTION_NAME, VOCABULARY_COLLECTION_NAME
 
 logger = getLogger(__name__)
 

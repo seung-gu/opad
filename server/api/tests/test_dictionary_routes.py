@@ -201,7 +201,7 @@ class TestSearchWordRoute(unittest.TestCase):
 
     def test_search_word_invalid_input_validation(self):
         """Test input validation for search_word."""
-        app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        self._setup_overrides()
 
         # Test empty word
         response = self.client.post(

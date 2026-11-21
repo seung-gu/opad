@@ -7,7 +7,7 @@ from logging import getLogger
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
-from adapter.mongodb import VOCABULARY_COLLECTION_NAME
+from adapter.mongodb.connection import VOCABULARY_COLLECTION_NAME
 from domain.model.vocabulary import GrammaticalInfo, Vocabulary, VocabularyCount
 
 logger = getLogger(__name__)

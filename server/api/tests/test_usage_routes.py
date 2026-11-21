@@ -130,6 +130,7 @@ class TestGetMyUsage(unittest.TestCase):
     def test_get_my_usage_validates_days_range(self):
         """Test that days parameter is validated."""
         app.dependency_overrides[get_current_user_required] = lambda: self.mock_user
+        app.dependency_overrides[get_token_usage_repo] = lambda: FakeTokenUsageRepository()
 
         # Test days < 1
         response = self.client.get("/usage/me?days=0")
