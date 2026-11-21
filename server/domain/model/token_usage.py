@@ -1,5 +1,7 @@
 """Domain models for LLM call results and token usage tracking."""
 
+from __future__ import annotations
+
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -49,12 +51,12 @@ class TokenUsage:
     @classmethod
     def from_llm_result(
         cls,
-        stats: "LLMCallResult",
+        stats: LLMCallResult,
         user_id: str,
         operation: str,
         article_id: str | None = None,
         metadata: dict | None = None,
-    ) -> "TokenUsage":
+    ) -> TokenUsage:
         """Create a TokenUsage record from an LLM call result."""
         return cls(
             id=str(uuid.uuid4()),

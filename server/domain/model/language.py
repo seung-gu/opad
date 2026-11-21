@@ -4,9 +4,9 @@ Encapsulates language-specific metadata used across the domain:
 language codes, gender articles, and reflexive pronoun patterns.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Mapping
 
 
 @dataclass(frozen=True)
