@@ -7,7 +7,7 @@ from logging import getLogger
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
-from adapter.mongodb import USERS_COLLECTION_NAME
+from adapter.mongodb.connection import USERS_COLLECTION_NAME
 from domain.model.user import User
 
 logger = getLogger(__name__)

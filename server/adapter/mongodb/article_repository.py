@@ -7,7 +7,7 @@ from logging import getLogger
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
-from adapter.mongodb import COLLECTION_NAME
+from adapter.mongodb.connection import COLLECTION_NAME
 from domain.model.article import (
     Article,
     ArticleInputs,

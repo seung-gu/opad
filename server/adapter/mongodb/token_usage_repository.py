@@ -6,7 +6,7 @@ from logging import getLogger
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
-from adapter.mongodb import TOKEN_USAGE_COLLECTION_NAME
+from adapter.mongodb.connection import TOKEN_USAGE_COLLECTION_NAME
 from domain.model.token_usage import TokenUsage
 
 logger = getLogger(__name__)
