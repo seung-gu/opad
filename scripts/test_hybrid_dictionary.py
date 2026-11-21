@@ -40,7 +40,7 @@ def get_random_vocabularies(count: int = 10) -> list[dict]:
     # sentence가 있는 데이터만 가져오기
     all_vocabs = list(
         db.vocabularies.find(
-            {"sentence": {"$exists": True, "$ne": None, "$ne": ""}, "word": {"$exists": True, "$ne": None, "$ne": ""}}
+            {"sentence": {"$exists": True, "$nin": [None, ""]}, "word": {"$exists": True, "$nin": [None, ""]}}
         )
     )
 

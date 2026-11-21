@@ -18,7 +18,7 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 
 
 @router.get("")
-async def get_database_stats(
+async def get_stats(
     _current_user: UserResponse = Depends(get_current_user_required),
     job_queue: JobQueuePort = Depends(get_job_queue),
 ):
