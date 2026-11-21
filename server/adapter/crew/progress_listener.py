@@ -4,6 +4,8 @@ This module implements a custom event listener that monitors CrewAI task executi
 and updates job status in real-time via JobQueuePort (no direct Redis dependency).
 """
 
+from __future__ import annotations
+
 import logging
 from typing import TYPE_CHECKING
 
@@ -39,7 +41,7 @@ class JobProgressListener(BaseEventListener):
     Must be used within crewai_event_bus.scoped_handlers() context.
     """
 
-    def __init__(self, job_id: str, article_id: str, job_queue: "JobQueuePort"):
+    def __init__(self, job_id: str, article_id: str, job_queue: JobQueuePort):
         self.job_id = job_id
         self.article_id = article_id
         self.job_queue = job_queue
@@ -51,7 +53,7 @@ class JobProgressListener(BaseEventListener):
 
         logger.info("JobProgressListener initialized", extra={"jobId": job_id, "articleId": article_id})
 
-    def setup_listeners(self, crewai_event_bus: "CrewAIEventsBus") -> None:
+    def setup_listeners(self, crewai_event_bus: CrewAIEventsBus) -> None:
         """Setup event listeners on the CrewAI event bus."""
 
         @crewai_event_bus.on(TaskStartedEvent)

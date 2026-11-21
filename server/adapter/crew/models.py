@@ -1,7 +1,5 @@
 """Pydantic models for CrewAI task outputs."""
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 from domain.model.article import EditRecord, SourceInfo
@@ -12,9 +10,9 @@ class NewsArticle(BaseModel):
 
     title: str = Field(description="Article title")
     source_name: str = Field(description="Publication or news outlet name")
-    source_url: Optional[str] = Field(description="Source URL if available", default=None)
-    publication_date: Optional[str] = Field(description="Publication date", default=None)
-    author: Optional[str] = Field(description="Author name if available", default=None)
+    source_url: str | None = Field(description="Source URL if available", default=None)
+    publication_date: str | None = Field(description="Publication date", default=None)
+    author: str | None = Field(description="Author name if available", default=None)
     content: str = Field(description="Full article content/text")
 
     def to_source_info(self) -> SourceInfo:

@@ -87,7 +87,7 @@ class Article:
     # ── factory ───────────────────────────────────────────
 
     @staticmethod
-    def create(inputs: ArticleInputs, user_id: str) -> "Article":
+    def create(inputs: ArticleInputs, user_id: str) -> Article:
         """Create a new Article in RUNNING status with generated IDs."""
         now = datetime.now(timezone.utc)
         return Article(

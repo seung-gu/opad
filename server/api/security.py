@@ -3,7 +3,6 @@
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -53,7 +52,7 @@ def create_access_token(user_id: str) -> str:
     return token
 
 
-def verify_token(token: str) -> Optional[str]:
+def verify_token(token: str) -> str | None:
     """Verify JWT token and extract user_id."""
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
@@ -67,9 +66,9 @@ def verify_token(token: str) -> Optional[str]:
 
 
 def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     user_repo: UserRepository = Depends(get_user_repo),
-) -> Optional[UserResponse]:
+) -> UserResponse | None:
     """Get current authenticated user (optional). Returns None if no token."""
     if not credentials:
         return None
@@ -86,7 +85,7 @@ def get_current_user(
 
 
 def get_current_user_required(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     user_repo: UserRepository = Depends(get_user_repo),
 ) -> UserResponse:
     """Get current authenticated user (required). Raises 401 if not authenticated."""

@@ -1,7 +1,7 @@
 """Pydantic models for API request/response."""
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 from server.domain.model.article import ArticleStatus
@@ -14,13 +14,13 @@ class Conjugations(BaseModel):
     """Verb conjugation forms and noun declension forms."""
 
     # Verb forms
-    present: Optional[str] = None
-    past: Optional[str] = None
-    participle: Optional[str] = None
-    auxiliary: Optional[str] = None
+    present: str | None = None
+    past: str | None = None
+    participle: str | None = None
+    auxiliary: str | None = None
     # Noun forms
-    genitive: Optional[str] = None
-    plural: Optional[str] = None
+    genitive: str | None = None
+    plural: str | None = None
 
     def __bool__(self) -> bool:
         """Return False if all fields are None."""
@@ -40,9 +40,9 @@ class ArticleResponse(BaseModel):
     topic: str
     status: ArticleStatus = Field(..., description="Article status")
     created_at: datetime
-    user_id: Optional[str] = Field(None, description="User ID for multi-user support")
-    job_id: Optional[str] = Field(None, description="Job ID for progress tracking")
-    inputs: Optional[dict] = Field(None, description="Structured input parameters")
+    user_id: str | None = Field(None, description="User ID for multi-user support")
+    job_id: str | None = Field(None, description="Job ID for progress tracking")
+    inputs: dict | None = Field(None, description="Structured input parameters")
 
 
 class GenerateRequest(BaseModel):
@@ -58,13 +58,13 @@ class JobResponse(BaseModel):
     """Response model for job status."""
 
     id: str = Field(..., description="Job ID")
-    article_id: Optional[str] = Field(None, description="Associated article ID")
+    article_id: str | None = Field(None, description="Associated article ID")
     status: str = Field(..., description="Job status: queued, running, completed, failed")
     progress: int = Field(0, ge=0, le=100, description="Progress percentage")
-    message: Optional[str] = Field(None, description="Status message")
-    created_at: Optional[datetime] = Field(None, description="Job creation timestamp")
-    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
-    error: Optional[str] = Field(None, description="Error message if failed")
+    message: str | None = Field(None, description="Status message")
+    created_at: datetime | None = Field(None, description="Job creation timestamp")
+    updated_at: datetime | None = Field(None, description="Last update timestamp")
+    error: str | None = Field(None, description="Error message if failed")
     # Note: started_at is not currently tracked in Redis
 
 
@@ -91,7 +91,7 @@ class SearchRequest(BaseModel):
     word: str = Field(..., min_length=1, max_length=100, description="Word to search")
     sentence: str = Field(..., min_length=1, max_length=2000, description="Sentence containing the word")
     language: str = Field(..., min_length=2, max_length=50, description="Language of the sentence")
-    article_id: Optional[str] = Field(
+    article_id: str | None = Field(
         None,
         pattern=r"^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
         description="Article ID for token usage tracking (UUID format)",
@@ -103,15 +103,15 @@ class SearchResponse(BaseModel):
 
     lemma: str
     definition: str
-    related_words: Optional[list[str]] = Field(
+    related_words: list[str] | None = Field(
         None, description="All words in sentence belonging to this lemma (e.g., for separable verbs)"
     )
-    pos: Optional[str] = Field(None, description="Part of speech: noun, verb, adjective, etc.")
-    gender: Optional[str] = Field(None, description="Grammatical gender: der/die/das, le/la, el/la")
-    phonetics: Optional[str] = Field(None, description="IPA pronunciation (e.g., /hʊnt/)")
-    conjugations: Optional[Conjugations] = Field(None, description="Verb conjugations by tense")
-    level: Optional[CEFRLevel] = Field(None, description="CEFR level (A1-C2)")
-    examples: Optional[list[str]] = Field(None, description="Example sentences from dictionary")
+    pos: str | None = Field(None, description="Part of speech: noun, verb, adjective, etc.")
+    gender: str | None = Field(None, description="Grammatical gender: der/die/das, le/la, el/la")
+    phonetics: str | None = Field(None, description="IPA pronunciation (e.g., /hʊnt/)")
+    conjugations: Conjugations | None = Field(None, description="Verb conjugations by tense")
+    level: CEFRLevel | None = Field(None, description="CEFR level (A1-C2)")
+    examples: list[str] | None = Field(None, description="Example sentences from dictionary")
 
 
 class VocabularyRequest(BaseModel):
@@ -123,14 +123,14 @@ class VocabularyRequest(BaseModel):
     definition: str = Field(..., description="Word definition")
     sentence: str = Field(..., description="Sentence context")
     language: str = Field(..., description="Language")
-    related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma")
-    span_id: Optional[str] = Field(None, description="Span ID of the clicked word")
-    pos: Optional[str] = Field(None, description="Part of speech: noun, verb, adjective, etc.")
-    gender: Optional[str] = Field(None, description="Grammatical gender: der/die/das, le/la, el/la")
-    phonetics: Optional[str] = Field(None, description="IPA pronunciation (e.g., /hʊnt/)")
-    conjugations: Optional[dict] = Field(None, description="Verb conjugations by tense")
-    level: Optional[CEFRLevel] = Field(None, description="CEFR level (A1-C2)")
-    examples: Optional[list[str]] = Field(None, description="Example sentences from dictionary")
+    related_words: list[str] | None = Field(None, description="All words in sentence belonging to this lemma")
+    span_id: str | None = Field(None, description="Span ID of the clicked word")
+    pos: str | None = Field(None, description="Part of speech: noun, verb, adjective, etc.")
+    gender: str | None = Field(None, description="Grammatical gender: der/die/das, le/la, el/la")
+    phonetics: str | None = Field(None, description="IPA pronunciation (e.g., /hʊnt/)")
+    conjugations: dict | None = Field(None, description="Verb conjugations by tense")
+    level: CEFRLevel | None = Field(None, description="CEFR level (A1-C2)")
+    examples: list[str] | None = Field(None, description="Example sentences from dictionary")
 
     @field_validator("conjugations", mode="before")
     @classmethod
@@ -155,16 +155,16 @@ class VocabularyResponse(BaseModel):
     definition: str = Field(..., description="Word definition")
     sentence: str = Field(..., description="Sentence context")
     language: str = Field(..., description="Language")
-    related_words: Optional[list[str]] = Field(None, description="All words in sentence belonging to this lemma")
-    span_id: Optional[str] = Field(None, description="Span ID of the clicked word")
+    related_words: list[str] | None = Field(None, description="All words in sentence belonging to this lemma")
+    span_id: str | None = Field(None, description="Span ID of the clicked word")
     created_at: datetime = Field(..., description="Creation timestamp")
-    user_id: Optional[str] = Field(None, description="User ID for multi-user support")
-    pos: Optional[str] = Field(None, description="Part of speech: noun, verb, adjective, etc.")
-    gender: Optional[str] = Field(None, description="Grammatical gender: der/die/das, le/la, el/la")
-    phonetics: Optional[str] = Field(None, description="IPA pronunciation (e.g., /hʊnt/)")
-    conjugations: Optional[Conjugations] = Field(None, description="Verb conjugations by tense")
-    level: Optional[CEFRLevel] = Field(None, description="CEFR level (A1-C2)")
-    examples: Optional[list[str]] = Field(None, description="Example sentences from dictionary")
+    user_id: str | None = Field(None, description="User ID for multi-user support")
+    pos: str | None = Field(None, description="Part of speech: noun, verb, adjective, etc.")
+    gender: str | None = Field(None, description="Grammatical gender: der/die/das, le/la, el/la")
+    phonetics: str | None = Field(None, description="IPA pronunciation (e.g., /hʊnt/)")
+    conjugations: Conjugations | None = Field(None, description="Verb conjugations by tense")
+    level: CEFRLevel | None = Field(None, description="CEFR level (A1-C2)")
+    examples: list[str] | None = Field(None, description="Example sentences from dictionary")
 
 
 class VocabularyCountResponse(BaseModel):
@@ -177,18 +177,18 @@ class VocabularyCountResponse(BaseModel):
     definition: str = Field(..., description="Most recent definition")
     sentence: str = Field(..., description="Most recent sentence context")
     language: str = Field(..., description="Language")
-    related_words: Optional[list[str]] = Field(None, description="Related words from most recent entry")
-    span_id: Optional[str] = Field(None, description="Span ID from most recent entry")
+    related_words: list[str] | None = Field(None, description="Related words from most recent entry")
+    span_id: str | None = Field(None, description="Span ID from most recent entry")
     created_at: datetime = Field(..., description="Most recent entry timestamp")
-    user_id: Optional[str] = Field(None, description="User ID")
+    user_id: str | None = Field(None, description="User ID")
     count: int = Field(..., description="Number of times this lemma was saved")
     article_ids: list[str] = Field(..., description="Article IDs where this lemma appears")
-    pos: Optional[str] = Field(None, description="Part of speech from most recent entry")
-    gender: Optional[str] = Field(None, description="Grammatical gender from most recent entry")
-    phonetics: Optional[str] = Field(None, description="IPA pronunciation from most recent entry")
-    conjugations: Optional[Conjugations] = Field(None, description="Verb conjugations from most recent entry")
-    level: Optional[CEFRLevel] = Field(None, description="CEFR level from most recent entry")
-    examples: Optional[list[str]] = Field(None, description="Example sentences from most recent entry")
+    pos: str | None = Field(None, description="Part of speech from most recent entry")
+    gender: str | None = Field(None, description="Grammatical gender from most recent entry")
+    phonetics: str | None = Field(None, description="IPA pronunciation from most recent entry")
+    conjugations: Conjugations | None = Field(None, description="Verb conjugations from most recent entry")
+    level: CEFRLevel | None = Field(None, description="CEFR level from most recent entry")
+    examples: list[str] | None = Field(None, description="Example sentences from most recent entry")
 
 
 class UserResponse(BaseModel):
@@ -199,7 +199,7 @@ class UserResponse(BaseModel):
     name: str = Field(..., description="Display name")
     created_at: datetime = Field(..., description="Account creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
-    last_login: Optional[datetime] = Field(None, description="Last login timestamp")
+    last_login: datetime | None = Field(None, description="Last login timestamp")
     provider: str = Field("email", description="Authentication provider")
 
 

@@ -12,7 +12,6 @@ import os
 from collections import Counter
 from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Optional
 
 import redis
 from redis.exceptions import RedisError
@@ -35,9 +34,9 @@ SOCKET_TIMEOUT = 30
 
 class RedisJobQueueAdapter:
     def __init__(self):
-        self._client_cache: Optional[redis.Redis] = None
+        self._client_cache: redis.Redis | None = None
 
-    def _get_client(self) -> Optional[redis.Redis]:
+    def _get_client(self) -> redis.Redis | None:
         """Get Redis client with caching and reconnection logic."""
         if self._client_cache:
             return self._client_cache

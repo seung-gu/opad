@@ -1,7 +1,6 @@
 """MongoDB operational statistics — not entity-specific, used by /stats endpoint."""
 
 from logging import getLogger
-from typing import Optional
 
 from pymongo.errors import PyMongoError
 
@@ -10,7 +9,7 @@ from adapter.mongodb.connection import COLLECTION_NAME, VOCABULARY_COLLECTION_NA
 logger = getLogger(__name__)
 
 
-def get_database_stats(db) -> Optional[dict]:
+def get_database_stats(db) -> dict | None:
     """Get articles collection statistics."""
     try:
         collection = db[COLLECTION_NAME]
@@ -56,7 +55,7 @@ def get_database_stats(db) -> Optional[dict]:
         return None
 
 
-def get_vocabulary_stats(db) -> Optional[dict]:
+def get_vocabulary_stats(db) -> dict | None:
     """Get vocabularies collection statistics."""
     try:
         collection = db[VOCABULARY_COLLECTION_NAME]

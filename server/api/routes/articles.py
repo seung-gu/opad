@@ -1,7 +1,6 @@
 """Article-related API routes."""
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -81,9 +80,9 @@ def _get_article_or_404(repo: ArticleRepository, article_id: str, check_deleted:
 async def list_articles(
     skip: int = 0,
     limit: int = 20,
-    status: Optional[str] = None,
-    language: Optional[str] = None,
-    level: Optional[str] = None,
+    status: str | None = None,
+    language: str | None = None,
+    level: str | None = None,
     current_user: UserResponse = Depends(get_current_user_required),
     repo: ArticleRepository = Depends(get_article_repo),
 ):

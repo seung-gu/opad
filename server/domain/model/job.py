@@ -1,5 +1,7 @@
 """Job domain model — typed container for queue job data."""
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -20,7 +22,7 @@ class JobContext:
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @classmethod
-    def from_dict(cls, job_data: dict) -> "JobContext | None":
+    def from_dict(cls, job_data: dict) -> JobContext | None:
         """Create JobContext from queue data. Returns None if invalid."""
         job_id = job_data.get("job_id")
         raw_inputs = job_data.get("inputs", {})

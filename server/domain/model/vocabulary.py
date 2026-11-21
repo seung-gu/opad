@@ -1,5 +1,7 @@
 """Vocabulary domain models."""
 
+from __future__ import annotations
+
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -74,7 +76,7 @@ class Vocabulary:
         user_id: str | None = None,
         level: str | None = None,
         grammar: GrammaticalInfo | None = None,
-    ) -> "Vocabulary":
+    ) -> Vocabulary:
         """Factory method — same pattern as Article.create()."""
         return Vocabulary(
             id=str(uuid.uuid4()),
