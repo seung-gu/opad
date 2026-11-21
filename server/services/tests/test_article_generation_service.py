@@ -67,7 +67,7 @@ class TestGetVocabulary(unittest.TestCase):
         mock_vocab = MagicMock()
         mock_vocab.find_lemmas.return_value = ["word1", "word2"]
 
-        result = _get_vocabulary(
+        _get_vocabulary(
             user_id="user-123",
             language="German",
             level="B2",

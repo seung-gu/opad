@@ -207,11 +207,7 @@ Please look up this word and provide the appropriate definition and grammatical 
 
     assistant_message = response.choices[0].message
 
-    # Check if tool was called
-    tool_used = False
-
     if assistant_message.tool_calls:
-        tool_used = True
         tool_call = assistant_message.tool_calls[0]
         function_args = json.loads(tool_call.function.arguments)
 

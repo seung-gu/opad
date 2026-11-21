@@ -42,6 +42,7 @@ type = "crew"
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.6.2",
     "radon>=6.0.1",
     "ruff>=0.17.6",
 ]
@@ -53,6 +54,7 @@ run_crew = "crew.main:run"
 [tool.ruff]
 line-length = 120
 src = ["server"]
+extend-exclude = ["*.md"]  # leave the code blocks in the docs as written
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
@@ -62,3 +64,4 @@ ignore = ["E501"]  # the formatter wraps code; long strings and comments stay as
 "__init__.py" = ["F401"]  # re-exports
 "server/api/main.py" = ["E402"]  # load_dotenv() and sys.path must run before the imports
 "scripts/*" = ["E402"]
+"client/libs/api-types/sync_from_backend.py" = ["E402"]
