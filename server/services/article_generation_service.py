@@ -65,14 +65,14 @@ def generate_article(
 def _get_vocabulary(
     user_id: str | None,
     language: str,
-    level: str,
+    level: str | None,
     vocab: VocabularyRepository | None,
 ) -> list[str]:
     """Fetch user's vocabulary filtered by target level."""
     if not user_id or not language or not vocab:
         return []
 
-    levels = CEFRLevel.range(level, max_above=1)
+    levels = CEFRLevel.range(CEFRLevel.next(level))
     vocab_list = vocab.find_lemmas(
         user_id=user_id,
         language=language,
