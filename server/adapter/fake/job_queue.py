@@ -4,7 +4,7 @@ from collections import deque
 from datetime import datetime, timezone
 
 from domain.model.article import Article
-from domain.model.job import JobContext
+from domain.model.job import JobContext, JobStatus
 
 
 class FakeJobQueueAdapter:
@@ -34,7 +34,7 @@ class FakeJobQueueAdapter:
     def update_status(
         self,
         job_id: str,
-        status: str,
+        status: JobStatus,
         progress: int = 0,
         message: str = "",
         error: str | None = None,

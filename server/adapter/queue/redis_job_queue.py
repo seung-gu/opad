@@ -18,7 +18,7 @@ from redis.exceptions import RedisError
 
 from domain.model.article import Article
 from domain.model.errors import QueueUnavailableError
-from domain.model.job import JobContext
+from domain.model.job import JobContext, JobStatus
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +145,7 @@ class RedisJobQueueAdapter:
     def update_status(
         self,
         job_id: str,
-        status: str,
+        status: JobStatus,
         progress: int = 0,
         message: str = "",
         error: str | None = None,

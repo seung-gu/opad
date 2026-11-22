@@ -357,6 +357,8 @@ Rich Domain Model with factory (`create()`), state transitions (`complete()`, `f
 
 Typed container for job queue data, replacing raw dict passing. `from_dict()` validates and converts queue data once at dequeue time. Provides `log_extra` property for structured logging.
 
+The same module defines `JobStatus = Literal["queued", "running", "completed", "failed"]`, the values `JobQueuePort.update_status()` accepts. `JobResponse.status` in the API stays `str`, because it returns whatever Redis holds.
+
 #### User (`domain/model/user.py`)
 
 Standard user entity with `id`, `name`, `email`, authentication fields (`password_hash`, `provider`), and timestamps (`created_at`, `updated_at`, `last_login`).

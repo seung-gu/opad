@@ -5,10 +5,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Literal
 
 from domain.model.article import ArticleInputs
 
 logger = logging.getLogger(__name__)
+
+JobStatus = Literal["queued", "running", "completed", "failed"]
 
 
 @dataclass
