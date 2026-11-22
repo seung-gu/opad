@@ -1,18 +1,13 @@
 """Unit tests for article_submission_service module."""
 
-import unittest
-from unittest.mock import MagicMock
 import sys
+import unittest
 from pathlib import Path
+from unittest.mock import MagicMock
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from services.article_submission_service import (
-    submit_generation,
-    _check_duplicate,
-    _enqueue_job,
-)
 from adapter.fake.article_repository import FakeArticleRepository
 from adapter.fake.job_queue import FakeJobQueueAdapter
 from domain.model.article import (
@@ -21,13 +16,17 @@ from domain.model.article import (
     ArticleStatus,
 )
 from domain.model.errors import (
+    DomainError,
     DuplicateArticleError,
     EnqueueError,
-    DomainError,
+)
+from services.article_submission_service import (
+    _check_duplicate,
+    _enqueue_job,
+    submit_generation,
 )
 
-
-TEST_INPUTS = ArticleInputs(language='German', level='B2', length='500', topic='AI')
+TEST_INPUTS = ArticleInputs(language="German", level="B2", length="500", topic="AI")
 
 
 class TestSubmitGeneration(unittest.TestCase):
@@ -42,14 +41,14 @@ class TestSubmitGeneration(unittest.TestCase):
         """Test successful article submission."""
         article = submit_generation(
             inputs=TEST_INPUTS,
-            user_id='user-123',
+            user_id="user-123",
             repo=self.repo,
             job_queue=self.job_queue,
             force=False,
         )
 
         self.assertIsNotNone(article)
-        self.assertEqual(article.user_id, 'user-123')
+        self.assertEqual(article.user_id, "user-123")
         self.assertEqual(article.inputs, TEST_INPUTS)
         self.assertEqual(article.status, ArticleStatus.RUNNING)
         self.assertIsNotNone(article.job_id)
@@ -59,7 +58,7 @@ class TestSubmitGeneration(unittest.TestCase):
         """Test that submitted article is saved to repository."""
         article = submit_generation(
             inputs=TEST_INPUTS,
-            user_id='user-123',
+            user_id="user-123",
             repo=self.repo,
             job_queue=self.job_queue,
             force=False,
@@ -73,7 +72,7 @@ class TestSubmitGeneration(unittest.TestCase):
         """Test that job is enqueued in job queue."""
         article = submit_generation(
             inputs=TEST_INPUTS,
-            user_id='user-123',
+            user_id="user-123",
             repo=self.repo,
             job_queue=self.job_queue,
             force=False,
@@ -81,14 +80,14 @@ class TestSubmitGeneration(unittest.TestCase):
 
         status = self.job_queue.get_status(article.job_id)
         self.assertIsNotNone(status)
-        self.assertEqual(status['status'], 'queued')
-        self.assertEqual(status['article_id'], article.id)
+        self.assertEqual(status["status"], "queued")
+        self.assertEqual(status["article_id"], article.id)
 
     def test_submit_generation_raises_duplicate_error(self):
         """Test that duplicate article raises DuplicateArticleError."""
         submit_generation(
             inputs=TEST_INPUTS,
-            user_id='user-123',
+            user_id="user-123",
             repo=self.repo,
             job_queue=self.job_queue,
             force=False,
@@ -97,7 +96,7 @@ class TestSubmitGeneration(unittest.TestCase):
         with self.assertRaises(DuplicateArticleError):
             submit_generation(
                 inputs=TEST_INPUTS,
-                user_id='user-123',
+                user_id="user-123",
                 repo=self.repo,
                 job_queue=self.job_queue,
                 force=False,
@@ -107,7 +106,7 @@ class TestSubmitGeneration(unittest.TestCase):
         """Test that force=True bypasses duplicate checking."""
         submit_generation(
             inputs=TEST_INPUTS,
-            user_id='user-123',
+            user_id="user-123",
             repo=self.repo,
             job_queue=self.job_queue,
             force=False,
@@ -115,7 +114,7 @@ class TestSubmitGeneration(unittest.TestCase):
 
         article = submit_generation(
             inputs=TEST_INPUTS,
-            user_id='user-123',
+            user_id="user-123",
             repo=self.repo,
             job_queue=self.job_queue,
             force=True,
@@ -133,7 +132,7 @@ class TestSubmitGeneration(unittest.TestCase):
         with self.assertRaises(DomainError) as ctx:
             submit_generation(
                 inputs=TEST_INPUTS,
-                user_id='user-123',
+                user_id="user-123",
                 repo=mock_repo,
                 job_queue=mock_job_queue,
                 force=False,
@@ -155,7 +154,7 @@ class TestSubmitGeneration(unittest.TestCase):
         with self.assertRaises(EnqueueError) as ctx:
             submit_generation(
                 inputs=TEST_INPUTS,
-                user_id='user-123',
+                user_id="user-123",
                 repo=mock_repo,
                 job_queue=mock_job_queue,
                 force=False,
@@ -179,7 +178,7 @@ class TestCheckDuplicate(unittest.TestCase):
             job_queue=self.job_queue,
             inputs=TEST_INPUTS,
             force=True,
-            user_id='user-123',
+            user_id="user-123",
         )
 
     def test_check_duplicate_returns_if_no_duplicate_exists(self):
@@ -189,19 +188,19 @@ class TestCheckDuplicate(unittest.TestCase):
             job_queue=self.job_queue,
             inputs=TEST_INPUTS,
             force=False,
-            user_id='user-123',
+            user_id="user-123",
         )
 
     def test_check_duplicate_raises_with_job_status(self):
         """Test that DuplicateArticleError includes job status when available."""
-        article = Article.create(TEST_INPUTS, 'user-123')
+        article = Article.create(TEST_INPUTS, "user-123")
         self.repo.save(article)
 
         self.job_queue.update_status(
             job_id=article.job_id,
-            status='running',
+            status="running",
             progress=50,
-            message='Processing...',
+            message="Processing...",
         )
 
         with self.assertRaises(DuplicateArticleError) as ctx:
@@ -210,17 +209,17 @@ class TestCheckDuplicate(unittest.TestCase):
                 job_queue=self.job_queue,
                 inputs=TEST_INPUTS,
                 force=False,
-                user_id='user-123',
+                user_id="user-123",
             )
 
         error = ctx.exception
         self.assertEqual(error.article_id, article.id)
         self.assertIsNotNone(error.job_data)
-        self.assertEqual(error.job_data['status'], 'running')
+        self.assertEqual(error.job_data["status"], "running")
 
     def test_check_duplicate_raises_without_job_status(self):
         """Test that DuplicateArticleError works when job_id is None."""
-        article = Article.create(TEST_INPUTS, 'user-123')
+        article = Article.create(TEST_INPUTS, "user-123")
         article.job_id = None
         self.repo.save(article)
 
@@ -230,7 +229,7 @@ class TestCheckDuplicate(unittest.TestCase):
                 job_queue=self.job_queue,
                 inputs=TEST_INPUTS,
                 force=False,
-                user_id='user-123',
+                user_id="user-123",
             )
 
         error = ctx.exception
@@ -245,7 +244,7 @@ class TestEnqueueJob(unittest.TestCase):
         """Set up test fixtures."""
         self.repo = FakeArticleRepository()
         self.job_queue = FakeJobQueueAdapter()
-        self.article = Article.create(TEST_INPUTS, 'user-123')
+        self.article = Article.create(TEST_INPUTS, "user-123")
 
     def test_enqueue_job_success(self):
         """Test successful job enqueueing."""
@@ -256,7 +255,7 @@ class TestEnqueueJob(unittest.TestCase):
         )
 
         status = self.job_queue.get_status(self.article.job_id)
-        self.assertEqual(status['status'], 'queued')
+        self.assertEqual(status["status"], "queued")
 
         ctx = self.job_queue.dequeue()
         self.assertIsNotNone(ctx)
@@ -311,5 +310,5 @@ class TestEnqueueJob(unittest.TestCase):
         self.assertEqual(ctx.inputs.topic, TEST_INPUTS.topic)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

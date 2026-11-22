@@ -10,21 +10,20 @@ import json
 import logging
 import os
 from collections import Counter
+from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Optional
 
 import redis
 from redis.exceptions import RedisError
 
-from dataclasses import asdict
 from domain.model.article import Article
-from domain.model.job import JobContext
 from domain.model.errors import QueueUnavailableError
+from domain.model.job import JobContext, JobStatus
 
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.getenv('REDIS_URL', '')
-QUEUE_NAME = 'opad:jobs'
+REDIS_URL = os.getenv("REDIS_URL", "")
+QUEUE_NAME = "opad:jobs"
 
 CONNECT_TIMEOUT = 5
 # Must exceed any BLPOP timeout we pass to dequeue(): the socket sees a blocking
@@ -35,9 +34,9 @@ SOCKET_TIMEOUT = 30
 
 class RedisJobQueueAdapter:
     def __init__(self):
-        self._client_cache: Optional[redis.Redis] = None
+        self._client_cache: redis.Redis | None = None
 
-    def _get_client(self) -> Optional[redis.Redis]:
+    def _get_client(self) -> redis.Redis | None:
         """Get Redis client with caching and reconnection logic."""
         if self._client_cache:
             return self._client_cache
@@ -58,7 +57,7 @@ class RedisJobQueueAdapter:
 
             # from_url lets URL query parameters override our kwargs, so report
             # what actually applies — a short socket_timeout breaks BLPOP.
-            effective = client.connection_pool.connection_kwargs.get('socket_timeout')
+            effective = client.connection_pool.connection_kwargs.get("socket_timeout")
             if isinstance(effective, (int, float)) and effective < SOCKET_TIMEOUT:
                 logger.warning(
                     f"[REDIS] socket_timeout is {effective}s (REDIS_URL overrides our "
@@ -79,11 +78,11 @@ class RedisJobQueueAdapter:
             return False
 
         job_data = {
-            'job_id': article.job_id,
-            'article_id': article.id,
-            'user_id': article.user_id,
-            'inputs': asdict(article.inputs),
-            'created_at': datetime.now(timezone.utc).isoformat(),
+            "job_id": article.job_id,
+            "article_id": article.id,
+            "user_id": article.user_id,
+            "inputs": asdict(article.inputs),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
         try:
@@ -135,7 +134,7 @@ class RedisJobQueueAdapter:
             return None
 
         try:
-            status_key = f'opad:job:{job_id}'
+            status_key = f"opad:job:{job_id}"
             status_data = client.get(status_key)
             if status_data:
                 return json.loads(status_data)
@@ -146,9 +145,9 @@ class RedisJobQueueAdapter:
     def update_status(
         self,
         job_id: str,
-        status: str,
+        status: JobStatus,
         progress: int = 0,
-        message: str = '',
+        message: str = "",
         error: str | None = None,
         article_id: str | None = None,
     ) -> bool:
@@ -156,7 +155,7 @@ class RedisJobQueueAdapter:
         if not client:
             return False
 
-        status_key = f'opad:job:{job_id}'
+        status_key = f"opad:job:{job_id}"
 
         # Read existing status to preserve fields
         existing_article_id = None
@@ -166,16 +165,16 @@ class RedisJobQueueAdapter:
             existing_data = client.get(status_key)
             if existing_data:
                 existing_status = json.loads(existing_data)
-                existing_article_id = existing_status.get('article_id')
-                existing_created_at = existing_status.get('created_at')
-                existing_progress = existing_status.get('progress')
+                existing_article_id = existing_status.get("article_id")
+                existing_created_at = existing_status.get("created_at")
+                existing_progress = existing_status.get("progress")
         except (RedisError, json.JSONDecodeError, KeyError):
             pass
 
         final_article_id = article_id if article_id is not None else existing_article_id
 
         final_created_at = existing_created_at
-        if final_created_at is None and status == 'queued':
+        if final_created_at is None and status == "queued":
             final_created_at = datetime.now(timezone.utc).isoformat()
 
         final_progress = progress
@@ -183,18 +182,18 @@ class RedisJobQueueAdapter:
             final_progress = existing_progress
 
         status_data = {
-            'id': job_id,
-            'status': status,
-            'progress': final_progress,
-            'message': message or '',
-            'error': error,
-            'updated_at': datetime.now(timezone.utc).isoformat(),
+            "id": job_id,
+            "status": status,
+            "progress": final_progress,
+            "message": message or "",
+            "error": error,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
         if final_article_id:
-            status_data['article_id'] = final_article_id
+            status_data["article_id"] = final_article_id
         if final_created_at:
-            status_data['created_at'] = final_created_at
+            status_data["created_at"] = final_created_at
 
         try:
             client.setex(status_key, 86400, json.dumps(status_data))
@@ -211,7 +210,7 @@ class RedisJobQueueAdapter:
         try:
             status_values = self._scan_all_job_status_values(client)
             stats = self._tally(status_values)
-            logger.info("Job statistics retrieved", extra={"totalJobs": stats['total']})
+            logger.info("Job statistics retrieved", extra={"totalJobs": stats["total"]})
             return stats
         except RedisError:
             logger.exception("Failed to get job stats")
@@ -221,11 +220,11 @@ class RedisJobQueueAdapter:
     def _scan_all_job_status_values(client) -> list[str]:
         """Scan all job keys and return their status strings."""
         result = []
-        for key in client.scan_iter(match='opad:job:*', count=100):
+        for key in client.scan_iter(match="opad:job:*", count=100):
             try:
                 raw = client.get(key)
                 if raw:
-                    result.append(json.loads(raw).get('status', 'unknown'))
+                    result.append(json.loads(raw).get("status", "unknown"))
             except (json.JSONDecodeError, KeyError):
                 continue
         return result
@@ -235,11 +234,11 @@ class RedisJobQueueAdapter:
         """Count job statuses."""
         counts = Counter(status_values)
         return {
-            'queued': counts.get('queued', 0),
-            'running': counts.get('running', 0),
-            'completed': counts.get('completed', 0),
-            'failed': counts.get('failed', 0),
-            'total': len(status_values),
+            "queued": counts.get("queued", 0),
+            "running": counts.get("running", 0),
+            "completed": counts.get("completed", 0),
+            "failed": counts.get("failed", 0),
+            "total": len(status_values),
         }
 
     def ping(self) -> bool:

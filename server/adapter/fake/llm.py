@@ -22,12 +22,14 @@ class FakeLLMAdapter:
         timeout: float = 30.0,
         **kwargs,
     ) -> tuple[str, LLMCallResult]:
-        self.calls.append({
-            "messages": messages,
-            "model": model,
-            "timeout": timeout,
-            **kwargs,
-        })
+        self.calls.append(
+            {
+                "messages": messages,
+                "model": model,
+                "timeout": timeout,
+                **kwargs,
+            }
+        )
         stats = self._stats or LLMCallResult(
             model=model,
             prompt_tokens=10,

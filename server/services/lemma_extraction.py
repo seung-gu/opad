@@ -9,27 +9,40 @@ import logging
 from typing import Any, TypedDict
 
 from json_repair import repair_json
+
+from domain.model.cefr import CEFRLevel, Level
+from domain.model.token_usage import LLMCallResult
 from port.llm import LLMPort
 from port.nlp import NLPPort
-from domain.model.token_usage import LLMCallResult
 
 logger = logging.getLogger(__name__)
 
 
 class LemmaResult(TypedDict):
     """Typed result of lemma extraction (Step 1 of lookup pipeline)."""
+
     lemma: str
     related_words: list[str] | None
-    level: str | None
+    level: Level | None
+
 
 # Token limits
 _REDUCED_PROMPT_MAX_TOKENS = 200
 _CEFR_PROMPT_MAX_TOKENS = 10
 
 
+def _to_level(value: Any) -> Level | None:
+    """Keep the LLM's CEFR level only if it is one of A1-C2, ignoring case and spaces."""
+    if not isinstance(value, str):
+        return None
+    level = value.strip().upper()
+    return level if level in CEFRLevel.ALL else None
+
+
 # ---------------------------------------------------------------------------
 # Public interface
 # ---------------------------------------------------------------------------
+
 
 async def extract_lemma(
     word: str,
@@ -53,18 +66,22 @@ async def extract_lemma(
         if word_info is not None:
             lemma, related_words = resolve_lemma(word_info, word)
             level, stats = await _estimate_cefr(word, sentence, lemma, llm, model)
-            logger.info("Lemma extracted (NLP)", extra={
-                "word": word, "lemma": lemma,
-                "related_words": related_words, "level": level,
-            })
+            logger.info(
+                "Lemma extracted (NLP)",
+                extra={
+                    "word": word,
+                    "lemma": lemma,
+                    "related_words": related_words,
+                    "level": level,
+                },
+            )
             return LemmaResult(
                 lemma=lemma,
                 related_words=related_words,
                 level=level,
             ), stats
         # NLP failed — fall through to LLM path
-        logger.info("NLP extraction failed, falling back to LLM",
-                     extra={"word": word})
+        logger.info("NLP extraction failed, falling back to LLM", extra={"word": word})
 
     return await _extract_with_llm(word, sentence, language, llm, model)
 
@@ -72,6 +89,7 @@ async def extract_lemma(
 # ---------------------------------------------------------------------------
 # Business rules (no external library access)
 # ---------------------------------------------------------------------------
+
 
 def resolve_lemma(info: dict[str, Any], original_word: str) -> tuple[str, list[str]]:
     """Determine lemma and related_words from extracted word info.
@@ -97,7 +115,9 @@ def resolve_lemma(info: dict[str, Any], original_word: str) -> tuple[str, list[s
 
 
 def _combine_verb_lemma(
-    base: str, prefix: str | None, reflexive: str | None,
+    base: str,
+    prefix: str | None,
+    reflexive: str | None,
 ) -> str:
     """Combine verb lemma with separable prefix and/or reflexive pronoun."""
     if reflexive:
@@ -111,14 +131,19 @@ def _combine_verb_lemma(
 # CEFR estimation (small LLM call for NLP path)
 # ---------------------------------------------------------------------------
 
+
 async def _estimate_cefr(
-    word: str, sentence: str, lemma: str, llm: LLMPort, model: str,
-) -> tuple[str | None, LLMCallResult | None]:
+    word: str,
+    sentence: str,
+    lemma: str,
+    llm: LLMPort,
+    model: str,
+) -> tuple[Level | None, LLMCallResult | None]:
     """Estimate CEFR level with a minimal LLM call."""
     prompt = (
         f'Sentence: "{sentence}"\n'
         f'Word: "{word}", Lemma: "{lemma}"\n'
-        f"CEFR level? Reply JSON only: {{\"level\": \"A1\"}}\n"
+        f'CEFR level? Reply JSON only: {{"level": "A1"}}\n'
         f"A1=basic A2=daily B1=general B2=professional C1=academic C2=literary"
     )
     try:
@@ -130,7 +155,7 @@ async def _estimate_cefr(
             timeout=10,
         )
         result = repair_json(content, return_objects=True)
-        level = result.get("level") if isinstance(result, dict) else None
+        level = _to_level(result.get("level")) if isinstance(result, dict) else None
         return level, stats
     except Exception as e:
         logger.warning("CEFR estimation failed", extra={"error": str(e)})
@@ -141,8 +166,13 @@ async def _estimate_cefr(
 # LLM extraction (non-German, or German fallback)
 # ---------------------------------------------------------------------------
 
+
 async def _extract_with_llm(
-    word: str, sentence: str, language: str, llm: LLMPort, model: str,
+    word: str,
+    sentence: str,
+    language: str,
+    llm: LLMPort,
+    model: str,
 ) -> tuple[LemmaResult | None, LLMCallResult | None]:
     """Extract lemma using LLM reduced prompt."""
     try:
@@ -159,14 +189,13 @@ async def _extract_with_llm(
         if not isinstance(parsed, dict):
             logger.warning(
                 "Failed to parse JSON from LLM reduced prompt",
-                extra={"word": word, "language": language,
-                        "content_preview": content[:200] if content else None},
+                extra={"word": word, "language": language, "content_preview": content[:200] if content else None},
             )
             return None, stats
         return LemmaResult(
             lemma=parsed.get("lemma", word),
             related_words=parsed.get("related_words"),
-            level=parsed.get("level"),
+            level=_to_level(parsed.get("level")),
         ), stats
 
     except Exception as e:
@@ -181,6 +210,7 @@ async def _extract_with_llm(
 # ---------------------------------------------------------------------------
 # Prompt templates
 # ---------------------------------------------------------------------------
+
 
 def _build_reduced_prompt(language: str, sentence: str, word: str) -> str:
     """Build reduced prompt by language."""

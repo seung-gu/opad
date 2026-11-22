@@ -1,15 +1,19 @@
 """Vocabulary domain models."""
 
+from __future__ import annotations
+
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from domain.model.cefr import Level
 from domain.model.errors import PermissionDeniedError
 
 
 @dataclass(frozen=True)
 class GrammaticalInfo:
     """Optional grammatical metadata for a vocabulary entry."""
+
     pos: str | None = None
     gender: str | None = None
     phonetics: str | None = None
@@ -20,6 +24,7 @@ class GrammaticalInfo:
 @dataclass
 class SenseResult:
     """Selected sense from dictionary entries."""
+
     definition: str = ""
     examples: list[str] | None = None
 
@@ -31,10 +36,11 @@ class LookupResult:
     Returned by dictionary_service.lookup() to provide a typed contract
     instead of a raw dict.
     """
+
     lemma: str
     definition: str
     related_words: list[str] | None = None
-    level: str | None = None
+    level: Level | None = None
     grammar: GrammaticalInfo = field(default_factory=GrammaticalInfo)
 
 
@@ -42,7 +48,7 @@ class LookupResult:
 class Vocabulary:
     """A single vocabulary entry saved by a user."""
 
-    IDENTITY_FIELDS = ('user_id', 'article_id', 'lemma')
+    IDENTITY_FIELDS = ("user_id", "article_id", "lemma")
 
     id: str
     article_id: str
@@ -53,7 +59,7 @@ class Vocabulary:
     language: str
     created_at: datetime
     related_words: list[str] | None = None
-    level: str | None = None
+    level: Level | None = None
     span_id: str | None = None
     user_id: str | None = None
     grammar: GrammaticalInfo = field(default_factory=GrammaticalInfo)
@@ -69,9 +75,9 @@ class Vocabulary:
         related_words: list[str] | None = None,
         span_id: str | None = None,
         user_id: str | None = None,
-        level: str | None = None,
+        level: Level | None = None,
         grammar: GrammaticalInfo | None = None,
-    ) -> 'Vocabulary':
+    ) -> Vocabulary:
         """Factory method — same pattern as Article.create()."""
         return Vocabulary(
             id=str(uuid.uuid4()),
@@ -108,6 +114,7 @@ class VocabularyCount:
     entry for each unique (language, lemma) pair, plus occurrence count
     and list of article IDs where this lemma appeared.
     """
+
     vocabulary: Vocabulary
     count: int
     article_ids: list[str] = field(default_factory=list)

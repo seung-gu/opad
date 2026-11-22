@@ -1,7 +1,7 @@
 """Tests for CrewAI task guardrails."""
 
-import unittest
 import sys
+import unittest
 from pathlib import Path
 
 # Add src to path
@@ -22,18 +22,17 @@ class FakeTaskOutput:
 
 
 class TestRepairJsonOutput(unittest.TestCase):
-
     def test_repairs_malformed_json(self):
         ok, output = repair_json_output(FakeTaskOutput('{"articles": [{"title": "A"},]}'))
 
         self.assertTrue(ok)
-        self.assertNotIn(',]', output)
+        self.assertNotIn(",]", output)
 
     def test_rejects_empty_output(self):
-        ok, message = repair_json_output(FakeTaskOutput('   '))
+        ok, message = repair_json_output(FakeTaskOutput("   "))
 
         self.assertFalse(ok)
-        self.assertIn('Empty output', message)
+        self.assertIn("Empty output", message)
 
 
 class TestRequireArticles(unittest.TestCase):
@@ -48,28 +47,26 @@ class TestRequireArticles(unittest.TestCase):
         ok, message = require_articles(FakeTaskOutput('{"articles": []}'))
 
         self.assertFalse(ok)
-        self.assertIn('No news articles were found', message)
+        self.assertIn("No news articles were found", message)
 
     def test_rejects_missing_articles_key(self):
-        ok, message = require_articles(FakeTaskOutput('{}'))
+        ok, message = require_articles(FakeTaskOutput("{}"))
 
         self.assertFalse(ok)
-        self.assertIn('No news articles were found', message)
+        self.assertIn("No news articles were found", message)
 
     def test_accepts_populated_list(self):
-        ok, output = require_articles(
-            FakeTaskOutput('{"articles": [{"title": "A"}, {"title": "B"}]}')
-        )
+        ok, output = require_articles(FakeTaskOutput('{"articles": [{"title": "A"}, {"title": "B"}]}'))
 
         self.assertTrue(ok)
-        self.assertIn('title', output)
+        self.assertIn("title", output)
 
     def test_still_repairs_json_before_checking(self):
         """Malformed but non-empty output is repaired, not rejected."""
         ok, output = require_articles(FakeTaskOutput('{"articles": [{"title": "A"},]}'))
 
         self.assertTrue(ok)
-        self.assertNotIn(',]', output)
+        self.assertNotIn(",]", output)
 
 
 class TestRequireSelectedArticle(unittest.TestCase):
@@ -87,27 +84,25 @@ class TestRequireSelectedArticle(unittest.TestCase):
         )
 
         self.assertFalse(ok)
-        self.assertIn('No article was selected', message)
+        self.assertIn("No article was selected", message)
 
     def test_rejects_missing_article_key(self):
-        ok, message = require_selected_article(
-            FakeTaskOutput('{"selection_rationale": "nothing matched"}')
-        )
+        ok, message = require_selected_article(FakeTaskOutput('{"selection_rationale": "nothing matched"}'))
 
         self.assertFalse(ok)
-        self.assertIn('No article was selected', message)
+        self.assertIn("No article was selected", message)
 
     def test_rejects_empty_article_object(self):
         ok, message = require_selected_article(FakeTaskOutput('{"article": {}}'))
 
         self.assertFalse(ok)
-        self.assertIn('No article was selected', message)
+        self.assertIn("No article was selected", message)
 
     def test_rejects_article_that_is_not_an_object(self):
         ok, message = require_selected_article(FakeTaskOutput('{"article": "Some headline"}'))
 
         self.assertFalse(ok)
-        self.assertIn('No article was selected', message)
+        self.assertIn("No article was selected", message)
 
     def test_accepts_a_populated_article(self):
         ok, output = require_selected_article(
@@ -115,7 +110,7 @@ class TestRequireSelectedArticle(unittest.TestCase):
         )
 
         self.assertTrue(ok)
-        self.assertIn('title', output)
+        self.assertIn("title", output)
 
     def test_still_repairs_json_before_checking(self):
         """Malformed but populated output is repaired, not rejected."""
@@ -124,8 +119,8 @@ class TestRequireSelectedArticle(unittest.TestCase):
         )
 
         self.assertTrue(ok)
-        self.assertNotIn(',}', output)
+        self.assertNotIn(",}", output)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

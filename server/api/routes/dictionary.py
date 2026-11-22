@@ -11,18 +11,18 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.security import get_current_user_required
+from api.dependencies import get_dictionary_port, get_llm_port, get_nlp_port, get_token_usage_repo
 from api.models import (
     SearchRequest,
     SearchResponse,
     UserResponse,
 )
-from services import dictionary_service
-from api.dependencies import get_dictionary_port, get_llm_port, get_nlp_port, get_token_usage_repo
+from api.security import get_current_user_required
 from port.dictionary import DictionaryPort
-from port.llm import LLMPort, LLMTimeoutError, LLMRateLimitError, LLMAuthError, LLMError
+from port.llm import LLMAuthError, LLMError, LLMPort, LLMRateLimitError, LLMTimeoutError
 from port.nlp import NLPPort
 from port.token_usage_repository import TokenUsageRepository as TokenUsageRepo
+from services import dictionary_service
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +88,7 @@ async def search_word(
         logger.error("LLM error", extra={"word": request.word, "error": str(e)})
         raise HTTPException(status_code=502, detail="LLM provider error")
     except Exception as e:
-        logger.error("Unexpected error in dictionary search",
-                     extra={"error": str(e), "word": request.word}, exc_info=True)
+        logger.error(
+            "Unexpected error in dictionary search", extra={"error": str(e), "word": request.word}, exc_info=True
+        )
         raise HTTPException(status_code=500, detail="Internal server error")

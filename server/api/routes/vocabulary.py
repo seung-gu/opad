@@ -10,17 +10,17 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.security import get_current_user_required
+from api.dependencies import get_vocab_repo
 from api.models import (
     UserResponse,
+    VocabularyCountResponse,
     VocabularyRequest,
     VocabularyResponse,
-    VocabularyCountResponse,
 )
-from api.dependencies import get_vocab_repo
+from api.security import get_current_user_required
 from domain.model.errors import PermissionDeniedError
-from port.vocabulary_repository import VocabularyRepository
 from domain.model.vocabulary import GrammaticalInfo, Vocabulary
+from port.vocabulary_repository import VocabularyRepository
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +59,15 @@ async def add_vocabulary(
         raise HTTPException(status_code=500, detail="Failed to save vocabulary")
     vocab = repo.get_by_id(vocab_id)
 
-    logger.info("Vocabulary added", extra={
-        "vocabulary_id": vocab.id,
-        "article_id": request.article_id,
-        "lemma": request.lemma,
-        "user_id": current_user.id
-    })
+    logger.info(
+        "Vocabulary added",
+        extra={
+            "vocabulary_id": vocab.id,
+            "article_id": request.article_id,
+            "lemma": request.lemma,
+            "user_id": current_user.id,
+        },
+    )
 
     return VocabularyResponse(
         id=vocab.id,
@@ -99,40 +102,44 @@ async def get_vocabularies_list(
     limit = min(limit, 1000)
 
     entries = repo.count_by_lemma(
-        language=language, user_id=current_user.id, skip=skip, limit=limit,
+        language=language,
+        user_id=current_user.id,
+        skip=skip,
+        limit=limit,
     )
 
     result = []
     for entry in entries:
         v = entry.vocabulary
         g = v.grammar
-        result.append(VocabularyCountResponse(
-            id=v.id,
-            article_id=v.article_id,
-            word=v.word,
-            lemma=v.lemma,
-            definition=v.definition,
-            sentence=v.sentence,
-            language=v.language,
-            related_words=v.related_words,
-            span_id=v.span_id,
-            created_at=v.created_at,
-            user_id=v.user_id,
-            count=entry.count,
-            article_ids=entry.article_ids,
-            pos=g.pos if g else None,
-            gender=g.gender if g else None,
-            phonetics=g.phonetics if g else None,
-            conjugations=g.conjugations if g else None,
-            level=v.level,
-            examples=g.examples if g else None,
-        ))
+        result.append(
+            VocabularyCountResponse(
+                id=v.id,
+                article_id=v.article_id,
+                word=v.word,
+                lemma=v.lemma,
+                definition=v.definition,
+                sentence=v.sentence,
+                language=v.language,
+                related_words=v.related_words,
+                span_id=v.span_id,
+                created_at=v.created_at,
+                user_id=v.user_id,
+                count=entry.count,
+                article_ids=entry.article_ids,
+                pos=g.pos if g else None,
+                gender=g.gender if g else None,
+                phonetics=g.phonetics if g else None,
+                conjugations=g.conjugations if g else None,
+                level=v.level,
+                examples=g.examples if g else None,
+            )
+        )
 
-    logger.info("Grouped vocabularies retrieved", extra={
-        "group_count": len(result),
-        "language": language,
-        "user_id": current_user.id
-    })
+    logger.info(
+        "Grouped vocabularies retrieved",
+        extra={"group_count": len(result), "language": language, "user_id": current_user.id},
+    )
 
     return result
 
@@ -155,9 +162,6 @@ async def delete_vocabulary_word(
 
     repo.delete(vocabulary_id)
 
-    logger.info("Vocabulary deleted", extra={
-        "vocabulary_id": vocabulary_id,
-        "user_id": current_user.id
-    })
+    logger.info("Vocabulary deleted", extra={"vocabulary_id": vocabulary_id, "user_id": current_user.id})
 
     return {"message": "Vocabulary deleted successfully"}

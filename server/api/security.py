@@ -1,11 +1,11 @@
 """JWT authentication and security dependencies."""
 
-import os
 import logging
+import os
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
 from api.dependencies import get_user_repo
@@ -19,8 +19,7 @@ logger = logging.getLogger(__name__)
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 if not JWT_SECRET_KEY:
     raise ValueError(
-        "JWT_SECRET_KEY environment variable is required. "
-        "Generate a secure key with: openssl rand -hex 32"
+        "JWT_SECRET_KEY environment variable is required. Generate a secure key with: openssl rand -hex 32"
     )
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_DAYS = 7
@@ -53,7 +52,7 @@ def create_access_token(user_id: str) -> str:
     return token
 
 
-def verify_token(token: str) -> Optional[str]:
+def verify_token(token: str) -> str | None:
     """Verify JWT token and extract user_id."""
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
@@ -67,9 +66,9 @@ def verify_token(token: str) -> Optional[str]:
 
 
 def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     user_repo: UserRepository = Depends(get_user_repo),
-) -> Optional[UserResponse]:
+) -> UserResponse | None:
     """Get current authenticated user (optional). Returns None if no token."""
     if not credentials:
         return None
@@ -86,7 +85,7 @@ def get_current_user(
 
 
 def get_current_user_required(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     user_repo: UserRepository = Depends(get_user_repo),
 ) -> UserResponse:
     """Get current authenticated user (required). Raises 401 if not authenticated."""

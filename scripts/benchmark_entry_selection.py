@@ -35,8 +35,8 @@ sys.path.insert(0, "scripts")
 from test_cases import TEST_CASES_DE, TEST_CASES_EN
 
 from adapter.external.free_dictionary import (
-    FREE_DICTIONARY_API_BASE_URL,
     API_TIMEOUT_SECONDS,
+    FREE_DICTIONARY_API_BASE_URL,
 )
 from domain.model.language import get_language
 
@@ -48,9 +48,11 @@ logger = logging.getLogger(__name__)
 # Data structures
 # ─────────────────────────────────────────────────
 
+
 @dataclass
 class BenchmarkResult:
     """Result for a single test case."""
+
     sentence: str
     word: str
     lemma: str
@@ -66,7 +68,7 @@ class BenchmarkResult:
     selected_pos: str = ""
     selected_definition: str = ""
     # Grading
-    grade: str = ""           # "correct" / "incorrect" / "unknown"
+    grade: str = ""  # "correct" / "incorrect" / "unknown"
     grade_reason: str = ""
     # Timing & usage (LLM selection only, excludes grading agent)
     llm_latency: float = 0.0
@@ -80,10 +82,11 @@ class BenchmarkResult:
 @dataclass
 class BenchmarkStats:
     """Aggregate statistics."""
+
     total: int = 0
     api_found: int = 0
     api_not_found: int = 0
-    single: int = 0           # 1 entry, 1 sense (no selection needed)
+    single: int = 0  # 1 entry, 1 sense (no selection needed)
     needs_selection: int = 0  # multi-entry or multi-sense
     correct: int = 0
     incorrect: int = 0
@@ -96,13 +99,20 @@ def normalize_pos(pos: str | None) -> str:
     if not pos:
         return "unknown"
     p = pos.lower()
-    if "adverb" in p: return "adverb"
-    if "verb" in p: return "verb"
-    if "noun" in p: return "noun"
-    if "adjective" in p or "adjektiv" in p: return "adjective"
-    if "preposition" in p: return "preposition"
-    if "conjunction" in p: return "conjunction"
-    if "article" in p: return "article"
+    if "adverb" in p:
+        return "adverb"
+    if "verb" in p:
+        return "verb"
+    if "noun" in p:
+        return "noun"
+    if "adjective" in p or "adjektiv" in p:
+        return "adjective"
+    if "preposition" in p:
+        return "preposition"
+    if "conjunction" in p:
+        return "conjunction"
+    if "article" in p:
+        return "article"
     return p
 
 
@@ -148,6 +158,7 @@ async def fetch_api_entries(lemma: str, language: str) -> dict[str, Any] | None:
 # ─────────────────────────────────────────────────
 # LLM: select entry+sense
 # ─────────────────────────────────────────────────
+
 
 async def select_entry_sense(
     sentence: str,
@@ -227,6 +238,7 @@ Reply with the number only (e.g. 1.0 or 0.0.1 for a subsense).
 # Grading agent
 # ─────────────────────────────────────────────────
 
+
 async def grade_selection(
     sentence: str,
     lemma: str,
@@ -271,6 +283,7 @@ REASON: one sentence explanation"""
 # Benchmark runner
 # ─────────────────────────────────────────────────
 
+
 async def benchmark_single(
     test_case: tuple,
     language: str,
@@ -296,10 +309,7 @@ async def benchmark_single(
     result.api_entries = entries
     result.api_entry_count = len(entries)
     total_senses = sum(len(e.get("senses", [])) for e in entries)
-    total_subsenses = sum(
-        len(s.get("subsenses", []))
-        for e in entries for s in e.get("senses", [])
-    )
+    total_subsenses = sum(len(s.get("subsenses", [])) for e in entries for s in e.get("senses", []))
     result.total_sense_count = total_senses + total_subsenses
 
     needs_selection = len(entries) > 1 or total_senses > 1 or total_subsenses > 0
@@ -356,14 +366,16 @@ def _print_case_detail(r: BenchmarkResult, index: int, total: int, model: str = 
         stats_parts.append(f"{tok} tok")
         if model:
             try:
-                pc, cc = cost_per_token(model=model, prompt_tokens=r.llm_prompt_tokens, completion_tokens=r.llm_completion_tokens)
+                pc, cc = cost_per_token(
+                    model=model, prompt_tokens=r.llm_prompt_tokens, completion_tokens=r.llm_completion_tokens
+                )
                 stats_parts.append(f"${pc + cc:.6f}")
             except Exception:
                 pass
     stats_str = f"  ⚡ {' | '.join(stats_parts)}" if stats_parts else ""
 
-    print(f"\n{mark} [{index}/{total}] {r.lemma}  word=\"{r.word}\"  ({r.category}){stats_str}")
-    print(f"  📝 \"{r.sentence}\"")
+    print(f'\n{mark} [{index}/{total}] {r.lemma}  word="{r.word}"  ({r.category}){stats_str}')
+    print(f'  📝 "{r.sentence}"')
 
     if r.skipped:
         print(f"  ⏭️  SKIPPED: {r.skip_reason}")
@@ -431,6 +443,7 @@ async def run_benchmark(
 # Report
 # ─────────────────────────────────────────────────
 
+
 def print_report(results: list[BenchmarkResult], language: str, model: str = "") -> None:
     """Print benchmark report."""
     stats = BenchmarkStats()
@@ -466,9 +479,9 @@ def print_report(results: list[BenchmarkResult], language: str, model: str = "")
             stats.by_category[cat]["incorrect"] += 1
 
     # ── Summary ──
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"  Entry+Sense Selection Benchmark — {language}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     print(f"\n  Total test cases:        {stats.total}")
     print(f"  API found:               {stats.api_found}")
@@ -500,13 +513,15 @@ def print_report(results: list[BenchmarkResult], language: str, model: str = "")
     total_ct = sum(r.llm_completion_tokens for r in results)
     total_tokens = total_pt + total_ct
     if total_tokens > 0:
-        print(f"\n  LLM Tokens (selection only, excludes grading):")
+        print("\n  LLM Tokens (selection only, excludes grading):")
         print(f"    Prompt:      {total_pt:>8}")
         print(f"    Completion:  {total_ct:>8}")
         print(f"    Total:       {total_tokens:>8}")
         if model:
             try:
-                prompt_cost, completion_cost = cost_per_token(model=model, prompt_tokens=total_pt, completion_tokens=total_ct)
+                prompt_cost, completion_cost = cost_per_token(
+                    model=model, prompt_tokens=total_pt, completion_tokens=total_ct
+                )
                 total_cost = prompt_cost + completion_cost
                 print(f"    Cost:        ${total_cost:.6f}")
             except Exception:
@@ -516,7 +531,7 @@ def print_report(results: list[BenchmarkResult], language: str, model: str = "")
     if stats.by_category:
         col_w = 20
         print(f"\n  {'Category':<{col_w}} {'Total':>6} {'Correct':>8} {'Incorrect':>10} {'Accuracy':>10}")
-        print(f"  {'-'*54}")
+        print(f"  {'-' * 54}")
         for cat, s in sorted(stats.by_category.items(), key=lambda x: -x[1]["total"]):
             pct = s["correct"] / s["total"] * 100 if s["total"] > 0 else 0
             # wide chars (한글, CJK) take 2 columns in terminal
@@ -524,7 +539,7 @@ def print_report(results: list[BenchmarkResult], language: str, model: str = "")
             pad = col_w - display_w
             print(f"  {cat}{' ' * max(pad, 1)} {s['total']:>6} {s['correct']:>8} {s['incorrect']:>10} {pct:>9.1f}%")
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
 
 
 class TeeWriter:

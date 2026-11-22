@@ -11,15 +11,15 @@ Tests for:
 
 import unittest
 from datetime import datetime, timezone
+
 from pydantic import ValidationError
 
 from api.models import (
     Conjugations,
     SearchResponse,
+    VocabularyCountResponse,
     VocabularyRequest,
     VocabularyResponse,
-    VocabularyCountResponse,
-    CEFRLevel
 )
 
 
@@ -28,22 +28,14 @@ class TestConjugationsModel(unittest.TestCase):
 
     def test_conjugations_creation_with_all_fields(self):
         """Test creating Conjugations with all fields."""
-        conj = Conjugations(
-            present="gehe, gehst, geht",
-            past="ging",
-            participle="gegangen"
-        )
+        conj = Conjugations(present="gehe, gehst, geht", past="ging", participle="gegangen")
         self.assertEqual(conj.present, "gehe, gehst, geht")
         self.assertEqual(conj.past, "ging")
         self.assertEqual(conj.participle, "gegangen")
 
     def test_conjugations_creation_with_none_fields(self):
         """Test creating Conjugations with None fields."""
-        conj = Conjugations(
-            present="run, runs",
-            past=None,
-            participle=None
-        )
+        conj = Conjugations(present="run, runs", past=None, participle=None)
         self.assertEqual(conj.present, "run, runs")
         self.assertIsNone(conj.past)
         self.assertIsNone(conj.participle)
@@ -57,15 +49,11 @@ class TestConjugationsModel(unittest.TestCase):
 
     def test_conjugations_serialization(self):
         """Test Conjugations JSON serialization."""
-        conj = Conjugations(
-            present="ich gehe",
-            past="ich ging",
-            participle="ich bin gegangen"
-        )
+        conj = Conjugations(present="ich gehe", past="ich ging", participle="ich bin gegangen")
         serialized = conj.model_dump()
-        self.assertEqual(serialized['present'], "ich gehe")
-        self.assertEqual(serialized['past'], "ich ging")
-        self.assertEqual(serialized['participle'], "ich bin gegangen")
+        self.assertEqual(serialized["present"], "ich gehe")
+        self.assertEqual(serialized["past"], "ich ging")
+        self.assertEqual(serialized["participle"], "ich bin gegangen")
 
     def test_conjugations_with_empty_strings(self):
         """Test Conjugations with empty strings."""
@@ -76,11 +64,7 @@ class TestConjugationsModel(unittest.TestCase):
 
     def test_conjugations_with_unicode(self):
         """Test Conjugations with unicode characters."""
-        conj = Conjugations(
-            present="über, überst",
-            past="überging",
-            participle="übergangen"
-        )
+        conj = Conjugations(present="über, überst", past="überging", participle="übergangen")
         self.assertIn("ü", conj.present)
         self.assertIn("ü", conj.past)
         self.assertIn("ü", conj.participle)
@@ -97,12 +81,8 @@ class TestSearchResponseModel(unittest.TestCase):
             related_words=["gehen"],
             pos="verb",
             gender=None,
-            conjugations=Conjugations(
-                present="gehe, gehst, geht",
-                past="ging",
-                participle="gegangen"
-            ),
-            level="A1"
+            conjugations=Conjugations(present="gehe, gehst, geht", past="ging", participle="gegangen"),
+            level="A1",
         )
         self.assertEqual(response.lemma, "gehen")
         self.assertEqual(response.definition, "to go, to walk")
@@ -114,10 +94,7 @@ class TestSearchResponseModel(unittest.TestCase):
 
     def test_search_response_minimal_fields(self):
         """Test SearchResponse with minimal fields."""
-        response = SearchResponse(
-            lemma="test",
-            definition="a procedure"
-        )
+        response = SearchResponse(lemma="test", definition="a procedure")
         self.assertEqual(response.lemma, "test")
         self.assertEqual(response.definition, "a procedure")
         self.assertIsNone(response.related_words)
@@ -135,7 +112,7 @@ class TestSearchResponseModel(unittest.TestCase):
             pos="noun",
             gender="der",
             conjugations=None,
-            level="A1"
+            level="A1",
         )
         self.assertEqual(response.lemma, "Hund")
         self.assertEqual(response.pos, "noun")
@@ -144,26 +121,17 @@ class TestSearchResponseModel(unittest.TestCase):
 
     def test_search_response_json_serialization(self):
         """Test SearchResponse JSON serialization."""
-        response = SearchResponse(
-            lemma="gehen",
-            definition="to go",
-            pos="verb",
-            level="A1"
-        )
+        response = SearchResponse(lemma="gehen", definition="to go", pos="verb", level="A1")
         serialized = response.model_dump()
-        self.assertEqual(serialized['lemma'], "gehen")
-        self.assertEqual(serialized['pos'], "verb")
-        self.assertEqual(serialized['level'], "A1")
+        self.assertEqual(serialized["lemma"], "gehen")
+        self.assertEqual(serialized["pos"], "verb")
+        self.assertEqual(serialized["level"], "A1")
 
     def test_search_response_all_cefr_levels(self):
         """Test SearchResponse with all valid CEFR levels."""
         levels = ["A1", "A2", "B1", "B2", "C1", "C2"]
         for level in levels:
-            response = SearchResponse(
-                lemma="test",
-                definition="test",
-                level=level
-            )
+            response = SearchResponse(lemma="test", definition="test", level=level)
             self.assertEqual(response.level, level)
 
 
@@ -184,7 +152,7 @@ class TestVocabularyRequestModel(unittest.TestCase):
             pos="verb",
             gender=None,
             conjugations={"present": "gehe", "past": "ging", "participle": "gegangen"},
-            level="A1"
+            level="A1",
         )
         self.assertEqual(request.article_id, "article-123")
         self.assertEqual(request.lemma, "gehen")
@@ -203,7 +171,7 @@ class TestVocabularyRequestModel(unittest.TestCase):
             lemma="test",
             definition="a procedure",
             sentence="This is a test.",
-            language="English"
+            language="English",
         )
         self.assertEqual(request.article_id, "article-123")
         self.assertEqual(request.word, "test")
@@ -225,7 +193,7 @@ class TestVocabularyRequestModel(unittest.TestCase):
             language="German",
             pos="noun",
             gender="der",
-            level="A1"
+            level="A1",
         )
         self.assertEqual(request.lemma, "Hund")
         self.assertEqual(request.pos, "noun")
@@ -240,7 +208,7 @@ class TestVocabularyRequestModel(unittest.TestCase):
                 # Missing lemma
                 definition="test",
                 sentence="test",
-                language="English"
+                language="English",
             )
 
     def test_vocabulary_request_all_cefr_levels(self):
@@ -254,7 +222,7 @@ class TestVocabularyRequestModel(unittest.TestCase):
                 definition="test",
                 sentence="test",
                 language="English",
-                level=level
+                level=level,
             )
             self.assertEqual(request.level, level)
 
@@ -282,12 +250,8 @@ class TestVocabularyResponseModel(unittest.TestCase):
             user_id="user-123",
             pos="verb",
             gender=None,
-            conjugations=Conjugations(
-                present="gehe",
-                past="ging",
-                participle="gegangen"
-            ),
-            level="A1"
+            conjugations=Conjugations(present="gehe", past="ging", participle="gegangen"),
+            level="A1",
         )
         self.assertEqual(response.id, "vocab-123")
         self.assertEqual(response.pos, "verb")
@@ -305,7 +269,7 @@ class TestVocabularyResponseModel(unittest.TestCase):
             definition="test",
             sentence="test",
             language="English",
-            created_at=self.now
+            created_at=self.now,
         )
         self.assertEqual(response.id, "vocab-123")
         self.assertIsNone(response.related_words)
@@ -329,7 +293,7 @@ class TestVocabularyResponseModel(unittest.TestCase):
             created_at=self.now,
             pos="noun",
             gender="der",
-            level="A1"
+            level="A1",
         )
         self.assertEqual(response.lemma, "Hund")
         self.assertEqual(response.gender, "der")
@@ -346,12 +310,12 @@ class TestVocabularyResponseModel(unittest.TestCase):
             sentence="test",
             language="English",
             created_at=self.now,
-            level="B1"
+            level="B1",
         )
         serialized = response.model_dump()
-        self.assertEqual(serialized['id'], "vocab-123")
-        self.assertEqual(serialized['level'], "B1")
-        self.assertIsInstance(serialized['created_at'], datetime)
+        self.assertEqual(serialized["id"], "vocab-123")
+        self.assertEqual(serialized["level"], "B1")
+        self.assertIsInstance(serialized["created_at"], datetime)
 
     def test_vocabulary_response_validation_missing_required_field(self):
         """Test VocabularyResponse validation fails without required field."""
@@ -363,7 +327,7 @@ class TestVocabularyResponseModel(unittest.TestCase):
                 lemma="test",
                 definition="test",
                 sentence="test",
-                language="English"
+                language="English",
                 # Missing created_at
             )
 
@@ -393,12 +357,8 @@ class TestVocabularyCountResponseModel(unittest.TestCase):
             article_ids=["article-1", "article-2"],
             pos="verb",
             gender=None,
-            conjugations=Conjugations(
-                present="gehe",
-                past="ging",
-                participle="gegangen"
-            ),
-            level="A1"
+            conjugations=Conjugations(present="gehe", past="ging", participle="gegangen"),
+            level="A1",
         )
         self.assertEqual(count.lemma, "gehen")
         self.assertEqual(count.count, 5)
@@ -419,7 +379,7 @@ class TestVocabularyCountResponseModel(unittest.TestCase):
             language="English",
             created_at=self.now,
             count=1,
-            article_ids=["article-123"]
+            article_ids=["article-123"],
         )
         self.assertEqual(count.count, 1)
         self.assertEqual(len(count.article_ids), 1)
@@ -441,7 +401,7 @@ class TestVocabularyCountResponseModel(unittest.TestCase):
             language="English",
             created_at=self.now,
             count=3,
-            article_ids=article_ids
+            article_ids=article_ids,
         )
         self.assertEqual(count.count, 3)
         self.assertEqual(count.article_ids, article_ids)
@@ -461,7 +421,7 @@ class TestVocabularyCountResponseModel(unittest.TestCase):
             article_ids=["article-1", "article-2"],
             pos="noun",
             gender="der",
-            level="A1"
+            level="A1",
         )
         self.assertEqual(count.lemma, "Hund")
         self.assertEqual(count.gender, "der")
@@ -481,12 +441,12 @@ class TestVocabularyCountResponseModel(unittest.TestCase):
             created_at=self.now,
             count=5,
             article_ids=["article-1", "article-2"],
-            level="B2"
+            level="B2",
         )
         serialized = count.model_dump()
-        self.assertEqual(serialized['count'], 5)
-        self.assertEqual(len(serialized['article_ids']), 2)
-        self.assertEqual(serialized['level'], "B2")
+        self.assertEqual(serialized["count"], 5)
+        self.assertEqual(len(serialized["article_ids"]), 2)
+        self.assertEqual(serialized["level"], "B2")
 
     def test_vocabulary_count_validation_count_positive(self):
         """Test VocabularyCountResponse count must be positive integer."""
@@ -501,7 +461,7 @@ class TestVocabularyCountResponseModel(unittest.TestCase):
             language="English",
             created_at=self.now,
             count=1,
-            article_ids=["article-123"]
+            article_ids=["article-123"],
         )
         self.assertEqual(count.count, 1)
 
@@ -518,7 +478,7 @@ class TestVocabularyCountResponseModel(unittest.TestCase):
                 language="English",
                 created_at=self.now,
                 # Missing count
-                article_ids=["article-123"]
+                article_ids=["article-123"],
             )
 
 
@@ -534,18 +494,10 @@ class TestCEFRLevelValidation(unittest.TestCase):
 
     def test_cerf_level_used_in_search_response(self):
         """Test CEFRLevel in SearchResponse model."""
-        response = SearchResponse(
-            lemma="test",
-            definition="test",
-            level="A1"
-        )
+        response = SearchResponse(lemma="test", definition="test", level="A1")
         self.assertEqual(response.level, "A1")
 
-        response = SearchResponse(
-            lemma="test",
-            definition="test",
-            level="C2"
-        )
+        response = SearchResponse(lemma="test", definition="test", level="C2")
         self.assertEqual(response.level, "C2")
 
     def test_cerf_level_used_in_vocabulary_response(self):
@@ -561,7 +513,7 @@ class TestCEFRLevelValidation(unittest.TestCase):
                 sentence="test",
                 language="English",
                 created_at=now,
-                level=level
+                level=level,
             )
             self.assertEqual(response.level, level)
 
@@ -585,7 +537,7 @@ class TestModelIntegration(unittest.TestCase):
             language="German",
             pos="verb",
             conjugations={"present": "gehe", "past": "ging", "participle": "gegangen"},
-            level="A1"
+            level="A1",
         )
 
         # Convert to response
@@ -601,7 +553,7 @@ class TestModelIntegration(unittest.TestCase):
             conjugations=request.conjugations,  # Already a Conjugations object from request
             level=request.level,
             created_at=self.now,
-            user_id="user-123"
+            user_id="user-123",
         )
 
         self.assertEqual(response.lemma, "gehen")
@@ -620,7 +572,7 @@ class TestModelIntegration(unittest.TestCase):
             language="German",
             pos="noun",
             gender="der",
-            level="A1"
+            level="A1",
         )
 
         # Verify capitalization is preserved
@@ -638,7 +590,7 @@ class TestModelIntegration(unittest.TestCase):
             pos=request.pos,
             gender=request.gender,
             level=request.level,
-            created_at=self.now
+            created_at=self.now,
         )
 
         # Verify capitalization still preserved
@@ -662,7 +614,7 @@ class TestModelIntegration(unittest.TestCase):
             article_ids=["article-1", "article-2", "article-3"],
             pos="verb",
             conjugations=Conjugations(present="gehe", past="ging", participle="gegangen"),
-            level="A1"
+            level="A1",
         )
 
         self.assertEqual(count.count, 5)
@@ -671,5 +623,5 @@ class TestModelIntegration(unittest.TestCase):
         self.assertIsNotNone(count.conjugations)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

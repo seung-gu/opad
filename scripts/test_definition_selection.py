@@ -57,7 +57,7 @@ async def select_by_llm(lemma: str, sentence: str, senses: list[dict]) -> tuple[
     options = []
     for i, sense in enumerate(senses[:6]):
         defn = sense.get("definition", "")
-        options.append(f"{i+1}. {defn}")
+        options.append(f"{i + 1}. {defn}")
 
     prompt = f"""Lemma: "{lemma}"
 Sentence: "{sentence}"
@@ -69,10 +69,7 @@ Reply with the number only.
 
     start = time.time()
     response = await litellm.acompletion(
-        model="gemini/gemini-2.0-flash",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0,
-        timeout=15
+        model="gemini/gemini-2.0-flash", messages=[{"role": "user", "content": prompt}], temperature=0, timeout=15
     )
     elapsed = time.time() - start
 
@@ -89,17 +86,13 @@ TEST_CASES = [
     ("vorstellen", "de", "Ich stelle mir vor, dass er morgen kommt.", 3, "to imagine"),
     ("vorstellen", "de", "Darf ich mich vorstellen?", 2, "introduce oneself"),
     ("vorstellen", "de", "Er stellte seinen Freund vor.", 1, "introduce someone"),
-
     # aufhören - 2 meanings
     ("aufhören", "de", "Er hört mit dem Rauchen auf.", 1, "to stop"),
-
     # ansehen - 5 meanings
     ("ansehen", "de", "Ich sehe mir den Film an.", 4, "to watch"),
     ("ansehen", "de", "Sie sieht ihn böse an.", 2, "look at with expression"),
-
     # ausgehen - multiple meanings
     ("ausgehen", "de", "Wir gehen heute Abend aus.", 1, "to go out"),
-
     # anfangen - basic
     ("anfangen", "de", "Das Spiel fängt um 8 an.", 1, "to begin"),
 ]
@@ -133,7 +126,7 @@ async def run_tests():
             tags = s.get("tags", [])
             defn = s.get("definition", "")[:60]
             marker = "→" if i == expected_idx - 1 else " "
-            print(f"  {marker} {i+1}. [{', '.join(tags[:3])}] {defn}...")
+            print(f"  {marker} {i + 1}. [{', '.join(tags[:3])}] {defn}...")
 
         # Tag-based selection
         tag_idx = select_by_tags(sentence, senses)
@@ -150,15 +143,17 @@ async def run_tests():
             llm_correct += 1
         print(f"LLM-based: #{llm_idx + 1} {'✅' if llm_ok else '❌'} ({elapsed:.2f}s)")
 
-        results.append({
-            "lemma": lemma,
-            "expected": expected_idx,
-            "tag": tag_idx + 1,
-            "tag_ok": tag_ok,
-            "llm": llm_idx + 1,
-            "llm_ok": llm_ok,
-            "time": elapsed
-        })
+        results.append(
+            {
+                "lemma": lemma,
+                "expected": expected_idx,
+                "tag": tag_idx + 1,
+                "tag_ok": tag_ok,
+                "llm": llm_idx + 1,
+                "llm_ok": llm_ok,
+                "time": elapsed,
+            }
+        )
 
     # Summary
     n = len(results)
@@ -167,8 +162,8 @@ async def run_tests():
     print("=" * 70)
     print(f"\n{'Method':<15} {'Correct':<10} {'Accuracy':<10} {'Avg Time':<10}")
     print("-" * 45)
-    print(f"{'Tag-based':<15} {tag_correct}/{n:<8} {tag_correct/n*100:.0f}%{'':<7} {'0ms':<10}")
-    print(f"{'LLM-based':<15} {llm_correct}/{n:<8} {llm_correct/n*100:.0f}%{'':<7} {total_time/n*1000:.0f}ms")
+    print(f"{'Tag-based':<15} {tag_correct}/{n:<8} {tag_correct / n * 100:.0f}%{'':<7} {'0ms':<10}")
+    print(f"{'LLM-based':<15} {llm_correct}/{n:<8} {llm_correct / n * 100:.0f}%{'':<7} {total_time / n * 1000:.0f}ms")
 
     print("\nDetailed Results:")
     print(f"{'Lemma':<12} {'Expected':<8} {'Tag':<8} {'LLM':<8}")

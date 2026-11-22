@@ -28,10 +28,9 @@ def track_agent_usage(
                 "jobId": job_id,
                 "agentCount": len(agent_usage),
                 "usageData": [
-                    {"name": name, "model": result.model, "tokens": result.total_tokens}
-                    for name, result in agent_usage
-                ]
-            }
+                    {"name": name, "model": result.model, "tokens": result.total_tokens} for name, result in agent_usage
+                ],
+            },
         )
 
         for agent_name, stats in agent_usage:
@@ -39,7 +38,8 @@ def track_agent_usage(
                 continue
 
             usage = TokenUsage.from_llm_result(
-                stats, user_id,
+                stats,
+                user_id,
                 operation="article_generation",
                 article_id=article_id,
                 metadata={"job_id": job_id, "agent_name": agent_name},
@@ -53,7 +53,7 @@ def track_agent_usage(
                 "jobId": job_id,
                 "articleId": article_id,
                 "agentCount": total_saved,
-            }
+            },
         )
     except Exception as e:
         logger.warning(

@@ -1,5 +1,6 @@
 """In-memory implementation of VocabularyRepository for testing."""
 
+from domain.model.cefr import Level
 from domain.model.vocabulary import Vocabulary, VocabularyCount
 
 
@@ -79,27 +80,26 @@ class FakeVocabularyRepository:
         for (lang, lemma), vocabs in groups.items():
             newest = max(vocabs, key=lambda v: v.created_at)
             article_ids = list({v.article_id for v in vocabs})
-            result.append(VocabularyCount(
-                vocabulary=newest,
-                count=len(vocabs),
-                article_ids=article_ids,
-            ))
+            result.append(
+                VocabularyCount(
+                    vocabulary=newest,
+                    count=len(vocabs),
+                    article_ids=article_ids,
+                )
+            )
 
         # Sort by count desc, then lemma asc
         result.sort(key=lambda vc: (-vc.count, vc.vocabulary.lemma))
-        return result[skip:skip + limit]
+        return result[skip : skip + limit]
 
     def find_lemmas(
         self,
         user_id: str,
         language: str,
-        levels: list[str] | None = None,
+        levels: list[Level] | None = None,
         limit: int = 50,
     ) -> list[str]:
-        filtered = [
-            v for v in self.store.values()
-            if v.user_id == user_id and v.language == language
-        ]
+        filtered = [v for v in self.store.values() if v.user_id == user_id and v.language == language]
         if levels:
             filtered = [v for v in filtered if v.level in levels]
 
@@ -107,16 +107,17 @@ class FakeVocabularyRepository:
         lemma_stats: dict[str, dict] = {}
         for v in filtered:
             if v.lemma in lemma_stats:
-                lemma_stats[v.lemma]['count'] += 1
-                lemma_stats[v.lemma]['max_created_at'] = max(
-                    lemma_stats[v.lemma]['max_created_at'], v.created_at,
+                lemma_stats[v.lemma]["count"] += 1
+                lemma_stats[v.lemma]["max_created_at"] = max(
+                    lemma_stats[v.lemma]["max_created_at"],
+                    v.created_at,
                 )
             else:
-                lemma_stats[v.lemma] = {'count': 1, 'max_created_at': v.created_at}
+                lemma_stats[v.lemma] = {"count": 1, "max_created_at": v.created_at}
 
         # Sort by count desc, then recency desc
         sorted_lemmas = sorted(
             lemma_stats.items(),
-            key=lambda item: (-item[1]['count'], -item[1]['max_created_at'].timestamp()),
+            key=lambda item: (-item[1]["count"], -item[1]["max_created_at"].timestamp()),
         )
         return [lemma for lemma, _ in sorted_lemmas[:limit]]

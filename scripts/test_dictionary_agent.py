@@ -13,6 +13,7 @@ Usage:
 
 import os
 import sys
+
 # Suppress litellm proxy warnings
 os.environ["LITELLM_LOG"] = "ERROR"
 
@@ -29,6 +30,7 @@ from dotenv import load_dotenv
 
 class TeeLogger:
     """Write to both stdout and file."""
+
     def __init__(self, filename):
         self.terminal = sys.stdout
         self.log = open(filename, "w", encoding="utf-8")
@@ -44,6 +46,7 @@ class TeeLogger:
 
     def close(self):
         self.log.close()
+
 
 # Load environment variables
 load_dotenv()
@@ -105,6 +108,7 @@ def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> fl
 
     return 0.0
 
+
 # Tool definition for the LLM
 DICTIONARY_TOOL = {
     "type": "function",
@@ -114,19 +118,16 @@ DICTIONARY_TOOL = {
         "parameters": {
             "type": "object",
             "properties": {
-                "lemma": {
-                    "type": "string",
-                    "description": "The lemma (base/dictionary form) of the word to look up"
-                },
+                "lemma": {"type": "string", "description": "The lemma (base/dictionary form) of the word to look up"},
                 "language_code": {
                     "type": "string",
                     "enum": ["de", "en", "fr", "es"],
-                    "description": "ISO 639-1 language code"
-                }
+                    "description": "ISO 639-1 language code",
+                },
             },
-            "required": ["lemma", "language_code"]
-        }
-    }
+            "required": ["lemma", "language_code"],
+        },
+    },
 }
 
 
@@ -175,7 +176,9 @@ async def call_dictionary_api(lemma: str, language_code: str) -> dict | None:
         return {"error": str(e)}
 
 
-async def run_agent(word: str, sentence: str, language: str, model: str = "openai/gpt-4.1-mini") -> tuple[dict, float, float]:
+async def run_agent(
+    word: str, sentence: str, language: str, model: str = "openai/gpt-4.1-mini"
+) -> tuple[dict, float, float]:
     """Run the dictionary agent and return result, time, and cost in USD."""
 
     language_code = LANGUAGE_CODE_MAP.get(language)
@@ -188,22 +191,14 @@ Language: {language}
 
 Please look up this word and provide the appropriate definition and grammatical information for this context."""
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_message}
-    ]
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_message}]
 
     start_time = time.time()
     total_cost = 0.0
 
     # First LLM call - may include tool use
     response = await litellm.acompletion(
-        model=model,
-        messages=messages,
-        tools=[DICTIONARY_TOOL],
-        tool_choice="required",
-        temperature=0,
-        timeout=30
+        model=model, messages=messages, tools=[DICTIONARY_TOOL], tool_choice="required", temperature=0, timeout=30
     )
 
     # Calculate cost using our pricing table
@@ -212,11 +207,7 @@ Please look up this word and provide the appropriate definition and grammatical 
 
     assistant_message = response.choices[0].message
 
-    # Check if tool was called
-    tool_used = False
-
     if assistant_message.tool_calls:
-        tool_used = True
         tool_call = assistant_message.tool_calls[0]
         function_args = json.loads(tool_call.function.arguments)
 
@@ -224,8 +215,7 @@ Please look up this word and provide the appropriate definition and grammatical 
 
         # Execute the tool
         api_result = await call_dictionary_api(
-            lemma=function_args["lemma"],
-            language_code=function_args["language_code"]
+            lemma=function_args["lemma"], language_code=function_args["language_code"]
         )
 
         # Show API result summary
@@ -239,20 +229,14 @@ Please look up this word and provide the appropriate definition and grammatical 
 
         # Add tool result to messages
         messages.append(assistant_message.model_dump())
-        messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": json.dumps(api_result, ensure_ascii=False)[:8000]
-        })
+        messages.append(
+            {"role": "tool", "tool_call_id": tool_call.id, "content": json.dumps(api_result, ensure_ascii=False)[:8000]}
+        )
 
         # Second LLM call to process results
         # Include tools param for Anthropic compatibility
         response = await litellm.acompletion(
-            model=model,
-            messages=messages,
-            tools=[DICTIONARY_TOOL],
-            temperature=0,
-            timeout=30
+            model=model, messages=messages, tools=[DICTIONARY_TOOL], temperature=0, timeout=30
         )
 
         # Add second call cost
@@ -261,7 +245,7 @@ Please look up this word and provide the appropriate definition and grammatical 
 
         assistant_message = response.choices[0].message
     else:
-        print(f"     ⚠️ NO TOOL CALLED")
+        print("     ⚠️ NO TOOL CALLED")
 
     elapsed_time = time.time() - start_time
 
@@ -269,8 +253,8 @@ Please look up this word and provide the appropriate definition and grammatical 
     content = assistant_message.content or ""
 
     try:
-        start_idx = content.find('{')
-        end_idx = content.rfind('}') + 1
+        start_idx = content.find("{")
+        end_idx = content.rfind("}") + 1
         if start_idx >= 0 and end_idx > start_idx:
             result = json.loads(content[start_idx:end_idx])
         else:
@@ -298,32 +282,32 @@ async def run_current_approach(word: str, sentence: str, language: str) -> tuple
         # Current approach uses gpt-4.1-mini
         total_cost = calculate_cost(stats.model or "gpt-4.1-mini", stats.prompt_tokens, stats.completion_tokens)
 
-    return {
-        "lemma": result.lemma,
-        "definition": result.definition,
-        "pos": result.pos,
-        "gender": result.gender,
-        "phonetics": result.phonetics,
-        "conjugations": result.conjugations,
-        "level": result.level,
-        "source": result.source
-    }, elapsed_time, total_cost
+    return (
+        {
+            "lemma": result.lemma,
+            "definition": result.definition,
+            "pos": result.pos,
+            "gender": result.gender,
+            "phonetics": result.phonetics,
+            "conjugations": result.conjugations,
+            "level": result.level,
+            "source": result.source,
+        },
+        elapsed_time,
+        total_cost,
+    )
 
 
 def fetch_vocabularies(language: str | None, limit: int, randomize: bool = True):
     """Fetch vocabularies from MongoDB."""
     import random
+
     from utils.mongodb import get_vocabulary_counts
 
     # Fetch more than needed if randomizing
     fetch_limit = limit * 10 if randomize else limit
 
-    vocabs = get_vocabulary_counts(
-        language=language,
-        user_id=None,
-        skip=0,
-        limit=fetch_limit
-    )
+    vocabs = get_vocabulary_counts(language=language, user_id=None, skip=0, limit=fetch_limit)
 
     # Filter to only supported languages
     supported = [v for v in vocabs if v.get("language") in LANGUAGE_CODE_MAP]
@@ -356,7 +340,7 @@ async def run_model_comparison(vocabs: list, models: list):
         if language not in LANGUAGE_CODE_MAP:
             continue
 
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print(f"[{i}/{len(vocabs)}] {word}")
         print(f"Sentence: {sentence[:70]}...")
         print("-" * 80)
@@ -364,7 +348,7 @@ async def run_model_comparison(vocabs: list, models: list):
         all_results = {}
 
         # Run current approach first
-        print(f"\n📚 current:")
+        print("\n📚 current:")
         try:
             result, elapsed, cost = await run_current_approach(word, sentence, language)
             model_stats["current"]["times"].append(elapsed)
@@ -398,7 +382,9 @@ async def run_model_comparison(vocabs: list, models: list):
                 print(f"   Def: {str(result.get('definition', 'N/A'))[:60]}")
                 print(f"   POS: {result.get('pos', '-')} | Level: {result.get('level', '-')}")
                 if result.get("pos") in ["verb", "Verb"]:
-                    print(f"   Trans/Refl/Aux: {result.get('transitivity', '-')}/{result.get('reflexive', '-')}/{result.get('auxiliary', '-')}")
+                    print(
+                        f"   Trans/Refl/Aux: {result.get('transitivity', '-')}/{result.get('reflexive', '-')}/{result.get('auxiliary', '-')}"
+                    )
                     conj = result.get("conjugations", {})
                     if conj:
                         print(f"   Conj: {conj}")
@@ -411,7 +397,7 @@ async def run_model_comparison(vocabs: list, models: list):
             await asyncio.sleep(0.3)
 
         # Quick evaluation - score each result (accuracy + speed + cost)
-        print(f"\n🧑‍⚖️ EVAL:")
+        print("\n🧑‍⚖️ EVAL:")
         try:
             # Collect times and costs for models that ran successfully this round
             round_times = {}
@@ -484,12 +470,12 @@ Start at 10, subtract for each missing/wrong item.
                 model="anthropic/claude-sonnet-4-20250514",
                 messages=[{"role": "user", "content": eval_prompt}],
                 temperature=0,
-                timeout=30
+                timeout=30,
             )
 
             eval_content = eval_response.choices[0].message.content
-            si = eval_content.find('{')
-            ei = eval_content.rfind('}') + 1
+            si = eval_content.find("{")
+            ei = eval_content.rfind("}") + 1
             if si >= 0:
                 eval_result = json.loads(eval_content[si:ei])
                 correct_lemma = eval_result.get("correct_lemma", "")
@@ -500,7 +486,7 @@ Start at 10, subtract for each missing/wrong item.
 
                 # Calculate combined scores (accuracy * 0.5 + speed * 0.3 + cost * 0.2)
                 print(f"   {'Model':<12} {'Acc':<5} {'Spd':<5} {'Cst':<5} {'Time':<6} {'$/call':<10} {'Comb':<6}")
-                print(f"   {'-'*58}")
+                print(f"   {'-' * 58}")
 
                 combined_scores = {}
                 for key in ["current"] + models:
@@ -517,7 +503,9 @@ Start at 10, subtract for each missing/wrong item.
                     combined_scores[name] = combined
                     if acc > 0:
                         model_stats[key]["scores"].append(combined)
-                    print(f"   {name:<12} {acc:<5} {spd:<5.1f} {cst:<5.1f} {actual_time:<6.1f}s ${actual_cost:<9.5f} {combined:<6}")
+                    print(
+                        f"   {name:<12} {acc:<5} {spd:<5.1f} {cst:<5.1f} {actual_time:<6.1f}s ${actual_cost:<9.5f} {combined:<6}"
+                    )
 
                 if combined_scores:
                     best_combined = max(combined_scores, key=combined_scores.get)
@@ -577,7 +565,7 @@ async def run_single_model(vocabs: list, model: str):
         if language not in LANGUAGE_CODE_MAP:
             continue
 
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"[{i}/{len(vocabs)}] {word}")
         print(f"Sentence: {sentence[:70]}...")
         print("-" * 70)
@@ -590,29 +578,31 @@ async def run_single_model(vocabs: list, model: str):
             agent_times.append(agent_time)
             agent_costs_list.append(agent_cost)
 
-            print(f"   ⏱️ {agent_time:.1f}s | 💰 ${agent_cost*1000:.4f}/1k")
+            print(f"   ⏱️ {agent_time:.1f}s | 💰 ${agent_cost * 1000:.4f}/1k")
             print(f"   Definition: {str(agent_result.get('definition', 'N/A'))[:70]}")
             if agent_result.get("pos") in ["verb", "Verb"]:
-                print(f"   Trans: {agent_result.get('transitivity', 'N/A')} | Refl: {agent_result.get('reflexive', 'N/A')} | Aux: {agent_result.get('auxiliary', 'N/A')}")
+                print(
+                    f"   Trans: {agent_result.get('transitivity', 'N/A')} | Refl: {agent_result.get('reflexive', 'N/A')} | Aux: {agent_result.get('auxiliary', 'N/A')}"
+                )
         except Exception as e:
             print(f"   ❌ Error: {e}")
 
         # Run current
-        print(f"\n📚 CURRENT:")
+        print("\n📚 CURRENT:")
         current_result = {}
         try:
             current_result, current_time, current_cost = await run_current_approach(word, sentence, language)
             current_times.append(current_time)
             current_costs_list.append(current_cost)
 
-            print(f"   ⏱️ {current_time:.1f}s | 💰 ${current_cost*1000:.4f}/1k")
+            print(f"   ⏱️ {current_time:.1f}s | 💰 ${current_cost * 1000:.4f}/1k")
             print(f"   Definition: {str(current_result.get('definition', 'N/A'))[:70]}")
         except Exception as e:
             print(f"   ❌ Error: {e}")
 
         # Evaluate
         if agent_result and current_result and "error" not in agent_result:
-            print(f"\n🧑‍⚖️ EVAL:")
+            print("\n🧑‍⚖️ EVAL:")
             try:
                 eval_prompt = f"""Word "{word}" in "{sentence}" ({language})
 
@@ -626,10 +616,10 @@ Which is better for language learning? Return JSON:
                     model="anthropic/claude-sonnet-4-20250514",
                     messages=[{"role": "user", "content": eval_prompt}],
                     temperature=0,
-                    timeout=30
+                    timeout=30,
                 )
                 content = resp.choices[0].message.content
-                si, ei = content.find('{'), content.rfind('}') + 1
+                si, ei = content.find("{"), content.rfind("}") + 1
                 if si >= 0:
                     ev = json.loads(content[si:ei])
                     print(f"   Agent: {ev.get('agent_score', '?')}/10 | Current: {ev.get('current_score', '?')}/10")
@@ -660,7 +650,9 @@ Which is better for language learning? Return JSON:
 
         total_evals = wins["agent"] + wins["current"] + wins["tie"]
         if total_evals > 0:
-            print(f"\n🏆 WINS: Agent {wins['agent']}/{total_evals} | Current {wins['current']}/{total_evals} | Tie {wins['tie']}/{total_evals}")
+            print(
+                f"\n🏆 WINS: Agent {wins['agent']}/{total_evals} | Current {wins['current']}/{total_evals} | Tie {wins['tie']}/{total_evals}"
+            )
 
 
 async def main():

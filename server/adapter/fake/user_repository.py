@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
+
 from domain.model.user import User
 
 
@@ -25,7 +26,7 @@ class FakeUserRepository:
             created_at=now,
             updated_at=now,
             password_hash=password_hash,
-            provider='email',
+            provider="email",
         )
         self.store[user_id] = user
         return user

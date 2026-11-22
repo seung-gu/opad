@@ -1,12 +1,17 @@
 """Job domain model — typed container for queue job data."""
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Literal
 
 from domain.model.article import ArticleInputs
 
 logger = logging.getLogger(__name__)
+
+JobStatus = Literal["queued", "running", "completed", "failed"]
 
 
 @dataclass
@@ -20,10 +25,10 @@ class JobContext:
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @classmethod
-    def from_dict(cls, job_data: dict) -> 'JobContext | None':
+    def from_dict(cls, job_data: dict) -> JobContext | None:
         """Create JobContext from queue data. Returns None if invalid."""
-        job_id = job_data.get('job_id')
-        raw_inputs = job_data.get('inputs', {})
+        job_id = job_data.get("job_id")
+        raw_inputs = job_data.get("inputs", {})
 
         if not job_id or not raw_inputs:
             logger.error(f"Invalid job data: {job_data}")
@@ -31,13 +36,13 @@ class JobContext:
 
         return cls(
             job_id=job_id,
-            article_id=job_data.get('article_id'),
-            user_id=job_data.get('user_id'),
+            article_id=job_data.get("article_id"),
+            user_id=job_data.get("user_id"),
             inputs=ArticleInputs(
-                language=raw_inputs.get('language', ''),
-                level=raw_inputs.get('level', ''),
-                length=raw_inputs.get('length', ''),
-                topic=raw_inputs.get('topic', ''),
+                language=raw_inputs.get("language", ""),
+                level=raw_inputs.get("level", ""),
+                length=raw_inputs.get("length", ""),
+                topic=raw_inputs.get("topic", ""),
             ),
         )
 

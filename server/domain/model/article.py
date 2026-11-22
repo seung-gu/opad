@@ -6,7 +6,9 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
+
+from domain.model.cefr import Level
 
 if TYPE_CHECKING:
     from domain.model.token_usage import LLMCallResult
@@ -14,19 +16,23 @@ if TYPE_CHECKING:
 
 class ArticleStatus(str, Enum):
     """Enumeration of possible article processing statuses."""
-    RUNNING = 'running'
-    COMPLETED = 'completed'
-    FAILED = 'failed'
-    DELETED = 'deleted'
+
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    DELETED = "deleted"
 
 
 @dataclass(frozen=True)
 class ArticleInputs:
     """Input parameters for article generation."""
+
     language: str
-    level: str
-    length: str
-    topic: str
+    level: Level | None = None
+    length: str | None = None
+    topic: str | None = None
+    # The step the article starts at. The steps after it always run: find → rewrite → review → publish.
+    start: Literal["find", "rewrite", "publish"] = "find"
 
 
 # ── Value Objects ────────────────────────────────────────
@@ -35,6 +41,7 @@ class ArticleInputs:
 @dataclass(frozen=True)
 class SourceInfo:
     """Source metadata from the original news article."""
+
     title: str
     source_name: str
     source_url: str | None = None
@@ -45,6 +52,7 @@ class SourceInfo:
 @dataclass(frozen=True)
 class EditRecord:
     """Record of a sentence edited during the review process."""
+
     original: str
     replaced: str
     rationale: str
@@ -53,6 +61,7 @@ class EditRecord:
 @dataclass(frozen=True)
 class GenerationResult:
     """Article generation result — framework-agnostic domain DTO."""
+
     content: str
     source: SourceInfo
     edit_history: list[EditRecord]
@@ -65,6 +74,7 @@ class GenerationResult:
 @dataclass
 class Article:
     """Domain model representing an article."""
+
     id: str
     inputs: ArticleInputs
     status: ArticleStatus
@@ -81,7 +91,7 @@ class Article:
     # ── factory ───────────────────────────────────────────
 
     @staticmethod
-    def create(inputs: ArticleInputs, user_id: str) -> 'Article':
+    def create(inputs: ArticleInputs, user_id: str) -> Article:
         """Create a new Article in RUNNING status with generated IDs."""
         now = datetime.now(timezone.utc)
         return Article(
@@ -108,6 +118,11 @@ class Article:
         return self.user_id == user_id
 
     # ── state transitions ─────────────────────────────────
+
+    def set_content(self, content: str, source: SourceInfo | None = None) -> None:
+        """Put in the text the user gave, and where it came from, before it is rewritten."""
+        self.content = content
+        self.source = source
 
     def complete(
         self,
@@ -140,5 +155,6 @@ class Article:
 @dataclass
 class Articles:
     """Collection wrapper for paginated article results."""
+
     items: list[Article]
     total: int

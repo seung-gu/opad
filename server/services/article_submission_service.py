@@ -6,7 +6,7 @@ API-side flow: duplicate check → create → enqueue
 import logging
 
 from domain.model.article import Article, ArticleInputs, ArticleStatus
-from domain.model.errors import DuplicateArticleError, EnqueueError, DomainError
+from domain.model.errors import DomainError, DuplicateArticleError, EnqueueError
 from port.article_repository import ArticleRepository
 from port.job_queue import JobQueuePort
 
@@ -25,11 +25,9 @@ def submit_generation(
     Returns the created Article (with job_id set).
     Raises DuplicateArticleError or EnqueueError on failure.
     """
-    logger.info("Article generation requested", extra={
-        "userId": user_id,
-        "topic": inputs.topic,
-        "language": inputs.language
-    })
+    logger.info(
+        "Article generation requested", extra={"userId": user_id, "topic": inputs.topic, "language": inputs.language}
+    )
 
     _check_duplicate(repo, job_queue, inputs, force, user_id)
 
@@ -74,16 +72,21 @@ def _enqueue_job(
 ) -> None:
     """Enqueue job or raise EnqueueError."""
     if not job_queue.update_status(
-        article.job_id, 'queued', 0,
-        'Job queued, waiting for worker...',
+        article.job_id,
+        "queued",
+        0,
+        "Job queued, waiting for worker...",
         article_id=article.id,
     ):
         raise EnqueueError("Failed to initialize job status")
 
     if not job_queue.enqueue(article):
         job_queue.update_status(
-            article.job_id, 'failed', 0,
-            'Failed to enqueue job', 'Queue service unavailable',
+            article.job_id,
+            "failed",
+            0,
+            "Failed to enqueue job",
+            "Queue service unavailable",
             article_id=article.id,
         )
         repo.update_status(article.id, ArticleStatus.FAILED)

@@ -12,15 +12,17 @@ sys.path.insert(0, str(src_path))
 
 from api.main import app
 
+
 def main():
     """Generate OpenAPI JSON schema."""
     openapi_schema = app.openapi()
-    
+
     output_path = server_path / "openapi.json"
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(openapi_schema, f, indent=2, sort_keys=True, ensure_ascii=False)
-    
+
     print(f"OpenAPI schema exported to {output_path}")
+
 
 if __name__ == "__main__":
     main()

@@ -3,7 +3,7 @@
 from typing import Protocol
 
 from domain.model.article import Article
-from domain.model.job import JobContext
+from domain.model.job import JobContext, JobStatus
 
 
 class JobQueuePort(Protocol):
@@ -13,9 +13,9 @@ class JobQueuePort(Protocol):
     def update_status(
         self,
         job_id: str,
-        status: str,
+        status: JobStatus,
         progress: int = 0,
-        message: str = '',
+        message: str = "",
         error: str | None = None,
         article_id: str | None = None,
     ) -> bool: ...

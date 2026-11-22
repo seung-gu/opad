@@ -42,9 +42,29 @@ type = "crew"
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.6.2",
     "radon>=6.0.1",
+    "ruff>=0.17.6",
 ]
 
 [project.scripts]
 opad = "crew.main:run"
 run_crew = "crew.main:run"
+
+[tool.pytest.ini_options]
+pythonpath = ["server"]
+addopts = ["--import-mode=importlib"]  # no __init__.py: test files in different folders may share a name
+
+[tool.ruff]
+line-length = 120
+src = ["server"]
+extend-exclude = ["*.md"]  # leave the code blocks in the docs as written
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]  # the formatter wraps code; long strings and comments stay as written
+
+[tool.ruff.lint.per-file-ignores]
+"server/api/main.py" = ["E402"]  # load_dotenv() and sys.path must run before the imports
+"scripts/*" = ["E402"]
+"client/libs/api-types/sync_from_backend.py" = ["E402"]

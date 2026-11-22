@@ -10,14 +10,16 @@ Tests cover:
 """
 
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
-from domain.model.token_usage import LLMCallResult
-from domain.model.vocabulary import SenseResult
 from adapter.fake.dictionary import FakeDictionaryAdapter
 from adapter.fake.llm import FakeLLMAdapter
+from domain.model.token_usage import LLMCallResult
+from domain.model.vocabulary import SenseResult
 from services.sense_selection import (
-    select_best_sense, _build_sense_prompt, DEFAULT_LABEL,
+    DEFAULT_LABEL,
+    _build_sense_prompt,
+    select_best_sense,
 )
 
 
@@ -31,6 +33,7 @@ class TestSelectBestSenseEmptyEntries(unittest.TestCase):
 
     def test_empty_entries_returns_empty_sense_and_default_label(self):
         """Empty entries returns empty SenseResult and DEFAULT_LABEL, no LLM call."""
+
         async def run_test():
             result, label, stats = await select_best_sense(
                 sentence="A sentence",
@@ -46,6 +49,7 @@ class TestSelectBestSenseEmptyEntries(unittest.TestCase):
             self.assertIsNone(stats)
 
         import asyncio
+
         asyncio.run(run_test())
 
 
@@ -85,17 +89,12 @@ class TestSelectBestSenseTrivialPath(unittest.TestCase):
             self.assertIsNone(stats)  # No LLM call = no stats
 
         import asyncio
+
         asyncio.run(run_test())
 
     def test_trivial_returns_sense_from_default_label(self):
         """Trivial case calls get_sense with DEFAULT_LABEL."""
-        entries = [
-            {
-                "senses": [
-                    {"definition": "The definition"}
-                ]
-            }
-        ]
+        entries = [{"senses": [{"definition": "The definition"}]}]
 
         async def run_test():
             result, label, stats = await select_best_sense(
@@ -111,6 +110,7 @@ class TestSelectBestSenseTrivialPath(unittest.TestCase):
             self.assertEqual(label, DEFAULT_LABEL)
 
         import asyncio
+
         asyncio.run(run_test())
 
 
@@ -168,6 +168,7 @@ class TestSelectBestSenseLLMPath(unittest.TestCase):
             self.assertEqual(returned_stats, stats)
 
         import asyncio
+
         asyncio.run(run_test())
 
     def test_llm_call_parameters(self):
@@ -210,6 +211,7 @@ class TestSelectBestSenseLLMPath(unittest.TestCase):
             self.assertEqual(call_kwargs["max_tokens"], 10)
 
         import asyncio
+
         asyncio.run(run_test())
 
     def test_llm_prompt_includes_sentence_word_and_listing(self):
@@ -252,6 +254,7 @@ class TestSelectBestSenseLLMPath(unittest.TestCase):
             self.assertIn("0.1 Def 2", prompt)
 
         import asyncio
+
         asyncio.run(run_test())
 
 
@@ -291,6 +294,7 @@ class TestSelectBestSenseErrorFallback(unittest.TestCase):
             self.assertIsNone(stats)
 
         import asyncio
+
         asyncio.run(run_test())
 
     def test_llm_timeout_falls_back_to_default(self):
@@ -318,6 +322,7 @@ class TestSelectBestSenseErrorFallback(unittest.TestCase):
             self.assertIsNone(stats)
 
         import asyncio
+
         asyncio.run(run_test())
 
     def test_llm_error_returns_consistent_fallback(self):
@@ -357,6 +362,7 @@ class TestSelectBestSenseErrorFallback(unittest.TestCase):
             self.assertIsNone(stats2)
 
         import asyncio
+
         asyncio.run(run_test())
 
 

@@ -1,14 +1,15 @@
 """FastAPI application entry point."""
 
+import logging
 import os
 import sys
-import logging
-import tomllib
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+import tomllib
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
 
 # Load environment variables from .env file
 # Must be called before importing modules that read env vars (like auth middleware)
@@ -20,10 +21,10 @@ load_dotenv()
 _src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(_src_path))
 
-from api.routes import articles, jobs, health, stats, dictionary, vocabulary, auth, usage
-from utils.logging import setup_structured_logging
-from adapter.mongodb.connection import get_mongodb_client, DATABASE_NAME
+from adapter.mongodb.connection import DATABASE_NAME, get_mongodb_client
 from adapter.mongodb.indexes import ensure_all_indexes
+from api.routes import articles, auth, dictionary, health, jobs, stats, usage, vocabulary
+from utils.logging import setup_structured_logging
 
 # Set up structured JSON logging
 setup_structured_logging()
@@ -55,8 +56,9 @@ async def lifespan(app: FastAPI):
     # Startup: preload Stanza German pipeline (~349MB)
     try:
         from api.dependencies import get_nlp_port
+
         adapter = get_nlp_port()
-        if hasattr(adapter, 'preload'):
+        if hasattr(adapter, "preload"):
             adapter.preload()
     except Exception as e:
         logger.warning("Failed to preload Stanza pipeline: %s", e)
@@ -116,15 +118,12 @@ app.include_router(usage.router)
 @app.get("/")
 async def root():
     """Root endpoint."""
-    return {
-        "service": SERVICE_NAME,
-        "version": VERSION,
-        "status": "running"
-    }
+    return {"service": SERVICE_NAME, "version": VERSION, "status": "running"}
 
 
 if __name__ == "__main__":
     import uvicorn
+
     # Railway는 PORT 환경변수를 제공
     port = int(os.getenv("PORT", 8000))
     # Disable uvicorn access logs to reduce noise
@@ -133,5 +132,5 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=port,
-        access_log=False  # Disable uvicorn's access log (reduces duplicate logs)
+        access_log=False,  # Disable uvicorn's access log (reduces duplicate logs)
     )

@@ -1,23 +1,24 @@
 """Unit tests for article vocabularies route."""
 
+import sys
 import unittest
 import uuid
-import sys
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from fastapi.testclient import TestClient
+
+from adapter.fake.article_repository import FakeArticleRepository
+from adapter.fake.vocabulary_repository import FakeVocabularyRepository
+from api.dependencies import get_article_repo, get_vocab_repo
 from api.main import app
 from api.models import UserResponse
 from api.security import get_current_user_required
-from api.dependencies import get_article_repo, get_vocab_repo
-from adapter.fake.article_repository import FakeArticleRepository
-from adapter.fake.vocabulary_repository import FakeVocabularyRepository
 from domain.model.article import Article, ArticleInputs, ArticleStatus
-from domain.model.vocabulary import GrammaticalInfo, Vocabulary
+from domain.model.vocabulary import Vocabulary
 
 
 class TestGetArticleVocabularies(unittest.TestCase):
@@ -32,7 +33,7 @@ class TestGetArticleVocabularies(unittest.TestCase):
             name="Test User",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
-            provider="email"
+            provider="email",
         )
         self.article_id = "test-article-123"
         self.repo = FakeArticleRepository()
@@ -52,7 +53,7 @@ class TestGetArticleVocabularies(unittest.TestCase):
         """Create a test article in the fake repo."""
         article = Article(
             id=self.article_id,
-            inputs=ArticleInputs(language='English', level='B2', length='500', topic='AI'),
+            inputs=ArticleInputs(language="English", level="B2", length="500", topic="AI"),
             status=status,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
@@ -65,25 +66,27 @@ class TestGetArticleVocabularies(unittest.TestCase):
         """Test successful retrieval of article vocabularies."""
         self._setup_auth_and_repo()
         self._create_test_article()
-        self.vocab_repo.save(Vocabulary(
-            id=str(uuid.uuid4()),
-            article_id=self.article_id,
-            word='testing',
-            lemma='test',
-            definition='a procedure',
-            sentence='This is a test.',
-            language='English',
-            created_at=datetime.now(timezone.utc),
-            user_id='test-user-123',
-        ))
+        self.vocab_repo.save(
+            Vocabulary(
+                id=str(uuid.uuid4()),
+                article_id=self.article_id,
+                word="testing",
+                lemma="test",
+                definition="a procedure",
+                sentence="This is a test.",
+                language="English",
+                created_at=datetime.now(timezone.utc),
+                user_id="test-user-123",
+            )
+        )
 
         response = self.client.get(f"/articles/{self.article_id}/vocabularies")
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]['lemma'], 'test')
-        self.assertEqual(data[0]['article_id'], self.article_id)
+        self.assertEqual(data[0]["lemma"], "test")
+        self.assertEqual(data[0]["article_id"], self.article_id)
 
     def test_get_article_vocabularies_article_not_found(self):
         """Test 404 response when article doesn't exist."""
@@ -93,7 +96,7 @@ class TestGetArticleVocabularies(unittest.TestCase):
         response = self.client.get(f"/articles/{self.article_id}/vocabularies")
 
         self.assertEqual(response.status_code, 404)
-        self.assertIn("Article not found", response.json()['detail'])
+        self.assertIn("Article not found", response.json()["detail"])
 
     def test_get_article_vocabularies_unauthorized_access(self):
         """Test 403 response when user doesn't own the article."""
@@ -103,7 +106,7 @@ class TestGetArticleVocabularies(unittest.TestCase):
         response = self.client.get(f"/articles/{self.article_id}/vocabularies")
 
         self.assertEqual(response.status_code, 403)
-        self.assertIn("don't have permission", response.json()['detail'])
+        self.assertIn("don't have permission", response.json()["detail"])
 
     def test_get_article_vocabularies_requires_authentication(self):
         """Test that endpoint requires authentication."""
@@ -130,5 +133,5 @@ class TestGetArticleVocabularies(unittest.TestCase):
         self.assertEqual(len(data), 0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

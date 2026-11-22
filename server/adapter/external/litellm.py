@@ -85,10 +85,13 @@ class LiteLLMAdapter:
                 content = message.content.strip()
 
         if not content:
-            logger.error("No content in LLM response", extra={
-                "model": model,
-                "response_id": getattr(response, "id", None),
-            })
+            logger.error(
+                "No content in LLM response",
+                extra={
+                    "model": model,
+                    "response_id": getattr(response, "id", None),
+                },
+            )
             raise RuntimeError("No content returned from LLM")
 
         usage = response.usage
@@ -99,9 +102,13 @@ class LiteLLMAdapter:
         try:
             estimated_cost = completion_cost(completion_response=response)
         except Exception as e:
-            logger.debug("Could not calculate cost with LiteLLM", extra={
-                "model": model, "error": str(e),
-            })
+            logger.debug(
+                "Could not calculate cost with LiteLLM",
+                extra={
+                    "model": model,
+                    "error": str(e),
+                },
+            )
             estimated_cost = 0.0
 
         provider = _extract_provider_from_model(model)
@@ -115,12 +122,16 @@ class LiteLLMAdapter:
             provider=provider,
         )
 
-        logger.debug("LLM API call completed", extra={
-            "model": model, "provider": provider,
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": total_tokens,
-            "estimated_cost": estimated_cost,
-        })
+        logger.debug(
+            "LLM API call completed",
+            extra={
+                "model": model,
+                "provider": provider,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "estimated_cost": estimated_cost,
+            },
+        )
 
         return content, stats

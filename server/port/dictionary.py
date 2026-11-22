@@ -21,11 +21,16 @@ class DictionaryPort(Protocol):
         ...
 
     def get_sense(
-        self, entries: list[dict[str, Any]], label: str,
+        self,
+        entries: list[dict[str, Any]],
+        label: str,
     ) -> SenseResult:
         """Return the definition and examples for the selected sense."""
         ...
 
     def extract_grammar(
-        self, entries: list[dict[str, Any]], label: str, language: str,
+        self,
+        entries: list[dict[str, Any]],
+        label: str,
+        language: str,
     ) -> GrammaticalInfo: ...
