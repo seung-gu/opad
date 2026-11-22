@@ -1,6 +1,5 @@
 """Worker service entry point."""
 
-#!/usr/bin/env python
 import logging
 import sys
 from functools import partial
