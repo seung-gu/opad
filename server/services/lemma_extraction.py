@@ -10,6 +10,7 @@ from typing import Any, TypedDict
 
 from json_repair import repair_json
 
+from domain.model.cefr import CEFRLevel, Level
 from domain.model.token_usage import LLMCallResult
 from port.llm import LLMPort
 from port.nlp import NLPPort
@@ -22,12 +23,20 @@ class LemmaResult(TypedDict):
 
     lemma: str
     related_words: list[str] | None
-    level: str | None
+    level: Level | None
 
 
 # Token limits
 _REDUCED_PROMPT_MAX_TOKENS = 200
 _CEFR_PROMPT_MAX_TOKENS = 10
+
+
+def _to_level(value: Any) -> Level | None:
+    """Keep the LLM's CEFR level only if it is one of A1-C2, ignoring case and spaces."""
+    if not isinstance(value, str):
+        return None
+    level = value.strip().upper()
+    return level if level in CEFRLevel.ALL else None
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +138,7 @@ async def _estimate_cefr(
     lemma: str,
     llm: LLMPort,
     model: str,
-) -> tuple[str | None, LLMCallResult | None]:
+) -> tuple[Level | None, LLMCallResult | None]:
     """Estimate CEFR level with a minimal LLM call."""
     prompt = (
         f'Sentence: "{sentence}"\n'
@@ -146,7 +155,7 @@ async def _estimate_cefr(
             timeout=10,
         )
         result = repair_json(content, return_objects=True)
-        level = result.get("level") if isinstance(result, dict) else None
+        level = _to_level(result.get("level")) if isinstance(result, dict) else None
         return level, stats
     except Exception as e:
         logger.warning("CEFR estimation failed", extra={"error": str(e)})
@@ -186,7 +195,7 @@ async def _extract_with_llm(
         return LemmaResult(
             lemma=parsed.get("lemma", word),
             related_words=parsed.get("related_words"),
-            level=parsed.get("level"),
+            level=_to_level(parsed.get("level")),
         ), stats
 
     except Exception as e:

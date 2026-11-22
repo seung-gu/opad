@@ -8,15 +8,15 @@ Level = Literal["A1", "A2", "B1", "B2", "C1", "C2"]
 class CEFRLevel:
     """CEFR proficiency level rules for language learning."""
 
-    ALL: list[str] = list(get_args(Level))
+    ALL: list[Level] = list(get_args(Level))
 
     @staticmethod
-    def range(max_level: str | None, min_level: str = "A1") -> list[str]:
+    def range(max_level: Level | None, min_level: Level = "A1") -> list[Level]:
         """Levels from min_level to max_level, both included.
 
         range('B2')                  → ['A1', 'A2', 'B1', 'B2']
         range('B2', min_level='A2')  → ['A2', 'B1', 'B2']
-        range(None)            → all levels
+        range(None)                  → all levels
 
         A level outside A1-C2 counts as no level and gives all levels,
         because the generate request still takes level as any string (#173).
@@ -26,7 +26,7 @@ class CEFRLevel:
         return CEFRLevel.ALL[CEFRLevel.ALL.index(min_level) : CEFRLevel.ALL.index(max_level) + 1]
 
     @staticmethod
-    def next(level: str | None) -> str | None:
+    def next(level: Level | None) -> Level | None:
         """The level one above. C2 stays C2. None or a level outside A1-C2 gives None."""
         if level not in CEFRLevel.ALL:
             return None
