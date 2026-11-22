@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from domain.model.cefr import Level
 from domain.model.errors import PermissionDeniedError
 
 
@@ -39,7 +40,7 @@ class LookupResult:
     lemma: str
     definition: str
     related_words: list[str] | None = None
-    level: str | None = None
+    level: Level | None = None
     grammar: GrammaticalInfo = field(default_factory=GrammaticalInfo)
 
 
@@ -58,7 +59,7 @@ class Vocabulary:
     language: str
     created_at: datetime
     related_words: list[str] | None = None
-    level: str | None = None
+    level: Level | None = None
     span_id: str | None = None
     user_id: str | None = None
     grammar: GrammaticalInfo = field(default_factory=GrammaticalInfo)
@@ -74,7 +75,7 @@ class Vocabulary:
         related_words: list[str] | None = None,
         span_id: str | None = None,
         user_id: str | None = None,
-        level: str | None = None,
+        level: Level | None = None,
         grammar: GrammaticalInfo | None = None,
     ) -> Vocabulary:
         """Factory method — same pattern as Article.create()."""

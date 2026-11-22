@@ -6,7 +6,9 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
+
+from domain.model.cefr import Level
 
 if TYPE_CHECKING:
     from domain.model.token_usage import LLMCallResult
@@ -26,9 +28,11 @@ class ArticleInputs:
     """Input parameters for article generation."""
 
     language: str
-    level: str
-    length: str
-    topic: str
+    level: Level | None = None
+    length: str | None = None
+    topic: str | None = None
+    # The step the article starts at. The steps after it always run: find → rewrite → review → publish.
+    start: Literal["find", "rewrite", "publish"] = "find"
 
 
 # ── Value Objects ────────────────────────────────────────
@@ -114,6 +118,11 @@ class Article:
         return self.user_id == user_id
 
     # ── state transitions ─────────────────────────────────
+
+    def set_content(self, content: str, source: SourceInfo | None = None) -> None:
+        """Put in the text the user gave, and where it came from, before it is rewritten."""
+        self.content = content
+        self.source = source
 
     def complete(
         self,

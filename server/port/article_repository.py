@@ -3,6 +3,7 @@
 from typing import Protocol
 
 from domain.model.article import Article, ArticleInputs, Articles, ArticleStatus
+from domain.model.cefr import Level
 
 
 class ArticleRepository(Protocol):
@@ -16,7 +17,7 @@ class ArticleRepository(Protocol):
         limit: int = 20,
         status: ArticleStatus | None = None,
         language: str | None = None,
-        level: str | None = None,
+        level: Level | None = None,
         user_id: str | None = None,
         exclude_deleted: bool = True,
     ) -> Articles: ...

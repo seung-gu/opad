@@ -8,6 +8,7 @@ from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
 from adapter.mongodb.connection import VOCABULARY_COLLECTION_NAME
+from domain.model.cefr import Level
 from domain.model.vocabulary import GrammaticalInfo, Vocabulary, VocabularyCount
 
 logger = getLogger(__name__)
@@ -257,7 +258,7 @@ class MongoVocabularyRepository:
         self,
         user_id: str,
         language: str,
-        levels: list[str] | None = None,
+        levels: list[Level] | None = None,
         limit: int = 50,
     ) -> list[str]:
         try:

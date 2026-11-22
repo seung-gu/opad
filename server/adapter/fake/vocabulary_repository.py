@@ -1,5 +1,6 @@
 """In-memory implementation of VocabularyRepository for testing."""
 
+from domain.model.cefr import Level
 from domain.model.vocabulary import Vocabulary, VocabularyCount
 
 
@@ -95,7 +96,7 @@ class FakeVocabularyRepository:
         self,
         user_id: str,
         language: str,
-        levels: list[str] | None = None,
+        levels: list[Level] | None = None,
         limit: int = 50,
     ) -> list[str]:
         filtered = [v for v in self.store.values() if v.user_id == user_id and v.language == language]

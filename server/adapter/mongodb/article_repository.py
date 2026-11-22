@@ -16,6 +16,7 @@ from domain.model.article import (
     EditRecord,
     SourceInfo,
 )
+from domain.model.cefr import Level
 
 logger = getLogger(__name__)
 
@@ -163,7 +164,7 @@ class MongoArticleRepository:
         limit: int = 20,
         status: ArticleStatus | None = None,
         language: str | None = None,
-        level: str | None = None,
+        level: Level | None = None,
         user_id: str | None = None,
         exclude_deleted: bool = True,
     ) -> Articles:

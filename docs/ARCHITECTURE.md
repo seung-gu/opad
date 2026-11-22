@@ -348,7 +348,7 @@ Rich Domain Model with factory (`create()`), state transitions (`complete()`, `f
 
 - **`Article`** — Mutable entity representing an article's full lifecycle. `create()` factory generates UUIDs and sets initial `RUNNING` status. State transitions encapsulate business rules and update `updated_at`.
 - **`ArticleStatus`** — Enum (`RUNNING`, `COMPLETED`, `FAILED`, `DELETED`). Extends `str` for JSON serialization.
-- **`ArticleInputs`** — Frozen value object holding generation parameters (`language`, `level`, `length`, `topic`).
+- **`ArticleInputs`** — Frozen value object holding generation parameters (`language`, `level`, `length`, `topic`, `start`). `start` is the step the article starts at (`find`, `rewrite` or `publish`), `find` by default. Only `language` is required, since an article that starts at `rewrite` or `publish` has no topic.
 - **`SourceInfo`**, **`EditRecord`** — Frozen value objects preserving article provenance from CrewAI output.
 - **`GenerationResult`** — Framework-agnostic DTO returned by `ArticleGeneratorPort`, decoupling CrewAI output from domain. `agent_usage` is typed as `list[tuple[str, LLMCallResult]]` -- the CrewAI adapter converts raw framework data to domain objects (including cost calculation via `litellm.cost_per_token()`) before returning.
 - **`Articles`** — Collection wrapper for paginated results (replaces raw `tuple[list, int]`).
@@ -1115,26 +1115,25 @@ All vocabulary endpoints require JWT authentication. Users can only:
 
 **Purpose**: Domain rules for CEFR proficiency levels. Filters vocabulary words to only include those appropriate for the target CEFR level when generating articles.
 
-**Method**: `CEFRLevel.range(target, max_above=1)`
-- `target`: Center CEFR level (A1-C2). None/empty returns all.
-- `max_above`: Levels above target to include (default: 1).
-
-**Returns**: List of allowed CEFR levels from A1 up to (target + max_above).
+**Methods**:
+- `CEFRLevel.range(max_level, min_level="A1")`: levels from `min_level` to `max_level`, both included. None, or a level outside A1-C2, returns all levels.
+- `CEFRLevel.next(level)`: the level one above. C2 stays C2. None, or a level outside A1-C2, returns None.
 
 **Examples**:
 ```python
 from domain.model.cefr import CEFRLevel
 
-CEFRLevel.range('A2', max_above=1)  # Returns: ['A1', 'A2', 'B1']
-CEFRLevel.range('B1', max_above=1)  # Returns: ['A1', 'A2', 'B1', 'B2']
-CEFRLevel.range('C2', max_above=1)  # Returns: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
-CEFRLevel.range(None)               # Returns: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+CEFRLevel.range('B2')        # Returns: ['A1', 'A2', 'B1', 'B2']
+CEFRLevel.range('B2', min_level='A2')  # Returns: ['A2', 'B1', 'B2']
+CEFRLevel.range(None)        # Returns: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+CEFRLevel.next('B1')         # Returns: 'B2'
+CEFRLevel.next('C2')         # Returns: 'C2'
 ```
 
 **Usage in Worker** (`article_generation_service._get_vocabulary()`):
 When generating articles, the worker fetches user vocabulary filtered by target level:
 ```python
-levels = CEFRLevel.range(level, max_above=1)
+levels = CEFRLevel.range(CEFRLevel.next(level))  # A1 to one level above the user's
 vocab_list = vocab.find_lemmas(
     user_id=user_id,
     language=language,
@@ -1146,7 +1145,7 @@ vocab_list = vocab.find_lemmas(
 **Benefits**:
 - Prevents too-difficult vocabulary from appearing in beginner articles
 - Ensures vocabulary reinforcement matches the target difficulty
-- Allows slight challenge with `max_above=1` parameter
+- Allows slight challenge by including one level above the user's
 
 ---
 

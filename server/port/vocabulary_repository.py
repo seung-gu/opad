@@ -2,6 +2,7 @@
 
 from typing import Protocol
 
+from domain.model.cefr import Level
 from domain.model.vocabulary import Vocabulary, VocabularyCount
 
 
@@ -58,7 +59,7 @@ class VocabularyRepository(Protocol):
         self,
         user_id: str,
         language: str,
-        levels: list[str] | None = None,
+        levels: list[Level] | None = None,
         limit: int = 50,
     ) -> list[str]:
         """Get distinct lemmas sorted by frequency (desc) then recency (desc)."""
