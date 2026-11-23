@@ -1652,7 +1652,7 @@ def submit_generation(inputs, user_id, repo, job_queue, force=False) -> Article:
 def generate_article(article, user_id, inputs, generator, repo,
                      token_usage_repo=None, vocab=None, job_id=None) -> bool:
     """Generate article content and save to repository."""
-    vocab_list = _get_vocabulary(user_id, inputs.language, inputs.level, vocab)
+    vocab_list = find_known_words(user_id, inputs.language, inputs.level, vocab)
     result = generator.generate(inputs, vocab_list, job_id=job_id or "", article_id=article.id)
     article.complete(content=result.content, source=result.source, edit_history=result.edit_history)
     repo.save(article)
