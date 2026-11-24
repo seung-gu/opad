@@ -6,12 +6,12 @@ Worker-side flow: vocabulary filtering → generation → save → token trackin
 import logging
 
 from domain.model.article import Article, ArticleInputs
-from domain.model.cefr import CEFRLevel, Level
 from port.article_generator import ArticleGeneratorPort
 from port.article_repository import ArticleRepository
 from port.token_usage_repository import TokenUsageRepository
 from port.vocabulary_repository import VocabularyRepository
 from services.token_usage_service import track_agent_usage
+from services.vocabulary_service import find_known_words
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def generate_article(
         True if successful, False if generation or save failed.
     """
     # 1. Vocabulary filtering
-    vocab_list = _get_vocabulary(user_id, inputs.language, inputs.level, vocab)
+    vocab_list = find_known_words(user_id, inputs.language, inputs.level, vocab)
 
     # 2. Generate via port
     result = generator.generate(inputs, vocab_list, job_id=job_id or "", article_id=article.id)
@@ -60,23 +60,3 @@ def generate_article(
         )
 
     return True
-
-
-def _get_vocabulary(
-    user_id: str | None,
-    language: str,
-    level: Level | None,
-    vocab: VocabularyRepository | None,
-) -> list[str]:
-    """Fetch user's vocabulary filtered by target level."""
-    if not user_id or not language or not vocab:
-        return []
-
-    levels = CEFRLevel.range(CEFRLevel.next(level))
-    vocab_list = vocab.find_lemmas(
-        user_id=user_id,
-        language=language,
-        levels=levels,
-        limit=50,
-    )
-    return vocab_list if vocab_list else []

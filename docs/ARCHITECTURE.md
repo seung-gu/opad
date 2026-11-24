@@ -577,6 +577,8 @@ All database entities and external services use hexagonal architecture. Persiste
 - `services/article_submission_service.py`: Article submission (API-side: `submit_generation()` -- duplicate check, create, enqueue)
 - `services/article_generation_service.py`: Article generation (Worker-side: `generate_article()` -- vocabulary filtering, generation, save, token tracking)
 - `services/dictionary_service.py`: Dictionary lookup orchestrator (hybrid pipeline + full LLM fallback)
+- `services/vocabulary_service.py`: `find_known_words()` -- the learner's most-saved words, from A1 to one level above the target (max 50)
+- `services/writing_service.py`: `get_writing_guide()` returns the writing rules as text; `check_article()` checks an article against the rules code can verify (bold/italics/backticks, vocabulary sections and a missing source block it; length outside ±25% of the target only warns). No LLM, no I/O. Not called yet; the agents (#171) and entries (#173) will use it
 - `services/lemma_extraction.py`: Step 1 of lookup pipeline (NLP for German, LLM for others)
 - `services/sense_selection.py`: Step 3 of lookup pipeline (LLM sense selection from dictionary entries)
 - `domain/model/job.py`: `JobContext` typed container for queue job data
@@ -858,7 +860,7 @@ Worker main.py
          └── process_job(ctx, repo, job_queue, generate)
                 └── generate(article, user_id, inputs, job_id)
                        = article_generation_service.generate_article(...)
-                            ├── 1. _get_vocabulary() via VocabularyRepository
+                            ├── 1. vocabulary_service.find_known_words() via VocabularyRepository
                             ├── 2. generator.generate(inputs, vocab_list, job_id, article_id)
                             │       └── CrewAIArticleGenerator
                             │             ├── JobProgressListener (job_queue.update_status)
@@ -1130,7 +1132,7 @@ CEFRLevel.next('B1')         # Returns: 'B2'
 CEFRLevel.next('C2')         # Returns: 'C2'
 ```
 
-**Usage in Worker** (`article_generation_service._get_vocabulary()`):
+**Usage in Worker** (`vocabulary_service.find_known_words()`):
 When generating articles, the worker fetches user vocabulary filtered by target level:
 ```python
 levels = CEFRLevel.range(CEFRLevel.next(level))  # A1 to one level above the user's
