@@ -28,6 +28,7 @@ api = [
 worker = [
     "crewai[anthropic,tools]==1.15.23",
     "boto3",
+    "trafilatura>=2.4.0",
 ]
 
 [build-system]
