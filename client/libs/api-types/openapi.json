@@ -2058,7 +2058,7 @@
     "/stats": {
       "get": {
         "description": "Get MongoDB database and Redis statistics.",
-        "operationId": "get_database_stats_stats_get",
+        "operationId": "get_stats_stats_get",
         "responses": {
           "200": {
             "content": {
@@ -2074,7 +2074,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Get Database Stats",
+        "summary": "Get Stats",
         "tags": [
           "stats"
         ]

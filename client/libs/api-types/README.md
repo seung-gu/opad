@@ -27,7 +27,7 @@ Type synchronization is automated through the following pipeline:
 ## 🚀 How is it executed? (Automation)
 
 You do not need to run this pipeline manually. 
-It is automatically triggered by the **Husky Pre-commit Hook** configured at the project root whenever changes are detected in the backend API contract files (`server/api/**/*.py`). The generated files are then automatically staged with your commit.
+It is automatically triggered by the **pre-commit hook** (`.pre-commit-config.yaml` at the project root, installed with `uv run pre-commit install`) whenever changes are detected in the backend API contract files (`server/api/**/*.py`). If the generated files change, the commit stops: stage them with `git add` and commit again. CI checks the same on every pull request.
 
 If you need to run the pipeline manually, use the following npm scripts:
 ```bash

@@ -10,11 +10,9 @@
     "android:mobile": "pnpm --filter @opad/mobile android",
     "lint:mobile": "pnpm --filter @opad/mobile lint",
     "export:openapi": "PYTHONPATH=. uv run python client/libs/api-types/sync_from_backend.py",
-    "generate:types": "openapi-typescript client/libs/api-types/openapi.json -o client/libs/api-types/api.generated.ts && node -e \"const fs=require('fs'); const file='client/libs/api-types/api.generated.ts'; fs.writeFileSync(file, '// DO NOT EDIT — generated\\n\\n' + fs.readFileSync(file));\"",
-    "prepare": "husky"
+    "generate:types": "openapi-typescript client/libs/api-types/openapi.json -o client/libs/api-types/api.generated.ts && node -e \"const fs=require('fs'); const file='client/libs/api-types/api.generated.ts'; fs.writeFileSync(file, '// DO NOT EDIT — generated\\n\\n' + fs.readFileSync(file));\""
   },
   "devDependencies": {
-    "husky": "^9.0.0",
     "openapi-typescript": "^7.0.0"
   },
   "engines": {
