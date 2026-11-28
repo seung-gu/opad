@@ -1,0 +1,26 @@
+:root {
+  --bg: #100f0e;
+  --card: #171614;
+  --card-hover: #1f1d1a;
+  --card-border: #2d2a25;
+
+  --accent: #c75b3f;
+  --vocab: #c75b3f;
+  --system: #c75b3f;
+  --warn: #b08a4a;
+  --danger: #a8392e;
+
+  --text: #d9d3c7;
+  --text-dim: #8b8478;
+  --strong: #efeae0;
+  --btn-text: #faf7f1;
+
+  --good: #6f8f7d;
+  --weak: #b08a4a;
+
+  --word-hover: #c75b3f;
+  --accent-hover: rgba(199, 91, 63, 0.1);
+  --vocab-hover: rgba(199, 91, 63, 0.1);
+  --system-hover: rgba(199, 91, 63, 0.1);
+  --danger-hover: rgba(168, 57, 46, 0.1);
+}

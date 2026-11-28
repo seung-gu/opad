@@ -1,6 +1,7 @@
 import type { Config } from 'tailwindcss'
 
 const config: Config = {
+  presets: [require('../../libs/tailwind-preset.cjs')],
   content: [
     './pages/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -20,32 +21,6 @@ const config: Config = {
   ],
   theme: {
     extend: {
-      colors: {
-        // Background
-        background: 'var(--bg)',
-        card: 'var(--card)',
-        'card-hover': 'var(--card-hover)',
-        'border-card': 'var(--card-border)',
-
-        // Accent
-        accent: {
-          DEFAULT: 'var(--accent)',
-          warn: 'var(--warn)',
-          danger: 'var(--danger)',
-        },
-
-        // Text
-        foreground: 'var(--text)',
-        'text-dim': 'var(--text-dim)',
-        'text-strong': 'var(--strong)',
-        'btn-text': 'var(--btn-text)',
-
-        // Status
-        good: 'var(--good)',
-        weak: 'var(--weak)',
-        vocab: 'var(--vocab)',
-        system: 'var(--system)',
-      },
       fontFamily: {
         sans: ['var(--font-sans)', 'Noto Sans KR', 'sans-serif'],
         serif: ['var(--font-serif)', 'Newsreader', 'Georgia', 'serif'],
