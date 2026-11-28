@@ -11,10 +11,10 @@ from json_repair import repair_json
 
 from domain.model.token_usage import TokenUsage
 from domain.model.vocabulary import GrammaticalInfo, LookupResult
-from port.dictionary import DictionaryPort
-from port.llm import LLMPort
-from port.nlp import NLPPort
-from port.token_usage_repository import TokenUsageRepository
+from port.outbound.dictionary import DictionaryPort
+from port.outbound.llm import LLMPort
+from port.outbound.nlp import NLPPort
+from port.outbound.repository.token_usage import TokenUsageRepository
 from services.lemma_extraction import LemmaResult, extract_lemma
 from services.sense_selection import select_best_sense
 

@@ -10,7 +10,7 @@ server_path = Path(__file__).parent
 src_path = server_path.parent
 sys.path.insert(0, str(src_path))
 
-from api.main import app
+from adapter.inbound.api.main import app
 
 
 def main():

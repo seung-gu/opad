@@ -6,10 +6,10 @@ Worker-side flow: vocabulary filtering → generation → save → token trackin
 import logging
 
 from domain.model.article import Article, ArticleInputs
-from port.article_generator import ArticleGeneratorPort
-from port.article_repository import ArticleRepository
-from port.token_usage_repository import TokenUsageRepository
-from port.vocabulary_repository import VocabularyRepository
+from port.outbound.article_generator import ArticleGeneratorPort
+from port.outbound.repository.article import ArticleRepository
+from port.outbound.repository.token_usage import TokenUsageRepository
+from port.outbound.repository.vocabulary import VocabularyRepository
 from services.token_usage_service import track_agent_usage
 from services.vocabulary_service import find_known_words
 

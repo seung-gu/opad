@@ -7,8 +7,8 @@ import logging
 
 from domain.model.article import Article, ArticleInputs, ArticleStatus
 from domain.model.errors import DomainError, DuplicateArticleError, EnqueueError
-from port.article_repository import ArticleRepository
-from port.job_queue import JobQueuePort
+from port.outbound.job_queue import JobQueuePort
+from port.outbound.repository.article import ArticleRepository
 
 logger = logging.getLogger(__name__)
 

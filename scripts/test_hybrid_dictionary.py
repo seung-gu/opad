@@ -16,9 +16,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from adapter.external.free_dictionary import FreeDictionaryAdapter
-from adapter.external.litellm import LiteLLMAdapter
-from adapter.mongodb.connection import get_mongodb_client
+from adapter.outbound.free_dictionary import FreeDictionaryAdapter
+from adapter.outbound.litellm import LiteLLMAdapter
+from adapter.outbound.mongodb.connection import get_mongodb_client
 
 _llm = LiteLLMAdapter()
 _dict_adapter = FreeDictionaryAdapter()

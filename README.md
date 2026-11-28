@@ -59,7 +59,7 @@ For detailed architecture documentation, see [ARCHITECTURE.md](./docs/ARCHITECTU
    uv run pre-commit install
    ```
 
-   > If you make backend API changes under `server/api`, regenerate the shared client types with:
+   > If you make backend API changes under `server/adapter/inbound/api`, regenerate the shared client types with:
    > ```bash
    > pnpm export:openapi
    > pnpm generate:types
@@ -83,10 +83,10 @@ For detailed architecture documentation, see [ARCHITECTURE.md](./docs/ARCHITECTU
 4. **Run services** (in separate terminals):
    ```bash
    # API (Terminal 1)
-   PYTHONPATH=server uvicorn api.main:app --reload --port 8001
+   PYTHONPATH=server uvicorn adapter.inbound.api.main:app --reload --port 8001
    
    # Worker (Terminal 2)
-   PYTHONPATH=server uv run python -m worker.main
+   PYTHONPATH=server uv run python -m adapter.inbound.worker.main
    
    # Web (Terminal 3)
    cd client/apps/web
@@ -170,10 +170,10 @@ A **pre-commit hook** (`.pre-commit-config.yaml`, installed with `uv run pre-com
 
 ```bash
 # Triggered when modifying any of these files:
-server/api/main.py
-server/api/models.py
-server/api/routes/*.py
-server/api/dependencies.py
+server/adapter/inbound/api/main.py
+server/adapter/inbound/api/models.py
+server/adapter/inbound/api/routes/*.py
+server/adapter/inbound/api/dependencies.py
 ```
 
 The hook runs:

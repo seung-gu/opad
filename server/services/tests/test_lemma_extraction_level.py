@@ -2,7 +2,7 @@
 
 import asyncio
 
-from adapter.fake.llm import FakeLLMAdapter
+from adapter.outbound.fake.llm import FakeLLMAdapter
 from services.lemma_extraction import extract_lemma
 
 

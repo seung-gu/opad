@@ -34,7 +34,7 @@ from litellm import acompletion, cost_per_token
 sys.path.insert(0, "scripts")
 from test_cases import TEST_CASES_DE, TEST_CASES_EN
 
-from adapter.external.free_dictionary import (
+from adapter.outbound.free_dictionary import (
     API_TIMEOUT_SECONDS,
     FREE_DICTIONARY_API_BASE_URL,
 )

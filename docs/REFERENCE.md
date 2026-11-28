@@ -163,7 +163,7 @@ graph TD
 This diagram shows the complete flow when a duplicate is detected, including browser interaction and retry logic.
 
 **Files:**
-- FastAPI: `server/api/routes/articles.py:189` - Raises `HTTPException(status_code=409)`
+- FastAPI: `server/adapter/inbound/api/routes/articles.py:189` - Raises `HTTPException(status_code=409)`
 - Next.js API Route: `client/apps/web/app/api/generate/route.ts:58-78` - Handles 409 and returns `NextResponse.json({ status: 409 })`
 - Browser: `client/apps/web/app/page.tsx:235-273` - Fetches and handles 409 response
 
@@ -203,7 +203,7 @@ This diagram shows how Next.js API Route communicates with FastAPI backend over 
 
 **Files:**
 - Next.js API Route: `client/apps/web/app/api/generate/route.ts:32-44` - Calls FastAPI with fetch
-- FastAPI: `server/api/routes/articles.py` - Receives HTTP request and responds
+- FastAPI: `server/adapter/inbound/api/routes/articles.py` - Receives HTTP request and responds
 
 ```
 Next.js API Route (route.ts)
@@ -247,7 +247,7 @@ generateResponse.status === 409  ← Response handling!
 
 #### Articles
 
-> **Internal note**: All endpoints use hexagonal architecture (ports and adapters pattern) internally. All database access goes through Protocol-based repositories (`ArticleRepository`, `UserRepository`, `VocabularyRepository`, `TokenUsageRepository`), and all external service calls go through Protocol-based ports (`DictionaryPort`, `LLMPort`, `NLPPort`, `JobQueuePort`), injected via `Depends()` from `api/dependencies.py`. Article generation is delegated to `article_submission_service.submit_generation()` which orchestrates duplicate checking, article creation, and job enqueue via `JobQueuePort`. See [ARCHITECTURE.md - Hexagonal Architecture](ARCHITECTURE.md#hexagonal-architecture-ports-and-adapters) for details.
+> **Internal note**: All endpoints use hexagonal architecture (ports and adapters pattern) internally. All database access goes through Protocol-based repositories (`ArticleRepository`, `UserRepository`, `VocabularyRepository`, `TokenUsageRepository`), and all external service calls go through Protocol-based ports (`DictionaryPort`, `LLMPort`, `NLPPort`, `JobQueuePort`), injected via `Depends()` from `adapter/inbound/api/dependencies.py`. Article generation is delegated to `article_submission_service.submit_generation()` which orchestrates duplicate checking, article creation, and job enqueue via `JobQueuePort`. See [ARCHITECTURE.md - Hexagonal Architecture](ARCHITECTURE.md#hexagonal-architecture-ports-and-adapters) for details.
 
 - **GET** `/articles` - List articles with filters (status, language, level) and pagination
 - **POST** `/articles/generate` - Create article and start generation (unified endpoint)
@@ -287,7 +287,7 @@ generateResponse.status === 409  ← Response handling!
 - **GET** `/dictionary/vocabularies` - Get aggregated vocabulary list (grouped by lemma with counts)
 - **DELETE** `/dictionary/vocabularies/{vocabulary_id}` - Delete vocabulary word
 
-Note: Dictionary search and Vocabulary CRUD share the `/dictionary` URL prefix but are implemented in separate routers (`api/routes/dictionary.py` and `api/routes/vocabulary.py`) with different tags (`dictionary` and `vocabulary`).
+Note: Dictionary search and Vocabulary CRUD share the `/dictionary` URL prefix but are implemented in separate routers (`adapter/inbound/api/routes/dictionary.py` and `adapter/inbound/api/routes/vocabulary.py`) with different tags (`dictionary` and `vocabulary`).
 
 #### Authentication
 
@@ -616,7 +616,7 @@ Note: Dictionary search and Vocabulary CRUD share the `/dictionary` URL prefix b
 }
 ```
 
-**Implementation note**: Statistics are gathered from `adapter/mongodb/stats.py` (`get_database_stats()` and `get_vocabulary_stats()`) and `JobQueuePort.get_stats()` (via `RedisJobQueueAdapter`).
+**Implementation note**: Statistics are gathered from `adapter/outbound/mongodb/stats.py` (`get_database_stats()` and `get_vocabulary_stats()`) and `JobQueuePort.get_stats()` (via `RedisJobQueueAdapter`).
 
 ---
 
@@ -924,7 +924,7 @@ The article detail page displays token usage with smart aggregation:
 
 #### TokenUsageRepository.save()
 
-**Module**: `adapter/mongodb/token_usage_repository.py` (implements `port/token_usage_repository.py`)
+**Module**: `adapter/outbound/mongodb/token_usage_repository.py` (implements `port/outbound/repository/token_usage.py`)
 
 **Description**: Save token usage record to MongoDB for cost tracking and analytics.
 
@@ -957,8 +957,8 @@ def save(
 
 **Example** (via FastAPI dependency injection):
 ```python
-from api.dependencies import get_token_usage_repo
-from port.token_usage_repository import TokenUsageRepository
+from adapter.inbound.api.dependencies import get_token_usage_repo
+from port.outbound.repository.token_usage import TokenUsageRepository
 
 token_usage_repo: TokenUsageRepository = Depends(get_token_usage_repo)
 
@@ -977,7 +977,7 @@ usage_id = token_usage_repo.save(
 
 #### TokenUsageRepository.get_user_summary()
 
-**Module**: `adapter/mongodb/token_usage_repository.py` (implements `port/token_usage_repository.py`)
+**Module**: `adapter/outbound/mongodb/token_usage_repository.py` (implements `port/outbound/repository/token_usage.py`)
 
 **Description**: Get token usage summary for a user within a specified time window.
 
@@ -1002,8 +1002,8 @@ class TokenUsageSummary:
 
 **Example** (via FastAPI dependency injection):
 ```python
-from api.dependencies import get_token_usage_repo
-from port.token_usage_repository import TokenUsageRepository
+from adapter.inbound.api.dependencies import get_token_usage_repo
+from port.outbound.repository.token_usage import TokenUsageRepository
 
 repo: TokenUsageRepository = Depends(get_token_usage_repo)
 
@@ -1019,7 +1019,7 @@ for op, stats in summary.by_operation.items():
 
 #### TokenUsageRepository.get_by_article()
 
-**Module**: `adapter/mongodb/token_usage_repository.py` (implements `port/token_usage_repository.py`)
+**Module**: `adapter/outbound/mongodb/token_usage_repository.py` (implements `port/outbound/repository/token_usage.py`)
 
 **Description**: Get all token usage records for a specific article.
 
@@ -1054,8 +1054,8 @@ class TokenUsage:
 
 **Example** (via FastAPI dependency injection):
 ```python
-from api.dependencies import get_token_usage_repo
-from port.token_usage_repository import TokenUsageRepository
+from adapter.inbound.api.dependencies import get_token_usage_repo
+from port.outbound.repository.token_usage import TokenUsageRepository
 
 repo: TokenUsageRepository = Depends(get_token_usage_repo)
 
@@ -1194,7 +1194,7 @@ indexes = [
 
 #### Index Conflict Resolution
 
-**Module**: `adapter/mongodb/indexes.py`
+**Module**: `adapter/outbound/mongodb/indexes.py`
 
 스키마 변경 시 인덱스 충돌을 자동으로 해결하는 헬퍼 함수들. 앱 시작 시 `ensure_all_indexes(db)`가 호출되어 모든 컬렉션의 인덱스를 검증/생성합니다:
 
@@ -1429,11 +1429,11 @@ print(f"Response: {content}")
 **Integration Example** (Dictionary API):
 ```python
 from services import dictionary_service
-from api.dependencies import get_dictionary_port, get_llm_port, get_nlp_port, get_token_usage_repo
-from port.dictionary import DictionaryPort
-from port.llm import LLMPort
-from port.nlp import NLPPort
-from port.token_usage_repository import TokenUsageRepository
+from adapter.inbound.api.dependencies import get_dictionary_port, get_llm_port, get_nlp_port, get_token_usage_repo
+from port.outbound.dictionary import DictionaryPort
+from port.outbound.llm import LLMPort
+from port.outbound.nlp import NLPPort
+from port.outbound.repository.token_usage import TokenUsageRepository
 
 @router.post("/dictionary/search")
 async def search_word(
@@ -1611,7 +1611,7 @@ The worker uses hexagonal architecture with ports for all infrastructure access:
 - `TokenUsageRepository` (`MongoTokenUsageRepository`): Token usage tracking
 - `VocabularyRepository` (`MongoVocabularyRepository`): Vocabulary-aware generation
 
-**Worker Composition** (`worker/main.py`):
+**Worker Composition** (`adapter/inbound/worker/main.py`):
 ```python
 job_queue = RedisJobQueueAdapter()
 generator = CrewAIArticleGenerator(job_queue)
@@ -1664,7 +1664,7 @@ Note: The `llm: LLMPort` parameter has been removed. Cost calculation is now han
 
 ### Progress Tracking
 
-**Module**: `server/adapter/crew/progress_listener.py`
+**Module**: `server/adapter/outbound/crew/progress_listener.py`
 
 `JobProgressListener` is a CrewAI event listener that updates job progress in real-time via `JobQueuePort` (no direct Redis dependency). Used within `CrewAIArticleGenerator.generate()` via `crewai_event_bus.scoped_handlers()`.
 
@@ -1677,13 +1677,13 @@ Note: The `llm: LLMPort` parameter has been removed. Cost calculation is now han
 | `review_article_quality` | 75 | 95 | Reviewing article quality |
 
 **Files**:
-- `server/worker/main.py` - Worker entry point and composition root
-- `server/worker/processor.py` - Job processing loop (`run_worker_loop`, `process_job`)
+- `server/adapter/inbound/worker/main.py` - Worker entry point and composition root
+- `server/adapter/inbound/worker/processor.py` - Job processing loop (`run_worker_loop`, `process_job`)
 - `server/services/article_submission_service.py` - API-side service (`submit_generation`)
 - `server/services/article_generation_service.py` - Worker-side service (`generate_article`)
-- `server/adapter/crew/article_generator.py` - CrewAI adapter (`CrewAIArticleGenerator`)
-- `server/adapter/crew/progress_listener.py` - Progress listener (`JobProgressListener`)
-- `server/adapter/queue/redis_job_queue.py` - Redis adapter (`RedisJobQueueAdapter`)
+- `server/adapter/outbound/crew/article_generator.py` - CrewAI adapter (`CrewAIArticleGenerator`)
+- `server/adapter/outbound/crew/progress_listener.py` - Progress listener (`JobProgressListener`)
+- `server/adapter/outbound/redis_job_queue.py` - Redis adapter (`RedisJobQueueAdapter`)
 
 ---
 
@@ -1912,7 +1912,7 @@ track_agent_usage(
 
 ### CrewResult Class
 
-**Module**: `adapter/crew/main.py`
+**Module**: `adapter/outbound/crew/main.py`
 
 **Description**: Container for crew execution result with usage metrics extraction. Acts as an anti-corruption layer, converting raw CrewAI framework data to domain objects (`LLMCallResult`) including cost calculation via `litellm.cost_per_token()`.
 
@@ -1970,7 +1970,7 @@ def get_agent_usage(self) -> list[tuple[str, LLMCallResult]]
 
 **Example**:
 ```python
-from adapter.crew.main import run as run_crew
+from adapter.outbound.crew.main import run as run_crew
 
 result = run_crew(inputs={"language": "German", "level": "B1", ...})
 
@@ -2023,7 +2023,7 @@ for agent_name, stats in result.get_agent_usage():
 
 ### Conjugations Model
 
-**File**: `server/api/models.py:12-21`
+**File**: `server/adapter/inbound/api/models.py:12-21`
 
 **Purpose**: Store verb conjugation forms across tenses (present, past, perfect).
 
@@ -2073,7 +2073,7 @@ if isinstance(v, Conjugations):
 
 ### VocabularyRequest Model
 
-**File**: `server/api/models.py:91-117`
+**File**: `server/adapter/inbound/api/models.py:91-117`
 
 **Purpose**: Request model for adding vocabulary with automatic type conversion.
 

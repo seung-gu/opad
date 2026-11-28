@@ -18,5 +18,5 @@ RUN pip install --no-cache-dir --break-system-packages -e ".[worker]"
 ENV PYTHONPATH=/app/server
 
 # Start worker (no HTTP port needed)
-CMD ["python", "-m", "worker.main"]
+CMD ["python", "-m", "adapter.inbound.worker.main"]
 

@@ -5,7 +5,7 @@ the reviewer, outside writers over MCP). check_article() verifies the rules code
 can verify. They sit together so a rule and its check change together.
 
 No LLM and no I/O. The rules were moved from the CrewAI prompts in
-adapter/crew/config/tasks.yaml, which stay as they are while both paths run.
+adapter/outbound/crew/config/tasks.yaml, which stay as they are while both paths run.
 """
 
 import re
