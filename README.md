@@ -53,7 +53,10 @@ For detailed architecture documentation, see [ARCHITECTURE.md](./docs/ARCHITECTU
 
    # Node.js / monorepo
    pnpm install
-   pnpm prepare
+
+   # Git hooks (ruff, API type regeneration) — once per clone
+   git config --unset core.hooksPath   # only if this clone used the old Husky hook
+   uv run pre-commit install
    ```
 
    > If you make backend API changes under `server/api`, regenerate the shared client types with:
@@ -163,7 +166,7 @@ For detailed information on the pipeline architecture, see the **[API Types READ
 
 ### Automatic Type Regeneration
 
-A **Husky pre-commit hook** automatically regenerates types when you modify API contracts:
+A **pre-commit hook** (`.pre-commit-config.yaml`, installed with `uv run pre-commit install`) regenerates types when you modify API contracts:
 
 ```bash
 # Triggered when modifying any of these files:
@@ -178,7 +181,9 @@ The hook runs:
 pnpm export:openapi && pnpm generate:types
 ```
 
-Then stages the generated files for commit.
+If the generated files change, the commit stops. Stage them with `git add` and commit again.
+
+CI (`.github/workflows/ci.yml`) runs the same regeneration on every pull request and fails if the committed files are stale, so a clone without the hook is still caught.
 
 ### Manual Type Generation
 

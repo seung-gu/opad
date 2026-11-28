@@ -1,5 +1,6 @@
 # Runs before each commit, with the ruff version locked in uv.lock.
 # Set up once per clone: uv run pre-commit install
+# CI (.github/workflows/ci.yml) runs the same checks, for clones without the hook.
 repos:
   - repo: local
     hooks:
@@ -13,3 +14,11 @@ repos:
         entry: uv run ruff format
         language: system
         types: [python]
+      # When the API contract changes, regenerate the OpenAPI spec and the TS types.
+      # If they change, the commit stops: git add them and commit again.
+      - id: api-types
+        name: OpenAPI → TS types
+        entry: sh -c "pnpm export:openapi && pnpm generate:types"
+        language: system
+        files: ^server/api/(main\.py|models\.py|routes/.*\.py|dependencies\.py)$
+        pass_filenames: false

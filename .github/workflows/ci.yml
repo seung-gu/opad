@@ -1,0 +1,56 @@
+name: CI
+
+# Runs the same checks as .pre-commit-config.yaml, for commits made without the hook.
+on:
+  pull_request:
+  push:
+    branches:
+      - dev
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ruff:
+    name: ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv run --locked --only-dev ruff check .
+      - run: uv run --locked --only-dev ruff format --check .
+
+  api-types:
+    name: API types up to date
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      JWT_SECRET_KEY: ci-only # main.py requires it at import; only used to build the spec
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      # The api extra pulls torch through stanza, which the export never imports. Slow on a cold cache.
+      - run: uv sync --locked --extra api
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter .
+      - run: pnpm export:openapi && pnpm generate:types
+      - name: Fail if the committed files are stale
+        run: |
+          if ! git diff --exit-code client/libs/api-types/; then
+            echo "::error::openapi.json or api.generated.ts is stale. Run: pnpm export:openapi && pnpm generate:types, then commit both."
+            exit 1
+          fi

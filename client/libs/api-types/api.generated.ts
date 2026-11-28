@@ -326,10 +326,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Database Stats
+         * Get Stats
          * @description Get MongoDB database and Redis statistics.
          */
-        get: operations["get_database_stats_stats_get"];
+        get: operations["get_stats_stats_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1558,7 +1558,7 @@ export interface operations {
             };
         };
     };
-    get_database_stats_stats_get: {
+    get_stats_stats_get: {
         parameters: {
             query?: never;
             header?: never;
