@@ -3,7 +3,7 @@
 import logging
 
 from domain.model.token_usage import LLMCallResult, TokenUsage
-from port.token_usage_repository import TokenUsageRepository
+from port.outbound.repository.token_usage import TokenUsageRepository
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 """Vocabulary query — the words a learner already knows."""
 
 from domain.model.cefr import CEFRLevel, Level
-from port.vocabulary_repository import VocabularyRepository
+from port.outbound.repository.vocabulary import VocabularyRepository
 
 _KNOWN_WORDS_LIMIT = 50
 

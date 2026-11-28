@@ -2,7 +2,7 @@
 
 from domain.model.language import get_language
 from domain.model.news import NewsArticle
-from port.news_source import NewsSource
+from port.outbound.news_source import NewsSource
 
 MIN_WORDS = 200
 

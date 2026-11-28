@@ -20,5 +20,5 @@ repos:
         name: OpenAPI → TS types
         entry: sh -c "pnpm export:openapi && pnpm generate:types"
         language: system
-        files: ^server/api/(main\.py|models\.py|routes/.*\.py|dependencies\.py)$
+        files: ^server/adapter/inbound/api/(main\.py|models\.py|routes/.*\.py|dependencies\.py)$
         pass_filenames: false

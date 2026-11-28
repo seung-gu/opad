@@ -12,8 +12,8 @@ from json_repair import repair_json
 
 from domain.model.cefr import CEFRLevel, Level
 from domain.model.token_usage import LLMCallResult
-from port.llm import LLMPort
-from port.nlp import NLPPort
+from port.outbound.llm import LLMPort
+from port.outbound.nlp import NLPPort
 
 logger = logging.getLogger(__name__)
 

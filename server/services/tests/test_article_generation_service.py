@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from adapter.fake.article_repository import FakeArticleRepository
+from adapter.outbound.fake.article_repository import FakeArticleRepository
 from domain.model.article import (
     Article,
     ArticleInputs,

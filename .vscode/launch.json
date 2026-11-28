@@ -22,7 +22,7 @@
       "request": "launch",
       "module": "uvicorn",
       "args": [
-        "api.main:app",
+        "adapter.inbound.api.main:app",
         "--host",
         "0.0.0.0",
         "--port",
@@ -46,7 +46,7 @@
       "request": "launch",
       "module": "uvicorn",
       "args": [
-        "api.main:app",
+        "adapter.inbound.api.main:app",
         "--reload",
         "--host",
         "0.0.0.0",
@@ -69,7 +69,7 @@
       "name": "Python: Worker Service",
       "type": "debugpy",
       "request": "launch",
-      "module": "worker.main",
+      "module": "adapter.inbound.worker.main",
       "jinja": true,
       "justMyCode": false,
       "env": {

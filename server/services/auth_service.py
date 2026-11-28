@@ -10,7 +10,7 @@ import bcrypt
 
 from domain.model.errors import DomainError, DuplicateError, ValidationError
 from domain.model.user import User
-from port.user_repository import UserRepository
+from port.outbound.repository.user import UserRepository
 
 BCRYPT_ROUNDS = 12
 

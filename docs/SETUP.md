@@ -118,20 +118,20 @@ pip install -e .
 
 **Stanza NLP 모델 다운로드** (자동):
 - API 서비스 첫 실행 시 Stanza German pipeline (~349MB)이 자동으로 다운로드됩니다.
-- 다운로드는 `server/api/main.py`의 `lifespan` 함수에서 `get_nlp_port().preload()`를 통해 실행됩니다 (NLPPort/StanzaAdapter).
+- 다운로드는 `server/adapter/inbound/api/main.py`의 `lifespan` 함수에서 `get_nlp_port().preload()`를 통해 실행됩니다 (NLPPort/StanzaAdapter).
 - 이후 실행 시에는 캐시된 모델을 사용하므로 추가 다운로드가 필요하지 않습니다.
 - 수동 다운로드: `uv run python -c "import stanza; stanza.download('de')"`
 
 ### 4. API 서비스 실행 (터미널 1)
 ```bash
 cd /Users/seung-gu/projects/opad
-PYTHONPATH=server uvicorn api.main:app --reload --port 8001
+PYTHONPATH=server uvicorn adapter.inbound.api.main:app --reload --port 8001
 ```
 
 ### 5. Worker 서비스 실행 (터미널 2)
 ```bash
 cd /Users/seung-gu/projects/opad
-PYTHONPATH=server uv run python -m worker.main
+PYTHONPATH=server uv run python -m adapter.inbound.worker.main
 ```
 
 ### 6. Web 서비스 실행 (터미널 3)
@@ -144,8 +144,8 @@ API_BASE_URL=http://localhost:8001 npm run dev
 ### 7. 테스트 (Optional)
 ```bash
 # Python 테스트 실행
-uv run pytest server/api/tests/ -v
-uv run pytest server/worker/tests/ -v
+uv run pytest server/adapter/inbound/api/tests/ -v
+uv run pytest server/adapter/inbound/worker/tests/ -v
 
 # 커버리지와 함께 실행
 uv run pytest --cov=src --cov-report=term-missing
@@ -279,7 +279,7 @@ cat /proc/5/smaps_rollup | head -15
 
 #### Stanza Idle Unload (참고)
 
-Stanza pipeline은 `STANZA_IDLE_TTL_MIN`분 idle 후 자동 unload (`adapter/nlp/stanza.py`). 기본 60분. Railway 환경변수로 조정 가능 (검증 시 `2`로 낮추면 빠른 사이클 측정 가능).
+Stanza pipeline은 `STANZA_IDLE_TTL_MIN`분 idle 후 자동 unload (`adapter/outbound/stanza.py`). 기본 60분. Railway 환경변수로 조정 가능 (검증 시 `2`로 낮추면 빠른 사이클 측정 가능).
 
 ---
 

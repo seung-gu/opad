@@ -19,7 +19,7 @@ Every file in this folder exists for a single purpose: **"Automated Frontend Typ
 
 Type synchronization is automated through the following pipeline:
 
-1. **BE Pydantic (SSoT):** Backend developers modify Pydantic/FastAPI models in `server/api/models.py`, etc.
+1. **BE Pydantic (SSoT):** Backend developers modify Pydantic/FastAPI models in `server/adapter/inbound/api/models.py`, etc.
 2. **OpenAPI Spec Extraction:** `sync_from_backend.py` is executed, parses the Pydantic models, and overwrites `openapi.json`.
 3. **TS Types Generation:** The `openapi-typescript` library reads `openapi.json` and converts it into `api.generated.ts`.
 4. **FE Type Wrapping:** Instead of using the raw generated types directly throughout the codebase, frontend developers safely wrap them using the `Omit` utility and intersection types (`&`) in domain files (e.g., `client/libs/types/article.ts`) to adapt them strictly for the frontend environment.
@@ -27,7 +27,7 @@ Type synchronization is automated through the following pipeline:
 ## 🚀 How is it executed? (Automation)
 
 You do not need to run this pipeline manually. 
-It is automatically triggered by the **pre-commit hook** (`.pre-commit-config.yaml` at the project root, installed with `uv run pre-commit install`) whenever changes are detected in the backend API contract files (`server/api/**/*.py`). If the generated files change, the commit stops: stage them with `git add` and commit again. CI checks the same on every pull request.
+It is automatically triggered by the **pre-commit hook** (`.pre-commit-config.yaml` at the project root, installed with `uv run pre-commit install`) whenever changes are detected in the backend API contract files (`server/adapter/inbound/api/**/*.py`). If the generated files change, the commit stops: stage them with `git add` and commit again. CI checks the same on every pull request.
 
 If you need to run the pipeline manually, use the following npm scripts:
 ```bash

@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, "src")
 
-from adapter.external.litellm import LiteLLMAdapter
+from adapter.outbound.litellm import LiteLLMAdapter
 
 
 async def test_token_usage():

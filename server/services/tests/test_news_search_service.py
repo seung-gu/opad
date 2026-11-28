@@ -5,7 +5,7 @@ import asyncio
 import httpx
 import pytest
 
-from adapter.fake.news_source import FakeNewsSource
+from adapter.outbound.fake.news_source import FakeNewsSource
 from domain.model.news import NewsArticle
 from services.news_search_service import MIN_WORDS, fetch_article, search_news
 

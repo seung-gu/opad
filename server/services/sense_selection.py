@@ -9,8 +9,8 @@ from typing import Any
 
 from domain.model.token_usage import LLMCallResult
 from domain.model.vocabulary import SenseResult
-from port.dictionary import DictionaryPort
-from port.llm import LLMPort
+from port.outbound.dictionary import DictionaryPort
+from port.outbound.llm import LLMPort
 
 logger = logging.getLogger(__name__)
 

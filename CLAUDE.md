@@ -58,10 +58,10 @@ docker-compose -f docker-compose.local.yml up -d  # MongoDB + Redis
 Run in 3 separate terminals:
 ```bash
 # API (FastAPI) - port 8001
-PYTHONPATH=server uvicorn api.main:app --reload --port 8001
+PYTHONPATH=server uvicorn adapter.inbound.api.main:app --reload --port 8001
 
 # Worker (CrewAI processor)
-PYTHONPATH=server uv run python -m worker.main
+PYTHONPATH=server uv run python -m adapter.inbound.worker.main
 
 # Web (Next.js) - port 8000
 cd client/apps/web && API_BASE_URL=http://localhost:8001 pnpm dev
@@ -71,8 +71,8 @@ cd client/apps/web && API_BASE_URL=http://localhost:8001 pnpm dev
 
 ```bash
 # Python tests
-uv run pytest server/api/tests/ -v
-uv run pytest server/worker/tests/ -v
+uv run pytest server/adapter/inbound/api/tests/ -v
+uv run pytest server/adapter/inbound/worker/tests/ -v
 
 # With coverage
 uv run pytest --cov=server --cov-report=term-missing
